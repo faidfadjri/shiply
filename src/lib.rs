@@ -3,6 +3,7 @@ pub mod domain;
 pub mod executor;
 pub mod installer;
 pub mod presets;
+pub mod ps1_importer;
 pub mod storage;
 pub mod ui;
 pub mod version;

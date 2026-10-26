@@ -3,7 +3,8 @@
 use eframe::egui;
 use shiply::credentials::try_handle_askpass_invocation;
 use shiply::installer::{
-    check_install_state, default_install_dir, install_or_update_self, InstallState, APP_VERSION,
+    check_install_state, default_install_dir, install_or_update_self, is_setup_mode, InstallState,
+    SetupWizardApp, APP_VERSION,
 };
 use shiply::storage::AppStorage;
 use shiply::ui::ShiplyApp;
@@ -15,9 +16,12 @@ fn main() -> eframe::Result<()> {
         return Ok(());
     }
 
-    // 2. If invoked with `--install` or `install`, install/update binary + shortcuts and exit.
+    // 2. If invoked with `--install` / `--silent` / `install`, install/update binary + shortcuts headlessly and exit.
     let args: Vec<String> = env::args().skip(1).collect();
-    if args.iter().any(|a| a == "--install" || a == "install") {
+    if args
+        .iter()
+        .any(|a| a == "--install" || a == "install" || a == "--silent")
+    {
         match install_or_update_self() {
             Ok(msg) => {
                 println!("{msg}");
@@ -30,7 +34,24 @@ fn main() -> eframe::Result<()> {
         }
     }
 
-    // 3. Auto-update installed copy when launching a newer .exe version
+    // 3. If launched as `setup.exe` (or `--setup`), open the graphical Desktop Setup Wizard!
+    if is_setup_mode(&args) {
+        let setup_options = eframe::NativeOptions {
+            viewport: egui::ViewportBuilder::default()
+                .with_title(format!("Shiply v{APP_VERSION} Setup"))
+                .with_inner_size([520.0, 390.0])
+                .with_min_inner_size([500.0, 370.0])
+                .with_resizable(false),
+            ..Default::default()
+        };
+        return eframe::run_native(
+            "Shiply Setup",
+            setup_options,
+            Box::new(|_cc| Ok(Box::new(SetupWizardApp::default()))),
+        );
+    }
+
+    // 4. Auto-update installed copy when launching a newer .exe version directly
     let mut startup_notice = None;
     if let InstallState::UpdateReady {
         installed_version,

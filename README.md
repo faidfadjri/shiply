@@ -1,66 +1,113 @@
-# Shiply — Cross-Platform Mini Deployment Platform
+# Shiply — Universal Desktop Mini Deployment Platform
 
-**Shiply** is a pure-Rust cross-platform desktop deployment platform (`egui` / `eframe`) inspired by Vercel's deployment dashboard and built around the deployment workflow of your existing projects:
+**Shiply** is a fast, lightweight, cross-platform desktop deployment platform built in pure **Rust** (`eframe` / `egui`). It gives developers and teams a clean, Vercel-like desktop workspace to configure multi-environment deployment pipelines, run local builds/tests, upload artifacts via SCP, execute remote SSH commands, track release versions and Git commit changelogs, and perform one-click rollbacks — without needing heavy CI/CD infrastructure.
 
-- **`ndm-dq-subscription`** (`D:\NTI\Projects\backend\ndm-dq-subscription`)
-- **`indy-subscription`** (`D:\NTI\Projects\frontend\indy-subscription`)
+---
 
-## Key Features
+## ✨ Key Features
 
-1. **Pre-Loaded Project Pipelines (`dev`, `staging`, `production`)**
-   - **`ndm-dq-subscription` (Backend)**:
-     - Multi-server target (`10.62.70.80`, `10.62.70.81`), SSH user `appndq`, remote path `/data/indy-service/apps/<app_name>`.
-     - Pre-flight SSH check $\rightarrow$ local `npm run build` $\rightarrow$ verify `./dist/server.js` $\rightarrow$ remote clean (preserving `node_modules`) $\rightarrow$ stage `.env.<env>` as `.env` & `scp -r` upload (`./dist`, `package.json`, `package-lock.json`, `.env`) $\rightarrow$ remote `npm ci` via corporate HTTP proxy (`http://10.54.18.42:8080`) $\rightarrow$ remote `pm2 restart`.
-   - **`indy-subscription` (Frontend)**:
-     - Single-server target (`10.62.70.79`), SSH user `appndq`, remote path `/home/appndq/apps/<app_name>`.
-     - Pre-flight SSH check $\rightarrow$ local `npm run test` $\rightarrow$ local `npm run build` $\rightarrow$ verify `./dist` $\rightarrow$ remote `mkdir -p` $\rightarrow$ `scp -r ./dist/*` $\rightarrow$ remote `chmod -R a+rX`.
+- **Universal Pipeline Builder**: Configure custom step-by-step deployment pipelines for any stack (Node.js, TypeScript, Rust, Go, Python, static frontends, PM2, systemd, Docker):
+  - **Local Command**: Run build, test, or bundle scripts locally (`npm run build`, `cargo build --release`, `pytest`, etc.) with optional non-fatal exit handling.
+  - **Verify Local Path**: Guard deployments by ensuring build outputs exist (e.g. `./dist`, `./dist/server.js`) before touching remote servers.
+  - **SCP File Transfer**: Upload build directories, wildcards (`./dist/*`), config files, and automatically stage environment-specific files (`.env.dev` / `.env.prod` $\rightarrow$ `.env`) to multiple target servers.
+  - **Remote SSH Command**: Execute remote commands across all target servers (`npm ci`, `pm2 restart`, `systemctl restart`, `chmod`, atomic directory cleanup).
+- **PowerShell Script (`.ps1`) Auto-Importer**: Point Shiply at an existing `deploy-*.ps1` script (or project folder) to automatically extract target servers, SSH users, remote paths, proxy settings, `.env` sources, and pipeline steps.
+- **Custom Environment Levels**: Create, clone, or delete any environment level (`Development`, `Staging`, `Production`, `UAT`, `QA`, `Canary`, `Sandbox`).
+- **Git Branch Selector & Commit Changelog**:
+  - Switch Git branches directly from the project header before deploying.
+  - Automatically records the Git branch, commit hash, and **commit changelog / diff summary** (`git log` & `git diff --stat` since the previous release) on every deployment record.
+- **One-Click Rollback & Re-run**:
+  - Every deployment stores an immutable snapshot of its version, Git commit, and executed pipeline steps.
+  - Roll back any environment to a previous successful release with a single click.
+- **Zero-Prompt SSH Authentication**:
+  - Works seamlessly with standard **SSH Keys** or **OS Native Credential Stores** (Windows Credential Manager via Win32 `CredReadW`, macOS Keychain, Linux `libsecret`), plus a built-in native `SSH_ASKPASS` handler so you never have to type passwords per server.
+- **Portable App Directory & Auto-Discovery**:
+  - Starts completely clean on first install.
+  - Stores state in `shiply_state.json` directly inside the app directory. Paste `shiply_state.json`, project `.json` files, or `deploy-*.ps1` scripts into the app folder and Shiply automatically detects and loads them.
 
-2. **Customizable Deployment Steps**
-   - Enable or disable individual steps via checkboxes before deploying (e.g., skip tests or skip `npm ci`).
-   - Edit commands, paths, or transfer sources inline.
-   - Reorder (`↑` / `↓`), delete, or add new Local Shell and Remote SSH steps.
-   - Built-in template placeholders: `{remote_dir}`, `{remote_user}`, `{app_name}`, `{http_proxy}`, `{env_source}`, `{version}`.
+---
 
-3. **Versioning & Git Integration**
-   - Auto-detects current version from `package.json` and displays active Git branch & short commit SHA.
-   - One-click semantic version bump (`+Patch`, `+Minor`, `+Major`) or custom version string.
-   - Optional pre-deploy `package.json` version bump and post-deploy annotated Git tag creation (`git tag -f -a v<version>`).
-   - Displays the **Active (Last Succeeded) Version** on each environment card (`DEV`, `STAGING`, `PROD`).
+## 🚀 Installation
 
-4. **Vercel-Style Deployment History & One-Click Redeploy**
-   - Tracks every deployment across all projects with status (`Succeeded`, `Failed`, `Running`), version badge, environment badge, commit SHA, duration, and full step-by-step console output.
-   - Click **Redeploy** on any historical deployment to re-run its exact step snapshot and version.
-   - All project configurations and deployment histories persist automatically to disk.
+### Option 1: Windows Standalone Installer (`setup.exe`)
+1. Download **`setup.exe`** from the [GitHub Releases](https://github.com/faidfadjri/shiply/releases) page (or from `./dist/setup.exe`).
+2. Double-click **`setup.exe`** to open the **Shiply Setup Wizard**:
+   - Installs Shiply to `%LOCALAPPDATA%\Programs\Shiply\shiply.exe`.
+   - Creates **Desktop** and **Start Menu** shortcuts.
+   - **Auto-Update**: Running a newer `setup.exe` automatically upgrades the existing installation in-place while preserving your `shiply_state.json` projects and deployment history.
+   - Supports headless/silent installation via CLI:
+     ```powershell
+     .\setup.exe --install
+     ```
 
-5. **Cross-Platform SSH & Native Credential Store**
-   - Reads stored credentials directly from the OS credential store (`indyserver` in Windows Credential Manager via Win32 `CredReadW`, macOS Keychain via `security`, Linux Secret Service via `secret-tool`), with automatic fallback to SSH key authentication or manual password entry in the UI.
-   - Uses the `shiply` binary itself as a native cross-platform `SSH_ASKPASS` helper (no PowerShell or runtime C# compilation required).
-
-## Installation & Auto-Update (`.exe`)
-
-Run the included installer script to build the release `.exe`, copy it to `./dist/shiply.exe`, install/update `%LOCALAPPDATA%\Programs\Shiply\shiply.exe`, and create **Desktop** and **Start Menu** shortcuts:
-
+### Option 2: Build & Install via PowerShell (`install.ps1`)
+From the repository root on Windows:
 ```powershell
-.\install.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File .\install.ps1
 ```
+This compiles the optimized release binaries, generates `./dist/setup.exe` and `./dist/shiply.exe`, and installs Shiply to your system.
 
-Or install/update directly from any compiled `shiply.exe`:
-
-```powershell
-.\dist\shiply.exe --install
-```
-
-Whenever you build or open a newer version of `shiply.exe`, it automatically updates your installed copy in `%LOCALAPPDATA%\Programs\Shiply\shiply.exe` while preserving all projects and deployment history in `%LOCALAPPDATA%\shiply\shiply_state.json`.
-
-## Running & Testing
+### Option 3: Build from Source (Windows / macOS / Linux)
+Prerequisites: [Rust toolchain](https://rustup.rs/) (`1.80+`) and `OpenSSH` (`ssh` / `scp`) + `git`.
 
 ```bash
-# Run unit & integration tests
-cargo test
-
-# Lint with zero warnings
-cargo clippy --all-targets -- -D warnings
-
-# Launch the Shiply desktop application
-cargo run --release
+git clone https://github.com/faidfadjri/shiply.git
+cd shiply
+cargo build --release
 ```
+
+---
+
+## 📖 Universal Usage Guide
+
+### 1. Adding a Project (Manual or `.ps1` Auto-Import)
+On first launch, Shiply starts with a clean workspace:
+- **Auto-Import from `.ps1`**: Click **Auto-Import deploy.ps1 Script** (or **+ Add** in the sidebar $\rightarrow$ **Browse .ps1...**). Select any `deploy-dev.ps1` / `deploy-prod.ps1` file. Shiply automatically parses the script (and any sibling `deploy-*.ps1` files in the same folder) to populate the project name, local directory, target servers, and pipeline steps.
+- **Create Manually**: Enter your **Project Name**, **Local Project Directory**, and **Description**, then add your custom environments.
+
+### 2. Managing Environments
+- Click the **+ Add / Import Environment** card in any project workspace to create a new environment (`dev`, `staging`, `production`, `uat`, `qa`, etc.), clone steps from an existing environment, or import another `.ps1` script.
+- Click the **`×`** button on any environment card (or **Delete Environment** in **Environment & SSH Settings**) to remove an environment at any time.
+
+### 3. Template Variables in Pipeline Steps
+You can use the following placeholders inside any **Local Command**, **Verify Path**, **SCP Sources**, or **Remote SSH** step:
+
+| Variable | Description | Example |
+| :--- | :--- | :--- |
+| `{app_name}` | Target application / PM2 / directory name | `my-api-dev` |
+| `{remote_dir}` | Remote deployment directory on target servers | `/var/www/my-api-dev` |
+| `{remote_user}` | SSH username for target servers | `deploy` |
+| `{http_proxy}` | Optional outbound HTTP/HTTPS proxy URL | `http://10.0.0.1:8080` |
+| `{env_source}` | Local environment file staged as `.env` | `./.env.dev` |
+| `{version}` | Target release version being deployed | `1.4.2` |
+
+### 4. Versioning, Git Branches & Rollbacks
+- **Branch Switcher**: Use the **Branch** dropdown in the top-right project header to switch between any local or remote Git branch before deploying.
+- **Semantic Version Bumping**: Click `+Patch`, `+Minor`, or `+Major` (or type a custom version). Enable **Bump package.json** to automatically update `"version"` in `package.json` while preserving file formatting, and **Git Tag** to tag successful releases (`vX.Y.Z`).
+- **One-Click Rollback**: Click **Rollback** in the Version Control bar or next to any previous successful release in the **Deployment History** table to check out that release's commit, restore its version, and redeploy its exact pipeline snapshot.
+
+### 5. Portable State & Drop-In File Sync
+- Click **Open App Folder (JSON / .ps1)** at the bottom of the left sidebar to open Shiply's data directory.
+- You can back up or share **`shiply_state.json`**, or paste project `.json` / `deploy-*.ps1` files directly into the folder — Shiply automatically detects and imports them.
+
+### 6. Configuring SSH Credentials
+Shiply supports three authentication methods (checked in order):
+1. **Manual Password Override**: Enter a password in the **Environment & SSH Settings** tab for one-off deployments.
+2. **OS Native Credential Vault**: Store a generic credential in your OS vault matching the environment's **OS Credential Vault Target** (e.g., `indyserver`):
+   - **Windows**: *Control Panel $\rightarrow$ Credential Manager $\rightarrow$ Windows Credentials $\rightarrow$ Generic Credentials*
+   - **macOS**: `security add-generic-password -s "<vault_target>" -a "<username>" -w "<password>"`
+   - **Linux**: `secret-tool store --label="Shiply" service "<vault_target>" username "<username>"`
+3. **SSH Keys**: If no password is required, Shiply uses standard key-based OpenSSH authentication (`BatchMode=yes`).
+
+---
+
+## 🧪 Development & Testing
+
+Run the full test suite and linter with zero warnings:
+```bash
+cargo clippy --all-targets -- -D warnings
+cargo test
+```
+
+## 📄 License
+MIT License

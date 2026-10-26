@@ -6,7 +6,8 @@ use crate::domain::{
     StepKind,
 };
 use crate::version::{
-    configure_background_command, create_git_tag, read_git_metadata, update_package_json_version,
+    checkout_git_branch, configure_background_command, create_git_tag, read_git_code_changes,
+    read_git_metadata, update_package_json_version,
 };
 use chrono::Utc;
 use std::env;
@@ -29,6 +30,10 @@ pub struct DeploymentRequest {
     pub create_git_tag_on_success: bool,
     pub manual_password: Option<String>,
     pub skip_ssh_preflight: bool,
+    pub target_git_branch: Option<String>,
+    pub rollback_commit: Option<String>,
+    pub previous_commit: Option<String>,
+    pub is_rollback: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -143,7 +148,10 @@ pub fn expand_transfer_sources(
     let mut expanded = Vec::new();
     for raw in sources {
         let trimmed = raw.trim();
-        if let Some(dir_prefix) = trimmed.strip_suffix("/*").or_else(|| trimmed.strip_suffix(r"\*")) {
+        if let Some(dir_prefix) = trimmed
+            .strip_suffix("/*")
+            .or_else(|| trimmed.strip_suffix(r"\*"))
+        {
             let base_dir = project_dir.join(dir_prefix);
             if !base_dir.is_dir() {
                 return Err(format!(
@@ -194,7 +202,10 @@ fn run_command_capture(cmd: &mut Command) -> Result<(bool, String), String> {
     Ok((output.status.success(), combined))
 }
 
-fn execute_local_shell_command(project_dir: &Path, command_str: &str) -> Result<(bool, String), String> {
+fn execute_local_shell_command(
+    project_dir: &Path,
+    command_str: &str,
+) -> Result<(bool, String), String> {
     let mut cmd = if cfg!(windows) {
         let mut c = Command::new("cmd");
         c.args(["/C", command_str]);
@@ -281,7 +292,9 @@ pub fn run_deployment(
         .cloned()
         .collect();
 
-    let git_meta = read_git_metadata(&req.local_path);
+    let initial_meta = read_git_metadata(&req.local_path);
+    let initial_changes =
+        read_git_code_changes(&req.local_path, req.previous_commit.as_deref());
 
     let mut record = DeploymentRecord {
         id: req.deployment_id.clone(),
@@ -290,8 +303,10 @@ pub fn run_deployment(
         environment: req.env_config.key.clone(),
         app_name: req.env_config.app_name.clone(),
         version: req.version.clone(),
-        git_branch: git_meta.branch,
-        git_commit: git_meta.commit_short,
+        git_branch: initial_meta.branch.clone(),
+        git_commit: initial_meta.commit_short.clone(),
+        git_changes: initial_changes,
+        is_rollback: req.is_rollback,
         servers: req.env_config.servers.clone(),
         status: DeploymentStatus::Running,
         started_at,
@@ -309,13 +324,89 @@ pub fn run_deployment(
 
     notify(&record);
 
-    // Optional pre-step: bump version in package.json
-    if req.bump_package_json {
+    // Optional Rollback or Git Branch Checkout pre-step
+    if req.is_rollback {
+        let step_start = Instant::now();
+        let target_ref = req
+            .rollback_commit
+            .as_deref()
+            .or(req.target_git_branch.as_deref());
+        let mut rollback_msg = format!(
+            "Rolling back '{}' ({}) to version v{}",
+            req.project_name, req.env_config.name, req.version
+        );
+        if let Some(git_ref) = target_ref {
+            if !git_ref.trim().is_empty() {
+                match checkout_git_branch(&req.local_path, git_ref) {
+                    Ok(out) => {
+                        rollback_msg.push_str(&format!("\n{out}"));
+                    }
+                    Err(err) => {
+                        rollback_msg.push_str(&format!(
+                            "\n[Note] Could not switch git ref '{git_ref}' ({err}); proceeding with rollback pipeline."
+                        ));
+                    }
+                }
+            }
+        }
+        let updated_meta = read_git_metadata(&req.local_path);
+        if updated_meta.commit_short.is_some() {
+            record.git_commit = updated_meta.commit_short;
+            record.git_branch = updated_meta.branch.or(req.target_git_branch.clone());
+            record.git_changes =
+                read_git_code_changes(&req.local_path, req.previous_commit.as_deref());
+        }
+        record.step_logs.push(StepExecutionLog {
+            step_name: format!("Rollback to v{}", req.version),
+            command_summary: format!("rollback -> v{}", req.version),
+            status: DeploymentStatus::Succeeded,
+            output: rollback_msg,
+            duration_ms: step_start.elapsed().as_millis() as u64,
+        });
+        notify(&record);
+    } else if let Some(target_branch) = &req.target_git_branch {
+        let trimmed_branch = target_branch.trim();
+        if !trimmed_branch.is_empty()
+            && initial_meta.branch.as_deref() != Some(trimmed_branch)
+        {
+            let step_start = Instant::now();
+            match checkout_git_branch(&req.local_path, trimmed_branch) {
+                Ok(out) => {
+                    let updated_meta = read_git_metadata(&req.local_path);
+                    record.git_branch = updated_meta.branch;
+                    record.git_commit = updated_meta.commit_short;
+                    record.git_changes =
+                        read_git_code_changes(&req.local_path, req.previous_commit.as_deref());
+                    record.step_logs.push(StepExecutionLog {
+                        step_name: "Checkout Git Branch".to_string(),
+                        command_summary: format!("git checkout {trimmed_branch}"),
+                        status: DeploymentStatus::Succeeded,
+                        output: out,
+                        duration_ms: step_start.elapsed().as_millis() as u64,
+                    });
+                    notify(&record);
+                }
+                Err(err) => {
+                    record.step_logs.push(StepExecutionLog {
+                        step_name: "Checkout Git Branch".to_string(),
+                        command_summary: format!("git checkout {trimmed_branch}"),
+                        status: DeploymentStatus::Failed,
+                        output: err,
+                        duration_ms: step_start.elapsed().as_millis() as u64,
+                    });
+                    return finalize_record(record, DeploymentStatus::Failed, started_instant, tx);
+                }
+            }
+        }
+    }
+
+    // Optional pre-step: bump/restore version in package.json
+    if req.bump_package_json && req.local_path.join("package.json").exists() {
         let step_start = Instant::now();
         match update_package_json_version(&req.local_path, &req.version) {
             Ok(()) => {
                 record.step_logs.push(StepExecutionLog {
-                    step_name: "Bump package.json Version".to_string(),
+                    step_name: "Update package.json Version".to_string(),
                     command_summary: format!("package.json -> version {}", req.version),
                     status: DeploymentStatus::Succeeded,
                     output: format!(
@@ -329,7 +420,7 @@ pub fn run_deployment(
             }
             Err(err) => {
                 record.step_logs.push(StepExecutionLog {
-                    step_name: "Bump package.json Version".to_string(),
+                    step_name: "Update package.json Version".to_string(),
                     command_summary: format!("package.json -> version {}", req.version),
                     status: DeploymentStatus::Failed,
                     output: err,
@@ -400,7 +491,8 @@ pub fn run_deployment(
                 build_ssh_command(&env_cfg.remote_user, server, "true", askpass_guard.as_ref());
             match run_command_capture(&mut ssh_cmd) {
                 Ok((true, _)) => {
-                    preflight_log.push_str(&format!("\n  [OK] {}@{}", env_cfg.remote_user, server));
+                    preflight_log
+                        .push_str(&format!("\n  [OK] {}@{}", env_cfg.remote_user, server));
                 }
                 Ok((false, out)) => {
                     preflight_log.push_str(&format!(
@@ -526,7 +618,10 @@ pub fn run_deployment(
                             command_summary: summary,
                             status: DeploymentStatus::Failed,
                             output: if out.is_empty() {
-                                format!("Command '{}' failed with non-zero exit code.", interpolated)
+                                format!(
+                                    "Command '{}' failed with non-zero exit code.",
+                                    interpolated
+                                )
                             } else {
                                 out
                             },
@@ -593,7 +688,9 @@ pub fn run_deployment(
                             step_name: step.name.clone(),
                             command_summary: summary,
                             status: DeploymentStatus::Failed,
-                            output: "Step requires staging an env file, but no env_source is configured.".to_string(),
+                            output:
+                                "Step requires staging an env file, but no env_source is configured."
+                                    .to_string(),
                             duration_ms: step_start.elapsed().as_millis() as u64,
                         });
                         return finalize_record(
@@ -652,9 +749,8 @@ pub fn run_deployment(
                             }
                         }
                         Ok((false, out)) => {
-                            transfer_output.push_str(&format!(
-                                "[{server}] SCP upload failed: {out}"
-                            ));
+                            transfer_output
+                                .push_str(&format!("[{server}] SCP upload failed: {out}"));
                             record.step_logs.push(StepExecutionLog {
                                 step_name: step.name.clone(),
                                 command_summary: summary,
@@ -718,8 +814,7 @@ pub fn run_deployment(
                             }
                         }
                         Ok((false, out)) => {
-                            remote_output
-                                .push_str(&format!("[{server}] Command failed:\n{out}"));
+                            remote_output.push_str(&format!("[{server}] Command failed:\n{out}"));
                             record.step_logs.push(StepExecutionLog {
                                 step_name: step.name.clone(),
                                 command_summary: summary,
@@ -768,11 +863,7 @@ pub fn run_deployment(
     // Optional post-step: create Git tag on success
     if req.create_git_tag_on_success {
         let step_start = Instant::now();
-        match create_git_tag(
-            &req.local_path,
-            &req.version,
-            &req.env_config.key,
-        ) {
+        match create_git_tag(&req.local_path, &req.version, &req.env_config.key) {
             Ok(tag_name) => {
                 record.step_logs.push(StepExecutionLog {
                     step_name: "Create Git Tag".to_string(),
@@ -876,12 +967,16 @@ mod tests {
             project_id: "demo".to_string(),
             project_name: "Demo".to_string(),
             local_path: tmp.path().to_path_buf(),
-            env_config,
+            env_config: env_config.clone(),
             version: "1.1.0".to_string(),
             bump_package_json: true,
             create_git_tag_on_success: false,
             manual_password: None,
             skip_ssh_preflight: true,
+            target_git_branch: None,
+            rollback_commit: None,
+            previous_commit: None,
+            is_rollback: false,
         };
 
         let record = run_deployment(req, None);
@@ -890,6 +985,31 @@ mod tests {
         assert_eq!(
             crate::version::read_package_json_version(tmp.path()).as_deref(),
             Some("1.1.0")
+        );
+
+        // Test Rollback back to v1.0.0
+        let rollback_req = DeploymentRequest {
+            deployment_id: "test-dep-rollback".to_string(),
+            project_id: "demo".to_string(),
+            project_name: "Demo".to_string(),
+            local_path: tmp.path().to_path_buf(),
+            env_config,
+            version: "1.0.0".to_string(),
+            bump_package_json: true,
+            create_git_tag_on_success: false,
+            manual_password: None,
+            skip_ssh_preflight: true,
+            target_git_branch: None,
+            rollback_commit: None,
+            previous_commit: None,
+            is_rollback: true,
+        };
+        let rollback_record = run_deployment(rollback_req, None);
+        assert_eq!(rollback_record.status, DeploymentStatus::Succeeded);
+        assert!(rollback_record.is_rollback);
+        assert_eq!(
+            crate::version::read_package_json_version(tmp.path()).as_deref(),
+            Some("1.0.0")
         );
     }
 }

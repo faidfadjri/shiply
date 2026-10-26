@@ -2,8 +2,10 @@ use shiply::credentials::{ENV_ASKPASS_FILE, ENV_ASKPASS_MODE};
 use shiply::domain::{DeploymentStatus, EnvironmentConfig, PipelineStep, StepKind};
 use shiply::executor::{run_deployment, DeploymentRequest};
 use shiply::presets::default_projects;
+use shiply::ps1_importer::import_project_from_path;
 use shiply::storage::AppStorage;
 use std::fs;
+use std::path::PathBuf;
 use std::process::Command;
 use tempfile::TempDir;
 
@@ -13,12 +15,16 @@ fn test_presets_custom_environment_and_full_deployment_lifecycle() {
     let state_path = tmp.path().join("shiply_state.json");
     let mut storage = AppStorage::load_or_default(&state_path);
 
+    // First-time install starts empty without projects or environments
+    assert!(storage.projects.is_empty());
+    assert!(storage.deployments.is_empty());
+
     let mut projects = default_projects();
     assert_eq!(projects.len(), 2);
     assert_eq!(projects[0].id, "ndm-dq-subscription");
     assert_eq!(projects[1].id, "indy-subscription");
 
-    // Verify user can dynamically add a new custom environment (e.g. UAT) cloned from dev
+    // Verify user can dynamically add and delete environments
     let uat_key = projects[0]
         .add_environment("UAT", Some("dev"))
         .expect("add custom UAT environment");
@@ -26,7 +32,7 @@ fn test_presets_custom_environment_and_full_deployment_lifecycle() {
     let uat_env = projects[0].get_env("uat").expect("get uat env");
     assert_eq!(uat_env.app_name, "ndm-dq-subscription-uat");
 
-    // Set up a mock project directory to test end-to-end deployment + version bump + redeploy
+    // Set up a mock project directory to test end-to-end deployment + version bump + rollback
     let proj_dir = tmp.path().join("mock-service");
     fs::create_dir_all(proj_dir.join("dist")).expect("create dist");
     fs::write(proj_dir.join("dist/server.js"), "console.log('ready');").expect("write server.js");
@@ -74,6 +80,10 @@ fn test_presets_custom_environment_and_full_deployment_lifecycle() {
         create_git_tag_on_success: false,
         manual_password: None,
         skip_ssh_preflight: true,
+        target_git_branch: None,
+        rollback_commit: None,
+        previous_commit: None,
+        is_rollback: false,
     };
 
     let record = run_deployment(req, None);
@@ -85,6 +95,23 @@ fn test_presets_custom_environment_and_full_deployment_lifecycle() {
         .expect("should have succeeded uat deployment");
     assert_eq!(last_ok.version, "1.4.2");
     assert_eq!(last_ok.executed_steps.len(), 2);
+}
+
+#[test]
+fn test_auto_import_real_ndm_dq_subscription_ps1_if_present() {
+    let real_ps1 = PathBuf::from(r"D:\NTI\Projects\backend\ndm-dq-subscription\deploy-dev.ps1");
+    if real_ps1.exists() {
+        let proj = import_project_from_path(&real_ps1, true).expect("import real ps1");
+        assert_eq!(proj.id, "ndm-dq-subscription");
+        assert!(!proj.environments.is_empty());
+        let dev_env = proj.get_env("dev").expect("dev environment imported");
+        assert_eq!(dev_env.app_name, "ndm-dq-subscription-dev");
+        assert_eq!(dev_env.servers, vec!["10.62.70.80", "10.62.70.81"]);
+        assert_eq!(
+            dev_env.remote_dir,
+            "/data/indy-service/apps/ndm-dq-subscription-dev"
+        );
+    }
 }
 
 #[test]

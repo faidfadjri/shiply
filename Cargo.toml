@@ -1,6 +1,6 @@
 [package]
 name = "shiply"
-version = "0.1.0"
+version = "0.3.0"
 edition = "2021"
 description = "Cross-platform Mini Deployment Platform in Rust"
 
@@ -17,3 +17,9 @@ windows-sys = { version = "0.59", features = ["Win32_Security_Credentials", "Win
 
 [dev-dependencies]
 tempfile = "3.14"
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
+strip = "symbols"

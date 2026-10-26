@@ -189,8 +189,8 @@ impl Project {
         };
 
         let template = clone_from_key
+            .filter(|k| !k.is_empty())
             .and_then(|k| self.get_env(k))
-            .or_else(|| self.environments.first())
             .cloned();
 
         let new_env = if let Some(tpl) = template {
@@ -248,11 +248,8 @@ impl Project {
         Ok(key)
     }
 
-    /// Removes an environment by key, ensuring at least one environment remains.
+    /// Removes an environment by key. Allows deleting any environment, including the last one.
     pub fn remove_environment(&mut self, env_key: &str) -> Result<(), String> {
-        if self.environments.len() <= 1 {
-            return Err("A project must have at least one environment.".to_string());
-        }
         let Some(pos) = self.environments.iter().position(|e| e.key == env_key) else {
             return Err(format!("Environment '{env_key}' not found."));
         };
@@ -301,13 +298,19 @@ pub struct DeploymentRecord {
     pub version: String,
     pub git_branch: Option<String>,
     pub git_commit: Option<String>,
+    /// Summary of Git commits / code changes included in this deployment.
+    #[serde(default)]
+    pub git_changes: Vec<String>,
+    /// Indicates whether this deployment was triggered as a Rollback.
+    #[serde(default)]
+    pub is_rollback: bool,
     pub servers: Vec<String>,
     pub status: DeploymentStatus,
     pub started_at: DateTime<Utc>,
     pub finished_at: Option<DateTime<Utc>>,
     pub duration_ms: Option<u64>,
     pub step_logs: Vec<StepExecutionLog>,
-    /// Snapshot of the steps executed so a deployment can be accurately re-run.
+    /// Snapshot of the steps executed so a deployment can be accurately re-run or rolled back.
     pub executed_steps: Vec<PipelineStep>,
 }
 
@@ -399,8 +402,9 @@ mod tests {
         // Duplicate should fail
         assert!(proj.add_environment("uat", None).is_err());
 
-        // Remove UAT succeeds, but removing last remaining env fails
+        // Remove UAT and remove dev (even the last environment can be deleted)
         proj.remove_environment("uat").expect("remove uat");
-        assert!(proj.remove_environment("dev").is_err());
+        proj.remove_environment("dev").expect("remove last env");
+        assert!(proj.environments.is_empty());
     }
 }

@@ -1,4 +1,7 @@
 /target
 /dist
+/setup.exe
 .shiply_state.json
+shiply_state.json
 *.tmp
+*.old

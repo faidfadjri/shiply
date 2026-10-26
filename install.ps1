@@ -1,4 +1,4 @@
-# Builds Shiply in release mode, places shiply.exe in ./dist/shiply.exe,
+# Builds Shiply in release mode, places both setup.exe and shiply.exe in ./dist/ (and ./setup.exe),
 # and installs or updates Shiply in %LOCALAPPDATA%\Programs\Shiply\shiply.exe
 # along with Desktop and Start Menu shortcuts.
 
@@ -14,16 +14,31 @@ if ($LASTEXITCODE -ne 0) {
     throw "Cargo release build failed (exit code $LASTEXITCODE)."
 }
 
-Write-Host "[2/3] Copying standalone installer/executable to ./dist/shiply.exe..." -ForegroundColor Cyan
+Write-Host "[2/3] Generating setup.exe and standalone shiply.exe in ./dist/..." -ForegroundColor Cyan
 New-Item -ItemType Directory -Force -Path "./dist" | Out-Null
-Copy-Item -Path "./target/release/shiply.exe" -Destination "./dist/shiply.exe" -Force
 
-Write-Host "[3/3] Running self-installer (./dist/shiply.exe --install)..." -ForegroundColor Cyan
-& "./dist/shiply.exe" --install
+foreach ($target in @("./dist/shiply.exe", "./dist/setup.exe", "./setup.exe")) {
+    $old = "$target.old"
+    if (Test-Path $old) {
+        Remove-Item -Path $old -Force -ErrorAction SilentlyContinue
+    }
+    if (Test-Path $target) {
+        Move-Item -Path $target -Destination $old -Force -ErrorAction SilentlyContinue
+    }
+    Copy-Item -Path "./target/release/shiply.exe" -Destination $target -Force
+    if (Test-Path $old) {
+        Remove-Item -Path $old -Force -ErrorAction SilentlyContinue
+    }
+}
+
+Write-Host "[3/3] Running self-installer (./target/release/shiply.exe --install)..." -ForegroundColor Cyan
+& "./target/release/shiply.exe" --install
 if ($LASTEXITCODE -ne 0) {
     throw "Installation failed (exit code $LASTEXITCODE)."
 }
 
 Write-Host "Successfully built and installed/updated Shiply!" -ForegroundColor Green
-Write-Host "  Standalone .exe: $(Resolve-Path './dist/shiply.exe')" -ForegroundColor Gray
-Write-Host "  Installed path:  $env:LOCALAPPDATA\Programs\Shiply\shiply.exe" -ForegroundColor Gray
+Write-Host "  Desktop Installer: $(Resolve-Path './setup.exe')" -ForegroundColor Gray
+Write-Host "  Dist Installer:    $(Resolve-Path './dist/setup.exe')" -ForegroundColor Gray
+Write-Host "  Standalone .exe:   $(Resolve-Path './dist/shiply.exe')" -ForegroundColor Gray
+Write-Host "  Installed path:    $env:LOCALAPPDATA\Programs\Shiply\shiply.exe" -ForegroundColor Gray
