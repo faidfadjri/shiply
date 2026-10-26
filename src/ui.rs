@@ -16,7 +16,7 @@ use crate::updater::{
 };
 use crate::version::{
     bump_semver, checkout_git_branch, configure_background_command, list_git_branches,
-    read_git_metadata, read_package_json_version, GitMetadata, VersionBump,
+    read_git_code_changes, read_git_metadata, read_package_json_version, GitMetadata, VersionBump,
 };
 use eframe::egui::{
     self, Align, Align2, Color32, CornerRadius, FontData, FontDefinitions, FontFamily, FontId,
@@ -159,6 +159,7 @@ pub struct ShiplyApp {
     cached_git_meta: GitMetadata,
     cached_git_branches: Vec<String>,
     cached_vault_found: bool,
+    cached_git_changes: Vec<String>,
 
     // Background execution channel
     event_tx: Sender<ExecutorEvent>,
@@ -270,6 +271,7 @@ impl ShiplyApp {
             cached_git_meta: GitMetadata::default(),
             cached_git_branches: Vec::new(),
             cached_vault_found: false,
+            cached_git_changes: Vec::new(),
             event_tx,
             event_rx,
             active_deployment_id: None,
@@ -401,6 +403,29 @@ impl ShiplyApp {
             self.cached_vault_found = false;
         }
 
+        // Fetch live code changes for the active project from Git
+        let last_deploy_commit = self
+            .storage
+            .last_succeeded_deployment(proj_id, &self.selected_env_key)
+            .and_then(|d| d.git_commit.clone());
+        self.cached_git_changes = read_git_code_changes(&path, last_deploy_commit.as_deref());
+
+        // Ensure selected_deployment_id belongs strictly to this active project
+        let belongs_to_current_project = self
+            .selected_deployment_id
+            .as_ref()
+            .and_then(|id| self.storage.deployments.iter().find(|d| &d.id == id))
+            .is_some_and(|d| &d.project_id == proj_id);
+
+        if !belongs_to_current_project {
+            self.selected_deployment_id = self
+                .storage
+                .deployments
+                .iter()
+                .find(|d| &d.project_id == proj_id)
+                .map(|d| d.id.clone());
+        }
+
         if update_version_input {
             self.deploy_version_input = self.storage.next_auto_bumped_version(
                 proj_id,
@@ -416,7 +441,13 @@ impl ShiplyApp {
             received = true;
             match event {
                 ExecutorEvent::Updated(record) => {
-                    self.selected_deployment_id = Some(record.id.clone());
+                    let is_current = match &self.selection {
+                        SidebarSelection::Project(pid) => pid == &record.project_id,
+                        SidebarSelection::AllDeployments => true,
+                    };
+                    if is_current {
+                        self.selected_deployment_id = Some(record.id.clone());
+                    }
                     self.storage.upsert_deployment(record);
                 }
                 ExecutorEvent::Finished(record) => {
@@ -434,7 +465,13 @@ impl ShiplyApp {
                         record.status.label()
                     );
                     self.status_banner = Some((msg.clone(), ok));
-                    self.selected_deployment_id = Some(record.id.clone());
+                    let is_current = match &self.selection {
+                        SidebarSelection::Project(pid) => pid == &record.project_id,
+                        SidebarSelection::AllDeployments => true,
+                    };
+                    if is_current {
+                        self.selected_deployment_id = Some(record.id.clone());
+                    }
                     self.active_deployment_id = None;
                     self.storage.upsert_deployment(record);
                     self.refresh_selected_project_metadata(true);
@@ -6429,67 +6466,124 @@ impl ShiplyApp {
         let selected_dep = self
             .selected_deployment_id
             .as_ref()
-            .and_then(|id| self.storage.deployments.iter().find(|d| &d.id == id))
+            .and_then(|id| filtered.iter().find(|d| &d.id == id))
             .or_else(|| filtered.first())
             .cloned();
 
-        if let Some(dep) = selected_dep {
-            // Feature #10: Collapsible CODE CHANGES (GIT COMMITS) Panel
+        if let Some(dep) = &selected_dep {
+            if self.selected_deployment_id.as_ref() != Some(&dep.id) {
+                self.selected_deployment_id = Some(dep.id.clone());
+            }
+        }
+
+        // Code changes to display:
+        // Strictly show code changes of the active project.
+        // If a deployment of the active project is selected and has recorded git_changes, show them.
+        // Otherwise, if viewing a project workspace, fall back to the active project's current git branch commits (cached_git_changes).
+        let active_project_name = project_filter.and_then(|pid| {
+            self.storage
+                .projects
+                .iter()
+                .find(|p| p.id == pid)
+                .map(|p| p.name.clone())
+        });
+
+        let code_changes_data: Option<(String, Vec<String>)> = if let Some(dep) = &selected_dep {
             if !dep.git_changes.is_empty() {
-                egui::Frame::new()
-                    .fill(CARD_BG)
-                    .stroke(Stroke::new(1.0_f32, CARD_BORDER))
-                    .corner_radius(10.0)
-                    .inner_margin(Margin::symmetric(18, 12))
-                    .show(ui, |ui| {
-                        horizontal_row(ui, 26.0, |ui| {
-                            let (chev_r, chev_resp) =
-                                ui.allocate_exact_size(Vec2::new(18.0, 18.0), Sense::click());
-                            draw_icon_chevron(
-                                ui.painter(),
-                                chev_r.center(),
-                                !self.changes_collapsed,
-                                TEXT_PRIMARY,
-                            );
-                            draw_icon_git_branch(
-                                ui.painter(),
-                                Pos2::new(chev_r.right() + 10.0, chev_r.center().y),
-                                PRIMARY_BLUE,
-                            );
-                            ui.add_space(18.0);
-                            let hdr_btn = egui::Button::new(
-                                RichText::new(format!(
-                                    "CODE CHANGES IN v{} ({} entry/entries)",
-                                    dep.version,
-                                    dep.git_changes.len()
-                                ))
+                Some((
+                    format!(
+                        "CODE CHANGES — {} v{} ({} entry/entries)",
+                        dep.project_name,
+                        dep.version,
+                        dep.git_changes.len()
+                    ),
+                    dep.git_changes.clone(),
+                ))
+            } else if let Some(pname) = &active_project_name {
+                if !self.cached_git_changes.is_empty() {
+                    Some((
+                        format!(
+                            "CODE CHANGES — {} (Current Branch - {} entry/entries)",
+                            pname,
+                            self.cached_git_changes.len()
+                        ),
+                        self.cached_git_changes.clone(),
+                    ))
+                } else {
+                    None
+                }
+            } else {
+                None
+            }
+        } else if let Some(pname) = &active_project_name {
+            if !self.cached_git_changes.is_empty() {
+                Some((
+                    format!(
+                        "CODE CHANGES — {} (Current Branch - {} entry/entries)",
+                        pname,
+                        self.cached_git_changes.len()
+                    ),
+                    self.cached_git_changes.clone(),
+                ))
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+
+        if let Some((hdr_title, changes_lines)) = code_changes_data {
+            egui::Frame::new()
+                .fill(CARD_BG)
+                .stroke(Stroke::new(1.0_f32, CARD_BORDER))
+                .corner_radius(10.0)
+                .inner_margin(Margin::symmetric(18, 12))
+                .show(ui, |ui| {
+                    horizontal_row(ui, 26.0, |ui| {
+                        let (chev_r, chev_resp) =
+                            ui.allocate_exact_size(Vec2::new(18.0, 18.0), Sense::click());
+                        draw_icon_chevron(
+                            ui.painter(),
+                            chev_r.center(),
+                            !self.changes_collapsed,
+                            TEXT_PRIMARY,
+                        );
+                        draw_icon_git_branch(
+                            ui.painter(),
+                            Pos2::new(chev_r.right() + 10.0, chev_r.center().y),
+                            PRIMARY_BLUE,
+                        );
+                        ui.add_space(18.0);
+                        let hdr_btn = egui::Button::new(
+                            RichText::new(&hdr_title)
                                 .size(FONT_SM)
                                 .strong()
                                 .color(TEXT_PRIMARY),
-                            )
-                            .fill(Color32::TRANSPARENT)
-                            .stroke(Stroke::NONE);
-                            if chev_resp.clicked() || ui.add(hdr_btn).clicked() {
-                                self.changes_collapsed = !self.changes_collapsed;
-                            }
-                        });
-
-                        if !self.changes_collapsed {
-                            ui.add_space(6.0);
-                            draw_divider(ui, SUBTLE_BG);
-                            ui.add_space(6.0);
-                            for change_line in &dep.git_changes {
-                                ui.label(
-                                    RichText::new(format!("• {change_line}"))
-                                        .size(FONT_SM)
-                                        .color(TEXT_SECONDARY),
-                                );
-                            }
+                        )
+                        .fill(Color32::TRANSPARENT)
+                        .stroke(Stroke::NONE);
+                        if chev_resp.clicked() || ui.add(hdr_btn).clicked() {
+                            self.changes_collapsed = !self.changes_collapsed;
                         }
                     });
-                ui.add_space(14.0);
-            }
 
+                    if !self.changes_collapsed {
+                        ui.add_space(6.0);
+                        draw_divider(ui, SUBTLE_BG);
+                        ui.add_space(6.0);
+                        for change_line in &changes_lines {
+                            ui.label(
+                                RichText::new(format!("• {change_line}"))
+                                    .size(FONT_SM)
+                                    .color(TEXT_SECONDARY),
+                            );
+                        }
+                    }
+                });
+            ui.add_space(14.0);
+        }
+
+        if let Some(dep) = selected_dep {
             // Collapsible CONSOLE OUTPUT Section (Fixed 32px header row)
             horizontal_row(ui, 32.0, |ui| {
                 let (chev_r, chev_resp) =
@@ -7994,5 +8088,111 @@ mod tests {
                 assert!(w_r > 50.0);
             });
         });
+    }
+
+    #[test]
+    fn test_active_project_code_changes_isolation() {
+        let mut storage = AppStorage::default();
+        let env_be = EnvironmentConfig {
+            key: "dev".to_string(),
+            name: "Development".to_string(),
+            app_name: "backend-dev".to_string(),
+            servers: vec!["10.0.0.1".to_string()],
+            remote_user: "deploy".to_string(),
+            vault_target: "backend_dev".to_string(),
+            remote_dir: "/apps/backend".to_string(),
+            env_source: None,
+            http_proxy: None,
+            steps: Vec::new(),
+        };
+        let proj_backend = Project {
+            id: "proj-backend".to_string(),
+            name: "Backend Service".to_string(),
+            description: "Backend API".to_string(),
+            local_path: ".".to_string(),
+            environments: vec![env_be],
+        };
+
+        let env_fe = EnvironmentConfig {
+            key: "dev".to_string(),
+            name: "Development".to_string(),
+            app_name: "frontend-dev".to_string(),
+            servers: vec!["10.0.0.2".to_string()],
+            remote_user: "deploy".to_string(),
+            vault_target: "frontend_dev".to_string(),
+            remote_dir: "/apps/frontend".to_string(),
+            env_source: None,
+            http_proxy: None,
+            steps: Vec::new(),
+        };
+        let proj_frontend = Project {
+            id: "proj-frontend".to_string(),
+            name: "Frontend App".to_string(),
+            description: "Web frontend".to_string(),
+            local_path: ".".to_string(),
+            environments: vec![env_fe],
+        };
+
+        storage.projects = vec![proj_backend, proj_frontend];
+
+        let dep_backend = DeploymentRecord {
+            id: "dep-be-1".to_string(),
+            project_id: "proj-backend".to_string(),
+            project_name: "Backend Service".to_string(),
+            environment: "dev".to_string(),
+            app_name: "backend-dev".to_string(),
+            version: "1.0.1".to_string(),
+            git_branch: Some("main".to_string()),
+            git_commit: Some("be11111".to_string()),
+            git_changes: vec!["feat(api): add auth endpoint".to_string()],
+            is_rollback: false,
+            servers: vec!["10.0.0.1".to_string()],
+            status: DeploymentStatus::Succeeded,
+            started_at: chrono::Utc::now(),
+            finished_at: Some(chrono::Utc::now()),
+            duration_ms: Some(1500),
+            step_logs: Vec::new(),
+            executed_steps: Vec::new(),
+        };
+
+        let dep_frontend = DeploymentRecord {
+            id: "dep-fe-1".to_string(),
+            project_id: "proj-frontend".to_string(),
+            project_name: "Frontend App".to_string(),
+            environment: "dev".to_string(),
+            app_name: "frontend-dev".to_string(),
+            version: "2.0.0".to_string(),
+            git_branch: Some("main".to_string()),
+            git_commit: Some("fe22222".to_string()),
+            git_changes: vec!["feat(ui): redesign dashboard".to_string()],
+            is_rollback: false,
+            servers: vec!["10.0.0.2".to_string()],
+            status: DeploymentStatus::Succeeded,
+            started_at: chrono::Utc::now(),
+            finished_at: Some(chrono::Utc::now()),
+            duration_ms: Some(2000),
+            step_logs: Vec::new(),
+            executed_steps: Vec::new(),
+        };
+
+        storage.deployments = vec![dep_backend.clone(), dep_frontend.clone()];
+
+        let mut app = ShiplyApp::new(storage);
+        // Switch to Backend project and set an invalid foreign selected deployment ID
+        app.selection = SidebarSelection::Project("proj-backend".to_string());
+        app.selected_deployment_id = Some("dep-fe-1".to_string());
+
+        // When refreshing metadata for Backend, selected_deployment_id must be corrected to Backend
+        app.refresh_selected_project_metadata(false);
+        assert_eq!(app.selected_deployment_id.as_deref(), Some("dep-be-1"));
+
+        // When filtering deployments for Backend, frontend deployments are excluded
+        let filtered = app.storage.filter_deployments(Some("proj-backend"), None, None);
+        assert_eq!(filtered.len(), 1);
+        assert_eq!(filtered[0].project_id, "proj-backend");
+        assert_eq!(
+            filtered[0].git_changes,
+            vec!["feat(api): add auth endpoint".to_string()]
+        );
     }
 }
