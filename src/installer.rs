@@ -150,7 +150,69 @@ pub fn install_binary_to_dir(
     fs::write(&version_file, version.trim())
         .map_err(|e| format!("Failed to write version metadata: {e}"))?;
 
+    let ico_bytes = build_shiply_ico_bytes();
+    let _ = fs::write(install_dir.join("logo.ico"), &ico_bytes);
+    let _ = fs::write(install_dir.join("shiply.ico"), &ico_bytes);
+
     Ok(target_exe)
+}
+
+/// Raw bytes of the official `logo.ico` file embedded at compile time.
+pub const EMBEDDED_LOGO_ICO: &[u8] = include_bytes!("../logo.ico");
+
+/// Decodes the embedded `logo.ico` into `egui::IconData` for the window/taskbar icon and UI logo.
+pub fn build_shiply_icon_data() -> egui::IconData {
+    let ico = EMBEDDED_LOGO_ICO;
+    let width = if ico[6] == 0 { 256u32 } else { ico[6] as u32 };
+    let height = if ico[7] == 0 { 256u32 } else { ico[7] as u32 };
+    let img_offset = u32::from_le_bytes([ico[18], ico[19], ico[20], ico[21]]) as usize;
+    let bmp_hdr_size = u32::from_le_bytes([
+        ico[img_offset],
+        ico[img_offset + 1],
+        ico[img_offset + 2],
+        ico[img_offset + 3],
+    ]) as usize;
+    let pixels_start = img_offset + bmp_hdr_size;
+
+    let mut rgba = vec![0u8; (width * height * 4) as usize];
+    for y in 0..height {
+        let bmp_y = height - 1 - y;
+        for x in 0..width {
+            let src = pixels_start + ((bmp_y * width + x) * 4) as usize;
+            let dst = ((y * width + x) * 4) as usize;
+            if src + 3 < ico.len() {
+                let b = ico[src];
+                let g = ico[src + 1];
+                let r = ico[src + 2];
+                let a = ico[src + 3];
+                rgba[dst] = r;
+                rgba[dst + 1] = g;
+                rgba[dst + 2] = b;
+                rgba[dst + 3] = a;
+            }
+        }
+    }
+
+    egui::IconData {
+        rgba,
+        width,
+        height,
+    }
+}
+
+/// Loads `logo.ico` as an `egui::TextureHandle` for rendering the official Shiply logo inside the UI.
+pub fn load_shiply_logo_texture(ctx: &egui::Context) -> egui::TextureHandle {
+    let icon = build_shiply_icon_data();
+    let image = egui::ColorImage::from_rgba_unmultiplied(
+        [icon.width as usize, icon.height as usize],
+        &icon.rgba,
+    );
+    ctx.load_texture("shiply_logo_ico", image, egui::TextureOptions::LINEAR)
+}
+
+/// Returns the embedded `logo.ico` bytes for writing to the installation folder and shortcuts.
+pub fn build_shiply_ico_bytes() -> Vec<u8> {
+    EMBEDDED_LOGO_ICO.to_vec()
 }
 
 /// Installs or updates the current running `shiply.exe` into the user's system install directory
@@ -199,6 +261,10 @@ fn create_windows_shortcuts(
 ) -> Result<(), String> {
     let target_str = target_exe.to_string_lossy().replace('\'', "''");
     let work_str = working_dir.to_string_lossy().replace('\'', "''");
+    let ico_str = working_dir
+        .join("logo.ico")
+        .to_string_lossy()
+        .replace('\'', "''");
 
     let mut path_exprs = Vec::new();
     if start_menu {
@@ -218,6 +284,7 @@ fn create_windows_shortcuts(
              $s = $ws.CreateShortcut($p); \
              $s.TargetPath = '{target_str}'; \
              $s.WorkingDirectory = '{work_str}'; \
+             $s.IconLocation = '{ico_str}'; \
              $s.Description = 'Shiply - Mini Deployment Platform'; \
              $s.Save(); \
          }}",
@@ -232,6 +299,7 @@ fn create_windows_shortcuts(
 }
 
 /// Native Graphical Desktop Setup Wizard (`setup.exe`)
+#[derive(Default)]
 pub struct SetupWizardApp {
     install_dir_input: String,
     create_desktop_shortcut: bool,
@@ -239,23 +307,35 @@ pub struct SetupWizardApp {
     launch_after_install: bool,
     status_message: Option<(String, bool)>,
     installed_successfully: bool,
-}
-
-impl Default for SetupWizardApp {
-    fn default() -> Self {
-        Self {
-            install_dir_input: default_install_dir().to_string_lossy().to_string(),
-            create_desktop_shortcut: true,
-            create_start_menu_shortcut: true,
-            launch_after_install: true,
-            status_message: None,
-            installed_successfully: false,
-        }
-    }
+    logo_texture: Option<egui::TextureHandle>,
+    initialized: bool,
+    window_centered: bool,
 }
 
 impl eframe::App for SetupWizardApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        if !self.initialized {
+            self.install_dir_input = default_install_dir().to_string_lossy().to_string();
+            self.create_desktop_shortcut = true;
+            self.create_start_menu_shortcut = true;
+            self.launch_after_install = true;
+            self.logo_texture = Some(load_shiply_logo_texture(ctx));
+            self.initialized = true;
+        }
+        if !self.window_centered {
+            if let Some(monitor_size) = ctx.input(|i| i.viewport().monitor_size) {
+                let win_size = ctx
+                    .input(|i| i.viewport().outer_rect.map(|r| r.size()))
+                    .unwrap_or(Vec2::new(520.0, 390.0));
+                let centered_pos = Pos2::new(
+                    ((monitor_size.x - win_size.x) * 0.5).max(0.0),
+                    ((monitor_size.y - win_size.y) * 0.5).max(0.0),
+                );
+                ctx.send_viewport_cmd(egui::ViewportCommand::OuterPosition(centered_pos));
+                self.window_centered = true;
+            }
+        }
+
         let mut visuals = egui::Visuals::light();
         visuals.panel_fill = Color32::from_rgb(241, 245, 249);
         visuals.extreme_bg_color = Color32::from_rgb(241, 245, 249);
@@ -267,18 +347,25 @@ impl eframe::App for SetupWizardApp {
             .frame(
                 egui::Frame::new()
                     .fill(Color32::from_rgb(241, 245, 249))
-                    .inner_margin(Margin::symmetric(24, 22)),
+                    .inner_margin(Margin::ZERO),
             )
+            .show(ctx, |_ui| {});
+
+        // Center the Setup card horizontally & vertically inside the viewport
+        egui::Area::new(egui::Id::new("setup_wizard_centered_card"))
+            .order(egui::Order::Foreground)
+            .anchor(Align2::CENTER_CENTER, Vec2::ZERO)
             .show(ctx, |ui| {
+                let card_w = (ctx.screen_rect().width() - 48.0).clamp(420.0, 472.0);
                 egui::Frame::new()
                     .fill(Color32::WHITE)
                     .stroke(Stroke::new(1.0_f32, Color32::from_rgb(203, 213, 225)))
                     .corner_radius(12.0)
                     .inner_margin(Margin::symmetric(24, 22))
                     .show(ui, |ui| {
-                        ui.set_width(ui.available_width());
+                        ui.set_width(card_w - 48.0);
 
-                        // Header with Logo
+                        // Header with Logo from logo.ico
                         let avail_w = ui.available_width();
                         let (hdr_rect, _) =
                             ui.allocate_exact_size(Vec2::new(avail_w, 38.0), Sense::hover());
@@ -289,15 +376,16 @@ impl eframe::App for SetupWizardApp {
                         ui.painter().rect_filled(
                             logo_rect,
                             CornerRadius::same(7),
-                            Color32::from_rgb(37, 99, 235),
+                            Color32::from_rgb(241, 245, 249),
                         );
-                        ui.painter().text(
-                            logo_rect.center(),
-                            Align2::CENTER_CENTER,
-                            "S",
-                            FontId::proportional(17.0),
-                            Color32::WHITE,
-                        );
+                        if let Some(tex) = &self.logo_texture {
+                            ui.painter().image(
+                                tex.id(),
+                                logo_rect.shrink(2.0),
+                                Rect::from_min_max(Pos2::ZERO, Pos2::new(1.0, 1.0)),
+                                Color32::WHITE,
+                            );
+                        }
                         ui.painter().text(
                             Pos2::new(logo_rect.right() + 12.0, hdr_rect.center().y - 7.0),
                             Align2::LEFT_CENTER,
@@ -536,5 +624,20 @@ mod tests {
                 version: "0.2.0".to_string(),
             }
         );
+        assert!(install_dir.join("logo.ico").exists());
+        assert!(install_dir.join("shiply.ico").exists());
+    }
+
+    #[test]
+    fn test_build_shiply_s_icon_data_and_ico() {
+        let icon = build_shiply_icon_data();
+        assert_eq!(icon.width, 32);
+        assert_eq!(icon.height, 32);
+        assert_eq!(icon.rgba.len(), 32 * 32 * 4);
+
+        let ico = build_shiply_ico_bytes();
+        // Valid ICO header: 00 00 01 00 01 00
+        assert_eq!(&ico[0..6], &[0, 0, 1, 0, 1, 0]);
+        assert_eq!(ico.len(), EMBEDDED_LOGO_ICO.len());
     }
 }

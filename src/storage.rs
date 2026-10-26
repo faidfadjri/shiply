@@ -1,5 +1,6 @@
 use crate::domain::{DeploymentRecord, DeploymentStatus, Project};
 use crate::ps1_importer::import_project_from_path;
+use crate::version::{bump_semver, VersionBump};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::env;
@@ -342,6 +343,63 @@ impl AppStorage {
             })
             .collect()
     }
+
+    /// Returns the environment filter tabs `(display_name, Some(env_key))` representing
+    /// the existing environments for either a specific project or across all projects.
+    pub fn existing_environment_tabs(
+        &self,
+        project_filter: Option<&str>,
+    ) -> Vec<(String, Option<String>)> {
+        let mut tabs = vec![("All Environments".to_string(), None)];
+        if let Some(pid) = project_filter {
+            if let Some(proj) = self.projects.iter().find(|p| p.id == pid) {
+                for env in &proj.environments {
+                    if !tabs.iter().any(|(_, k)| k.as_deref() == Some(env.key.as_str())) {
+                        tabs.push((env.name.clone(), Some(env.key.clone())));
+                    }
+                }
+            }
+        } else {
+            for proj in &self.projects {
+                for env in &proj.environments {
+                    if !tabs.iter().any(|(_, k)| k.as_deref() == Some(env.key.as_str())) {
+                        tabs.push((env.name.clone(), Some(env.key.clone())));
+                    }
+                }
+            }
+        }
+        tabs
+    }
+
+    /// Computes the next auto-bumped version for the Version input field based on the
+    /// latest deployment history for `(project_id, env_key)` (or any environment in `project_id`),
+    /// falling back to `package.json` or `"1.0.0"` if no deployment history exists yet.
+    pub fn next_auto_bumped_version(
+        &self,
+        project_id: &str,
+        env_key: &str,
+        fallback_pkg_version: Option<&str>,
+    ) -> String {
+        if let Some(dep) = self
+            .latest_deployment(project_id, env_key)
+            .or_else(|| self.last_succeeded_deployment(project_id, env_key))
+        {
+            return bump_semver(&dep.version, VersionBump::Patch);
+        }
+
+        if let Some(dep) = self.deployments.iter().find(|d| d.project_id == project_id) {
+            return bump_semver(&dep.version, VersionBump::Patch);
+        }
+
+        if let Some(pkg_ver) = fallback_pkg_version {
+            let trimmed = pkg_ver.trim();
+            if !trimmed.is_empty() && trimmed != "0.0.0" {
+                return trimmed.to_string();
+            }
+        }
+
+        "1.0.0".to_string()
+    }
 }
 
 fn file_mtime(path: &Path) -> Option<SystemTime> {
@@ -455,5 +513,54 @@ mod tests {
         assert!(notice.is_some());
         assert_eq!(storage.projects.len(), 1);
         assert_eq!(storage.projects[0].id, "ndm-dq-subscription");
+    }
+
+    #[test]
+    fn test_existing_environment_tabs_and_auto_bumped_version() {
+        let mut storage = AppStorage::default();
+        let mut proj = Project {
+            id: "web-api".to_string(),
+            name: "web-api".to_string(),
+            description: "API Service".to_string(),
+            local_path: r"C:\Projects\web-api".to_string(),
+            environments: Vec::new(),
+        };
+        proj.add_environment("Development", None).unwrap();
+        proj.add_environment("QA", None).unwrap();
+        storage.projects.push(proj);
+
+        // Tabs on All Deployments page (project_filter = None) reflect actual existing environments
+        let all_tabs = storage.existing_environment_tabs(None);
+        assert_eq!(
+            all_tabs,
+            vec![
+                ("All Environments".to_string(), None),
+                ("Development".to_string(), Some("development".to_string())),
+                ("QA".to_string(), Some("qa".to_string())),
+            ]
+        );
+
+        // Without history, falls back to package.json or 1.0.0
+        assert_eq!(
+            storage.next_auto_bumped_version("web-api", "development", Some("1.4.0")),
+            "1.4.0"
+        );
+        assert_eq!(
+            storage.next_auto_bumped_version("web-api", "development", None),
+            "1.0.0"
+        );
+
+        // With deployment history, auto-bumps the latest deployment version
+        storage.upsert_deployment(dummy_record(
+            "d1",
+            "web-api",
+            "development",
+            "1.4.2",
+            DeploymentStatus::Succeeded,
+        ));
+        assert_eq!(
+            storage.next_auto_bumped_version("web-api", "development", Some("1.4.2")),
+            "1.4.3"
+        );
     }
 }

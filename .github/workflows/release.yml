@@ -1,0 +1,166 @@
+name: Release Shiply Desktop Binaries
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release version tag (e.g. v0.4.0)"
+        required: true
+        default: "v0.4.0"
+
+permissions:
+  contents: write
+
+jobs:
+  build-windows:
+    name: Build Windows (x86_64)
+    runs-on: windows-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust stable toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Cargo build artifacts
+        uses: Swatinem/rust-cache@v2
+
+      - name: Run Clippy & Unit Tests
+        run: |
+          cargo clippy --all-targets -- -D warnings
+          cargo test
+
+      - name: Build Release Binaries
+        run: |
+          cargo build --release
+          Copy-Item target/release/shiply.exe shiply.exe -Force
+          Copy-Item target/release/shiply.exe setup.exe -Force
+          Copy-Item target/release/shiply.exe shiply-windows-x86_64.exe -Force
+
+      - name: Upload Windows Release Assets
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-binaries
+          path: |
+            shiply.exe
+            setup.exe
+            shiply-windows-x86_64.exe
+
+  build-linux:
+    name: Build Linux (x86_64)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install system GUI dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev libxkbcommon-dev libssl-dev libgtk-3-dev
+
+      - name: Install Rust stable toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Cargo build artifacts
+        uses: Swatinem/rust-cache@v2
+
+      - name: Build Release Binary
+        run: |
+          cargo build --release
+          cp target/release/shiply shiply-linux-x86_64
+          chmod +x shiply-linux-x86_64
+
+      - name: Upload Linux Release Asset
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-binaries
+          path: shiply-linux-x86_64
+
+  build-macos:
+    name: Build macOS (Universal / Apple Silicon)
+    runs-on: macos-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust stable toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Cargo build artifacts
+        uses: Swatinem/rust-cache@v2
+
+      - name: Build Release Binary
+        run: |
+          cargo build --release
+          cp target/release/shiply shiply-macos-aarch64
+          chmod +x shiply-macos-aarch64
+
+      - name: Upload macOS Release Asset
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-binaries
+          path: shiply-macos-aarch64
+
+  publish-release:
+    name: Publish GitHub Release
+    needs: [build-windows, build-linux, build-macos]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Prepare Release Assets & Updater Metadata (latest.json)
+        run: |
+          mkdir -p release_assets
+          cp artifacts/windows-binaries/* release_assets/
+          cp artifacts/linux-binaries/* release_assets/
+          cp artifacts/macos-binaries/* release_assets/
+
+          TAG="${GITHUB_REF_NAME}"
+          VERSION="${TAG#v}"
+          PUB_DATE="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
+          REPO="${GITHUB_REPOSITORY}"
+
+          cat > release_assets/latest.json <<EOF
+          {
+            "version": "${VERSION}",
+            "tag_name": "${TAG}",
+            "pub_date": "${PUB_DATE}",
+            "notes": "Shiply ${TAG} automated multi-platform release.",
+            "platforms": {
+              "windows-x86_64": {
+                "url": "https://github.com/${REPO}/releases/download/${TAG}/shiply.exe"
+              },
+              "linux-x86_64": {
+                "url": "https://github.com/${REPO}/releases/download/${TAG}/shiply-linux-x86_64"
+              },
+              "darwin-aarch64": {
+                "url": "https://github.com/${REPO}/releases/download/${TAG}/shiply-macos-aarch64"
+              }
+            }
+          }
+          EOF
+
+      - name: Create & Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: "Shiply ${{ github.ref_name }}"
+          generate_release_notes: true
+          draft: false
+          prerelease: false
+          files: |
+            release_assets/shiply.exe
+            release_assets/setup.exe
+            release_assets/shiply-windows-x86_64.exe
+            release_assets/shiply-linux-x86_64
+            release_assets/shiply-macos-aarch64
+            release_assets/latest.json

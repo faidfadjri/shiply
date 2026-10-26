@@ -1,6 +1,6 @@
 [package]
 name = "shiply"
-version = "0.3.0"
+version = "0.4.0"
 edition = "2021"
 description = "Cross-platform Mini Deployment Platform in Rust"
 

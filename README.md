@@ -27,34 +27,46 @@
 
 ---
 
-## 🚀 Installation
+## 🚀 Installation (`Windows/`, `Linux/`, `Mac/`)
 
-### Option 1: Windows Standalone Installer (`setup.exe`)
-1. Download **`setup.exe`** from the [GitHub Releases](https://github.com/faidfadjri/shiply/releases) page (or from `./dist/setup.exe`).
+Each platform directory in the repository root contains ready-to-use installer files:
+
+| Platform | Directory | Installer Files |
+| :--- | :--- | :--- |
+| **Windows** | `./Windows/` | `Windows/setup.exe`, `Windows/shiply.exe`, `Windows/install-windows.ps1` |
+| **Linux** | `./Linux/` | `Linux/install-linux.sh` |
+| **macOS** | `./Mac/` | `Mac/install-mac.command`, `Mac/install-mac.sh` |
+
+### Option 1: Windows Standalone Installer (`Windows/setup.exe`)
+1. Open `./Windows/setup.exe` (or download **`setup.exe`** from [GitHub Releases](https://github.com/faidfadjri/shiply/releases)).
 2. Double-click **`setup.exe`** to open the **Shiply Setup Wizard**:
-   - Installs Shiply to `%LOCALAPPDATA%\Programs\Shiply\shiply.exe`.
+   - Installs Shiply to `%LOCALAPPDATA%\Programs\Shiply\shiply.exe` with `logo.ico`.
    - Creates **Desktop** and **Start Menu** shortcuts.
    - **Auto-Update**: Running a newer `setup.exe` automatically upgrades the existing installation in-place while preserving your `shiply_state.json` projects and deployment history.
    - Supports headless/silent installation via CLI:
      ```powershell
-     .\setup.exe --install
+     .\Windows\setup.exe --install
      ```
 
-### Option 2: Build & Install via PowerShell (`install.ps1`)
+### Option 2: Linux & macOS Installers (`Linux/` & `Mac/`)
+- **Linux**:
+  ```bash
+  bash ./Linux/install-linux.sh
+  ```
+  Installs the binary to `~/.local/bin/shiply` and registers `~/.local/share/applications/shiply.desktop`.
+- **macOS**:
+  Double-click `./Mac/install-mac.command` in Finder or run:
+  ```bash
+  bash ./Mac/install-mac.sh
+  ```
+  Creates `/Applications/Shiply.app` (or `~/Applications/Shiply.app`).
+
+### Option 3: Build & Install via PowerShell (`install.ps1`)
 From the repository root on Windows:
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File .\install.ps1
 ```
-This compiles the optimized release binaries, generates `./dist/setup.exe` and `./dist/shiply.exe`, and installs Shiply to your system.
-
-### Option 3: Build from Source (Windows / macOS / Linux)
-Prerequisites: [Rust toolchain](https://rustup.rs/) (`1.80+`) and `OpenSSH` (`ssh` / `scp`) + `git`.
-
-```bash
-git clone https://github.com/faidfadjri/shiply.git
-cd shiply
-cargo build --release
-```
+This compiles the optimized release binaries, populates `./Windows/setup.exe`, `./Windows/shiply.exe`, `./dist/setup.exe`, and installs Shiply to your system.
 
 ---
 
@@ -91,10 +103,11 @@ You can use the following placeholders inside any **Local Command**, **Verify Pa
 - You can back up or share **`shiply_state.json`**, or paste project `.json` / `deploy-*.ps1` files directly into the folder — Shiply automatically detects and imports them.
 
 ### 6. Configuring SSH Credentials
-Shiply supports three authentication methods (checked in order):
+Shiply includes an interactive **How to Setup OS Credentials** guide directly inside the **Environment & SSH Settings** tab, supporting three authentication methods (checked in order):
 1. **Manual Password Override**: Enter a password in the **Environment & SSH Settings** tab for one-off deployments.
-2. **OS Native Credential Vault**: Store a generic credential in your OS vault matching the environment's **OS Credential Vault Target** (e.g., `indyserver`):
-   - **Windows**: *Control Panel $\rightarrow$ Credential Manager $\rightarrow$ Windows Credentials $\rightarrow$ Generic Credentials*
+2. **OS Native Credential Vault**: Store a generic credential in your OS vault matching the environment's **OS Credential Vault Target** (e.g., `prod-ssh-server`):
+   - **Windows (GUI)**: Click **Open Windows Credential Manager** inside Shiply (or *Control Panel $\rightarrow$ Credential Manager $\rightarrow$ Windows Credentials $\rightarrow$ Generic Credentials*).
+   - **Windows (CLI)**: `cmdkey /generic:"<vault_target>" /user:"<username>" /pass:"YOUR_SSH_PASSWORD"`
    - **macOS**: `security add-generic-password -s "<vault_target>" -a "<username>" -w "<password>"`
    - **Linux**: `secret-tool store --label="Shiply" service "<vault_target>" username "<username>"`
 3. **SSH Keys**: If no password is required, Shiply uses standard key-based OpenSSH authentication (`BatchMode=yes`).

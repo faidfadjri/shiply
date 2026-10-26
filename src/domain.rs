@@ -194,11 +194,13 @@ impl Project {
             .cloned();
 
         let new_env = if let Some(tpl) = template {
-            let remote_dir = if tpl.remote_dir.ends_with(&tpl.app_name) {
+            let remote_dir = if !tpl.remote_dir.is_empty() && tpl.remote_dir.ends_with(&tpl.app_name) {
                 let prefix = &tpl.remote_dir[..tpl.remote_dir.len() - tpl.app_name.len()];
                 format!("{prefix}{new_app_name}")
-            } else {
+            } else if !tpl.remote_user.is_empty() {
                 format!("/home/{}/apps/{new_app_name}", tpl.remote_user)
+            } else {
+                String::new()
             };
 
             let env_source = tpl.env_source.as_ref().map(|_| format!("./.env.{key}"));
@@ -227,11 +229,11 @@ impl Project {
             EnvironmentConfig {
                 key: key.clone(),
                 name: trimmed_name.to_string(),
-                app_name: new_app_name.clone(),
-                servers: vec!["10.62.70.79".to_string()],
-                remote_user: "appndq".to_string(),
-                vault_target: "indyserver".to_string(),
-                remote_dir: format!("/home/appndq/apps/{new_app_name}"),
+                app_name: new_app_name,
+                servers: Vec::new(),
+                remote_user: String::new(),
+                vault_target: String::new(),
+                remote_dir: String::new(),
                 env_source: None,
                 http_proxy: None,
                 steps: vec![PipelineStep::new(

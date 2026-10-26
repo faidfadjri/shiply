@@ -3,12 +3,13 @@
 use eframe::egui;
 use shiply::credentials::try_handle_askpass_invocation;
 use shiply::installer::{
-    check_install_state, default_install_dir, install_or_update_self, is_setup_mode, InstallState,
-    SetupWizardApp, APP_VERSION,
+    build_shiply_icon_data, check_install_state, default_install_dir, install_or_update_self,
+    is_setup_mode, InstallState, SetupWizardApp, APP_VERSION,
 };
 use shiply::storage::AppStorage;
 use shiply::ui::ShiplyApp;
 use std::env;
+use std::sync::Arc;
 
 fn main() -> eframe::Result<()> {
     // 1. If invoked by OpenSSH (ssh/scp) as SSH_ASKPASS helper, output the secret and exit immediately.
@@ -34,11 +35,15 @@ fn main() -> eframe::Result<()> {
         }
     }
 
+    let app_icon = Arc::new(build_shiply_icon_data());
+
     // 3. If launched as `setup.exe` (or `--setup`), open the graphical Desktop Setup Wizard!
     if is_setup_mode(&args) {
         let setup_options = eframe::NativeOptions {
+            centered: true,
             viewport: egui::ViewportBuilder::default()
                 .with_title(format!("Shiply v{APP_VERSION} Setup"))
+                .with_icon(app_icon)
                 .with_inner_size([520.0, 390.0])
                 .with_min_inner_size([500.0, 370.0])
                 .with_resizable(false),
@@ -70,8 +75,10 @@ fn main() -> eframe::Result<()> {
     let storage = AppStorage::load_or_default(storage_path);
 
     let native_options = eframe::NativeOptions {
+        centered: true,
         viewport: egui::ViewportBuilder::default()
             .with_title(format!("Shiply v{APP_VERSION} — Mini Deployment Platform"))
+            .with_icon(app_icon)
             .with_inner_size([1340.0, 840.0])
             .with_min_inner_size([980.0, 640.0]),
         ..Default::default()

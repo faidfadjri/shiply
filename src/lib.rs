@@ -6,4 +6,5 @@ pub mod presets;
 pub mod ps1_importer;
 pub mod storage;
 pub mod ui;
+pub mod updater;
 pub mod version;
