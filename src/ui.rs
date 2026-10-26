@@ -3561,6 +3561,18 @@ impl ShiplyApp {
                 .inner_margin(Margin::symmetric(16, 10))
                 .show(ui, |ui| {
                     horizontal_row(ui, 30.0, |ui| {
+                        ui.ctx().request_repaint();
+                        let time = ui.input(|i| i.time);
+                        let (sp_rect, _) =
+                            ui.allocate_exact_size(Vec2::new(14.0, 14.0), Sense::hover());
+                        draw_circle_loading_spinner(
+                            ui.painter(),
+                            sp_rect.center(),
+                            5.0,
+                            BLUE_PILL_TEXT,
+                            time,
+                        );
+                        ui.add_space(4.0);
                         ui.label(
                             RichText::new(format!(
                                 "BULK DEPLOYMENT IN PROGRESS — Running {current_idx} of {total} ({remaining} queued)"
@@ -3688,19 +3700,37 @@ impl ShiplyApp {
                 let py = rect.top() + 78.0;
                 for env in &project.environments {
                     let badge = env.badge_label();
-                    let (bg, fg) = env_pastel_pill_colors(&env.key);
-                    let ver_label = self
-                        .storage
-                        .last_succeeded_deployment(&project.id, &env.key)
-                        .map(|d| format!("{badge}: v{}", d.version))
-                        .unwrap_or_else(|| format!("{badge}: —"));
-                    let w = paint_pill_left_aligned(
-                        ui.painter(),
-                        Pos2::new(px, py),
-                        &ver_label,
-                        bg,
-                        fg,
-                    );
+                    let is_env_running = self.storage.deployments.iter().any(|d| {
+                        d.project_id == project.id
+                            && d.environment == env.key
+                            && d.status == DeploymentStatus::Running
+                    });
+                    let w = if is_env_running {
+                        ui.ctx().request_repaint();
+                        let time = ui.input(|i| i.time);
+                        paint_running_pill_left_aligned(
+                            ui.painter(),
+                            Pos2::new(px, py),
+                            &format!("{badge}: RUNNING"),
+                            WARN_PILL_BG,
+                            WARN_PILL_TEXT,
+                            time,
+                        )
+                    } else {
+                        let (bg, fg) = env_pastel_pill_colors(&env.key);
+                        let ver_label = self
+                            .storage
+                            .last_succeeded_deployment(&project.id, &env.key)
+                            .map(|d| format!("{badge}: v{}", d.version))
+                            .unwrap_or_else(|| format!("{badge}: —"));
+                        paint_pill_left_aligned(
+                            ui.painter(),
+                            Pos2::new(px, py),
+                            &ver_label,
+                            bg,
+                            fg,
+                        )
+                    };
                     px += w + 6.0;
                 }
                 if chk_resp
@@ -4752,13 +4782,26 @@ impl ShiplyApp {
                 // Top-right (left of delete button): Status pill or "NOT DEPLOYED"
                 if let Some(latest) = latest_any {
                     let (s_bg, s_fg) = status_pill_colors(latest.status);
-                    paint_pill_right_aligned(
-                        ui.painter(),
-                        Pos2::new(del_rect.left() - 6.0, card_rect.top() + 24.0),
-                        &latest.status.label().to_uppercase(),
-                        s_bg,
-                        s_fg,
-                    );
+                    if latest.status == DeploymentStatus::Running {
+                        ui.ctx().request_repaint();
+                        let time = ui.input(|i| i.time);
+                        paint_running_pill_right_aligned(
+                            ui.painter(),
+                            Pos2::new(del_rect.left() - 6.0, card_rect.top() + 24.0),
+                            &latest.status.label().to_uppercase(),
+                            s_bg,
+                            s_fg,
+                            time,
+                        );
+                    } else {
+                        paint_pill_right_aligned(
+                            ui.painter(),
+                            Pos2::new(del_rect.left() - 6.0, card_rect.top() + 24.0),
+                            &latest.status.label().to_uppercase(),
+                            s_bg,
+                            s_fg,
+                        );
+                    }
                 } else {
                     ui.painter().text(
                         Pos2::new(del_rect.left() - 8.0, card_rect.top() + 24.0),
@@ -6175,13 +6218,26 @@ impl ShiplyApp {
                         let (s_rect, _) =
                             ui.allocate_exact_size(Vec2::new(110.0, row_h), Sense::hover());
                         let (s_bg, s_fg) = status_pill_colors(dep.status);
-                        paint_pill_left_aligned(
-                            ui.painter(),
-                            Pos2::new(s_rect.left(), s_rect.center().y),
-                            &dep.status.label().to_uppercase(),
-                            s_bg,
-                            s_fg,
-                        );
+                        if dep.status == DeploymentStatus::Running {
+                            ui.ctx().request_repaint();
+                            let time = ui.input(|i| i.time);
+                            paint_running_pill_left_aligned(
+                                ui.painter(),
+                                Pos2::new(s_rect.left(), s_rect.center().y),
+                                &dep.status.label().to_uppercase(),
+                                s_bg,
+                                s_fg,
+                                time,
+                            );
+                        } else {
+                            paint_pill_left_aligned(
+                                ui.painter(),
+                                Pos2::new(s_rect.left(), s_rect.center().y),
+                                &dep.status.label().to_uppercase(),
+                                s_bg,
+                                s_fg,
+                            );
+                        }
 
                         // ENV column
                         let (e_rect, _) =
@@ -6598,6 +6654,16 @@ impl ShiplyApp {
                                     ui.allocate_exact_size(Vec2::new(14.0, 14.0), Sense::hover());
                                 if step_log.status == DeploymentStatus::Succeeded {
                                     draw_icon_check(ui.painter(), ic_r.center(), color);
+                                } else if step_log.status == DeploymentStatus::Running {
+                                    ui.ctx().request_repaint();
+                                    let time = ui.input(|i| i.time);
+                                    draw_circle_loading_spinner(
+                                        ui.painter(),
+                                        ic_r.center(),
+                                        4.8,
+                                        color,
+                                        time,
+                                    );
                                 } else {
                                     ui.painter().circle_filled(ic_r.center(), 4.5, color);
                                 }
@@ -7330,9 +7396,156 @@ fn status_pill_colors(status: DeploymentStatus) -> (Color32, Color32) {
     }
 }
 
+/// Draws an animated circular loading spinner with a faint 360-degree background ring
+/// and an energetic rotating foreground arc.
+fn draw_circle_loading_spinner(
+    painter: &egui::Painter,
+    center: Pos2,
+    radius: f32,
+    color: Color32,
+    time: f64,
+) {
+    let stroke_w = (radius * 0.32).clamp(1.2, 2.0);
+    // 1. Faint circular track underneath
+    let track_color = color.gamma_multiply(0.25);
+    painter.circle_stroke(center, radius, Stroke::new(stroke_w, track_color));
+
+    // 2. Energetic spinning foreground arc (~270 degrees)
+    let speed = 5.2; // ~0.83 turns per second
+    let start_angle = (time * speed) as f32;
+    let sweep_angle = std::f32::consts::PI * 1.5;
+    let segments = 24;
+    let step = sweep_angle / segments as f32;
+
+    for i in 0..segments {
+        let a1 = start_angle + i as f32 * step;
+        let a2 = start_angle + (i + 1) as f32 * step;
+        let p1 = Pos2::new(center.x + radius * a1.cos(), center.y + radius * a1.sin());
+        let p2 = Pos2::new(center.x + radius * a2.cos(), center.y + radius * a2.sin());
+        painter.line_segment([p1, p2], Stroke::new(stroke_w, color));
+    }
+}
+
+/// Paints a status badge pill left-aligned with an animated circular loading spinner
+/// on the left side of the label text.
+fn paint_running_pill_left_aligned(
+    painter: &egui::Painter,
+    left_center: Pos2,
+    text: &str,
+    bg: Color32,
+    fg: Color32,
+    time: f64,
+) -> f32 {
+    let galley = painter.layout_no_wrap(text.to_string(), FontId::proportional(FONT_XS), fg);
+    let spinner_r = 4.2;
+    let spinner_w = spinner_r * 2.0;
+    let gap = 6.0;
+    let pad_x = 8.0;
+    let w = pad_x + spinner_w + gap + galley.size().x + pad_x;
+    let h = 22.0;
+    let rect = Rect::from_min_size(
+        Pos2::new(left_center.x, left_center.y - h / 2.0),
+        Vec2::new(w, h),
+    );
+
+    painter.rect_filled(rect, CornerRadius::same(5), bg);
+    painter.rect_stroke(
+        rect,
+        CornerRadius::same(5),
+        Stroke::new(1.0_f32, fg.gamma_multiply(0.28)),
+        StrokeKind::Inside,
+    );
+
+    let spinner_c = Pos2::new(rect.left() + pad_x + spinner_r, rect.center().y);
+    draw_circle_loading_spinner(painter, spinner_c, spinner_r, fg, time);
+
+    let text_pos = Pos2::new(
+        spinner_c.x + spinner_r + gap,
+        rect.center().y - galley.size().y / 2.0,
+    );
+    painter.galley(text_pos, galley, fg);
+
+    w
+}
+
+/// Paints a status badge pill right-aligned with an animated circular loading spinner
+/// on the left side of the label text.
+fn paint_running_pill_right_aligned(
+    painter: &egui::Painter,
+    right_center: Pos2,
+    text: &str,
+    bg: Color32,
+    fg: Color32,
+    time: f64,
+) -> f32 {
+    let galley = painter.layout_no_wrap(text.to_string(), FontId::proportional(FONT_XS), fg);
+    let spinner_r = 4.2;
+    let spinner_w = spinner_r * 2.0;
+    let gap = 6.0;
+    let pad_x = 8.0;
+    let w = pad_x + spinner_w + gap + galley.size().x + pad_x;
+    let h = 22.0;
+    let rect = Rect::from_min_size(
+        Pos2::new(right_center.x - w, right_center.y - h / 2.0),
+        Vec2::new(w, h),
+    );
+
+    painter.rect_filled(rect, CornerRadius::same(5), bg);
+    painter.rect_stroke(
+        rect,
+        CornerRadius::same(5),
+        Stroke::new(1.0_f32, fg.gamma_multiply(0.28)),
+        StrokeKind::Inside,
+    );
+
+    let spinner_c = Pos2::new(rect.left() + pad_x + spinner_r, rect.center().y);
+    draw_circle_loading_spinner(painter, spinner_c, spinner_r, fg, time);
+
+    let text_pos = Pos2::new(
+        spinner_c.x + spinner_r + gap,
+        rect.center().y - galley.size().y / 2.0,
+    );
+    painter.galley(text_pos, galley, fg);
+
+    w
+}
+
 fn render_light_status_badge(ui: &mut egui::Ui, status: DeploymentStatus) {
     let (bg, fg) = status_pill_colors(status);
-    render_pill(ui, &status.label().to_uppercase(), bg, fg);
+    let text = status.label().to_uppercase();
+    if status == DeploymentStatus::Running {
+        ui.ctx().request_repaint();
+        let time = ui.input(|i| i.time);
+        let spinner_r = 4.2;
+        let spinner_w = spinner_r * 2.0;
+        let gap = 6.0;
+        let pad_x = 8.0;
+        let galley = ui
+            .painter()
+            .layout_no_wrap(text, FontId::proportional(FONT_XS), fg);
+        let pill_w = pad_x + spinner_w + gap + galley.size().x + pad_x;
+        let pill_h = 22.0;
+        let (rect, _) = ui.allocate_exact_size(Vec2::new(pill_w, pill_h), Sense::hover());
+        ui.painter().rect_filled(rect, CornerRadius::same(5), bg);
+        ui.painter().rect_stroke(
+            rect,
+            CornerRadius::same(5),
+            Stroke::new(1.0_f32, fg.gamma_multiply(0.28)),
+            StrokeKind::Inside,
+        );
+        let spinner_c = Pos2::new(rect.left() + pad_x + spinner_r, rect.center().y);
+        draw_circle_loading_spinner(ui.painter(), spinner_c, spinner_r, fg, time);
+        ui.painter().galley(
+            Pos2::new(
+                spinner_c.x + spinner_r + gap,
+                rect.center().y - galley.size().y / 2.0,
+            ),
+            galley,
+            fg,
+        );
+    } else {
+        render_pill(ui, &text, bg, fg);
+    }
 }
 
 fn env_pastel_pill_colors(env_key: &str) -> (Color32, Color32) {
@@ -7738,5 +7951,48 @@ mod tests {
         assert!(has_flag_amber);
         assert!(has_path_teal);
         assert!(has_operator_crimson);
+    }
+
+    #[test]
+    fn test_running_badge_pill_colors_and_layout() {
+        let (bg, fg) = status_pill_colors(DeploymentStatus::Running);
+        assert_eq!(bg, WARN_PILL_BG);
+        assert_eq!(fg, WARN_PILL_TEXT);
+
+        // Verify circle loading spinner angle progression
+        let speed = 5.2_f64;
+        let t0 = 0.0_f64;
+        let t1 = 1.0_f64;
+        let a0 = (t0 * speed) as f32;
+        let a1 = (t1 * speed) as f32;
+        assert!((a1 - a0 - 5.2_f32).abs() < 1e-4);
+
+        // Test painter execution with egui Context
+        let ctx = egui::Context::default();
+        let _ = ctx.run(Default::default(), |ctx| {
+            egui::CentralPanel::default().show(ctx, |ui| {
+                let left_center = Pos2::new(100.0, 50.0);
+                let w = paint_running_pill_left_aligned(
+                    ui.painter(),
+                    left_center,
+                    "RUNNING",
+                    bg,
+                    fg,
+                    1.23,
+                );
+                assert!(w > 50.0);
+
+                let right_center = Pos2::new(200.0, 50.0);
+                let w_r = paint_running_pill_right_aligned(
+                    ui.painter(),
+                    right_center,
+                    "RUNNING",
+                    bg,
+                    fg,
+                    1.23,
+                );
+                assert!(w_r > 50.0);
+            });
+        });
     }
 }
