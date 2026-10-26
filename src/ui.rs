@@ -119,6 +119,20 @@ enum CredentialOsTab {
     Mac,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum ConfirmDeleteAction {
+    Project {
+        project_id: String,
+        project_name: String,
+    },
+    Environment {
+        project_id: String,
+        project_name: String,
+        env_key: String,
+        env_name: String,
+    },
+}
+
 pub struct ShiplyApp {
     storage: AppStorage,
     selection: SidebarSelection,
@@ -207,9 +221,11 @@ pub struct ShiplyApp {
     // Throttled external file sync timer (Requirement #8 & #9)
     last_sync_check: Instant,
 
-    // Status banner
+    // Status banner & Window/Sidebar state
     status_banner: Option<(String, bool)>,
     sidebar_collapsed: bool,
+    window_maximized: bool,
+    pending_delete_confirm: Option<ConfirmDeleteAction>,
     fonts_initialized: bool,
     logo_texture: Option<egui::TextureHandle>,
 }
@@ -307,6 +323,8 @@ impl ShiplyApp {
             last_sync_check: Instant::now(),
             status_banner: None,
             sidebar_collapsed: false,
+            window_maximized: false,
+            pending_delete_confirm: None,
             fonts_initialized: false,
             logo_texture: None,
         };
@@ -939,15 +957,22 @@ impl eframe::App for ShiplyApp {
         self.poll_executor_events(ctx);
         Self::configure_light_workspace_style(ctx);
 
+        if let Some(m) = ctx.input(|i| i.viewport().maximized) {
+            self.window_maximized = m;
+        }
+
         self.render_termius_topbar(ctx);
-        if !self.sidebar_collapsed {
-            self.render_sidebar(ctx);
+        let sidebar_anim_t =
+            ctx.animate_bool(egui::Id::new("sidebar_smooth_anim"), !self.sidebar_collapsed);
+        if sidebar_anim_t > 0.001 {
+            self.render_sidebar(ctx, sidebar_anim_t);
         }
         self.render_new_project_modal(ctx);
         self.render_edit_project_modal(ctx);
         self.render_new_environment_modal(ctx);
         self.render_bulk_deploy_modal(ctx);
         self.render_github_update_modal(ctx);
+        self.render_delete_confirmation_modal(ctx);
         self.render_window_resize_handles(ctx);
 
         egui::CentralPanel::default()
@@ -1049,11 +1074,11 @@ impl ShiplyApp {
     fn render_termius_topbar(&mut self, ctx: &egui::Context) {
         let topbar_bg = Color32::from_rgb(13, 17, 30); // #0d111e (Termius deep midnight bar)
         let pill_bg = Color32::from_rgb(31, 38, 55); // #1f2637 (Termius pill fill)
-        let pill_hover_bg = Color32::from_rgb(41, 50, 72);
-        let inner_badge_bg = Color32::from_rgb(46, 56, 78);
         let icon_muted = Color32::from_rgb(148, 163, 184);
 
-        let is_maximized = ctx.input(|i| i.viewport().maximized.unwrap_or(false));
+        if let Some(maximized) = ctx.input(|i| i.viewport().maximized) {
+            self.window_maximized = maximized;
+        }
 
         egui::TopBottomPanel::top("shiply_termius_topbar")
             .exact_height(42.0)
@@ -1096,290 +1121,28 @@ impl ShiplyApp {
                 if menu_resp.on_hover_text("Toggle Sidebar").clicked() {
                     self.sidebar_collapsed = !self.sidebar_collapsed;
                 }
-                x = menu_rect.right() + 8.0;
+                x = menu_rect.right() + 10.0;
 
-                // 2. Termius-style Split Pill: [ Vaults ☁ | ⌄ ]
-                let vaults_left_w = 96.0;
-                let vaults_right_w = 26.0;
-                let vaults_left_rect = Rect::from_min_size(
-                    Pos2::new(x, cy - pill_h * 0.5),
-                    Vec2::new(vaults_left_w, pill_h),
-                );
-                let vaults_right_rect = Rect::from_min_size(
-                    Pos2::new(vaults_left_rect.right() + 1.0, cy - pill_h * 0.5),
-                    Vec2::new(vaults_right_w, pill_h),
-                );
-                let v_left_resp = ui.interact(
-                    vaults_left_rect,
-                    egui::Id::new("topbar_vaults_left"),
-                    Sense::click(),
-                );
-                let v_right_resp = ui.interact(
-                    vaults_right_rect,
-                    egui::Id::new("topbar_vaults_right"),
-                    Sense::click(),
-                );
-
-                ui.painter().rect_filled(
-                    vaults_left_rect,
-                    CornerRadius {
-                        nw: 7,
-                        sw: 7,
-                        ne: 0,
-                        se: 0,
-                    },
-                    if v_left_resp.hovered() {
-                        pill_hover_bg
-                    } else {
-                        pill_bg
-                    },
-                );
-                ui.painter().rect_filled(
-                    vaults_right_rect,
-                    CornerRadius {
-                        nw: 0,
-                        sw: 0,
-                        ne: 7,
-                        se: 7,
-                    },
-                    if v_right_resp.hovered() {
-                        pill_hover_bg
-                    } else {
-                        pill_bg
-                    },
-                );
-
-                // Safe / Vault icon on the left of "Vaults"
-                let safe_rect = Rect::from_center_size(
-                    Pos2::new(vaults_left_rect.left() + 15.0, cy),
-                    Vec2::new(13.0, 12.0),
-                );
-                ui.painter()
-                    .rect_filled(safe_rect, CornerRadius::same(3), Color32::WHITE);
-                ui.painter().circle_stroke(
-                    safe_rect.center(),
-                    2.6,
-                    Stroke::new(1.3_f32, pill_bg),
-                );
-                ui.painter().text(
-                    Pos2::new(safe_rect.right() + 7.0, cy),
-                    Align2::LEFT_CENTER,
-                    "Vaults",
-                    FontId::proportional(FONT_MD),
-                    Color32::WHITE,
-                );
-                // Subtle cloud/status icon inside Vaults pill
-                let cloud_c = Pos2::new(vaults_left_rect.right() - 14.0, cy + 0.5);
-                ui.painter().circle_stroke(
-                    cloud_c,
-                    4.2,
-                    Stroke::new(1.2_f32, Color32::from_rgb(100, 116, 139)),
-                );
-
-                // Downward chevron inside right split segment
-                draw_icon_chevron(ui.painter(), vaults_right_rect.center(), true, Color32::WHITE);
-
-                if v_left_resp
-                    .on_hover_text("Open All Deployments & OS Credentials Vault Setup")
-                    .clicked()
-                {
-                    self.selection = SidebarSelection::AllDeployments;
-                    self.show_credential_guide = true;
-                }
-                if v_right_resp
-                    .on_hover_text("Toggle Quick-Start & OS Credentials Guides")
-                    .clicked()
-                {
-                    self.selection = SidebarSelection::AllDeployments;
-                    self.show_credential_guide = !self.show_credential_guide;
-                }
-                x = vaults_right_rect.right() + 8.0;
-
-                // 3. Termius-style SFTP / Files Pill: [ 📁 SFTP ]
-                let sftp_w = 74.0;
-                let sftp_rect = Rect::from_min_size(
-                    Pos2::new(x, cy - pill_h * 0.5),
-                    Vec2::new(sftp_w, pill_h),
-                );
-                let sftp_resp = ui.interact(
-                    sftp_rect,
-                    egui::Id::new("topbar_sftp_pill"),
-                    Sense::click(),
-                );
-                ui.painter().rect_filled(
-                    sftp_rect,
-                    CornerRadius::same(7),
-                    if sftp_resp.hovered() {
-                        pill_hover_bg
-                    } else {
-                        pill_bg
-                    },
-                );
-                // Filled white folder icon matching Termius SFTP icon
-                let fld_c = Pos2::new(sftp_rect.left() + 16.0, cy + 1.0);
-                let fld_body = Rect::from_center_size(fld_c, Vec2::new(12.0, 8.0));
-                let fld_tab = Rect::from_min_size(
-                    Pos2::new(fld_body.left(), fld_body.top() - 2.0),
-                    Vec2::new(5.5, 3.0),
-                );
-                ui.painter()
-                    .rect_filled(fld_body, CornerRadius::same(1), Color32::WHITE);
-                ui.painter()
-                    .rect_filled(fld_tab, CornerRadius::same(1), Color32::WHITE);
-                ui.painter().text(
-                    Pos2::new(fld_body.right() + 7.0, cy),
-                    Align2::LEFT_CENTER,
-                    "SFTP",
-                    FontId::proportional(FONT_MD),
-                    Color32::WHITE,
-                );
-                if sftp_resp
-                    .on_hover_text("Open Shiply App Directory (JSON state & .ps1 scripts)")
-                    .clicked()
-                {
-                    let dir = self.storage.app_data_dir();
-                    let _ = fs::create_dir_all(&dir);
-                    open_directory_in_os(&dir);
-                }
-                x = sftp_rect.right() + 10.0;
-
-                // 4. Subtle Vertical Separator (|)
-                ui.painter().line_segment(
-                    [Pos2::new(x, cy - 8.0), Pos2::new(x, cy + 8.0)],
-                    Stroke::new(1.0_f32, Color32::from_rgb(38, 47, 69)),
-                );
-                x += 10.0;
-
-                // 5. Termius-style Active Workspace Tab Pill: [ ⊞• Workspace    ↻ ]
-                let ws_w = 186.0;
-                let ws_rect = Rect::from_min_size(
-                    Pos2::new(x, cy - pill_h * 0.5),
-                    Vec2::new(ws_w, pill_h),
-                );
-                let refresh_box_rect = Rect::from_center_size(
-                    Pos2::new(ws_rect.right() - 15.0, cy),
-                    Vec2::new(20.0, 20.0),
-                );
-                let refresh_resp = ui.interact(
-                    refresh_box_rect,
-                    egui::Id::new("topbar_ws_refresh_btn"),
-                    Sense::click(),
-                );
-                let ws_resp = ui.interact(
-                    ws_rect,
-                    egui::Id::new("topbar_workspace_pill"),
-                    Sense::click(),
-                );
-
-                ui.painter().rect_filled(
-                    ws_rect,
-                    CornerRadius::same(7),
-                    if ws_resp.hovered() && !refresh_resp.hovered() {
-                        pill_hover_bg
-                    } else {
-                        pill_bg
-                    },
-                );
-
-                // Left 2x2 grid badge + coral notification dot
-                let grid_badge_rect = Rect::from_center_size(
-                    Pos2::new(ws_rect.left() + 15.0, cy),
-                    Vec2::new(20.0, 20.0),
-                );
-                ui.painter().rect_filled(
-                    grid_badge_rect,
-                    CornerRadius::same(5),
-                    inner_badge_bg,
-                );
-                let gc = grid_badge_rect.center();
-                for (dx, dy) in [(-2.6_f32, -2.6_f32), (2.6, -2.6), (-2.6, 2.6), (2.6, 2.6)] {
-                    ui.painter().rect_filled(
-                        Rect::from_center_size(Pos2::new(gc.x + dx, gc.y + dy), Vec2::new(3.5, 3.5)),
-                        CornerRadius::same(1),
-                        Color32::WHITE,
-                    );
-                }
-                // Coral-red status dot on top-right corner of grid badge (matching Termius screenshot)
-                ui.painter().circle_filled(
-                    Pos2::new(grid_badge_rect.right() - 1.5, grid_badge_rect.top() + 1.5),
-                    3.2,
-                    Color32::from_rgb(248, 113, 113),
-                );
-
-                ui.painter().text(
-                    Pos2::new(grid_badge_rect.right() + 8.0, cy),
-                    Align2::LEFT_CENTER,
-                    "Workspace",
-                    FontId::proportional(FONT_MD),
-                    Color32::WHITE,
-                );
-
-                // Inline refresh button box on the right of the Workspace pill
-                ui.painter().rect_filled(
-                    refresh_box_rect,
-                    CornerRadius::same(5),
-                    if refresh_resp.hovered() {
-                        Color32::from_rgb(59, 72, 100)
-                    } else {
-                        inner_badge_bg
-                    },
-                );
-                draw_icon_refresh(
+                // Shiply Brand title in topbar
+                let logo_rect =
+                    Rect::from_center_size(Pos2::new(x + 10.0, cy), Vec2::new(20.0, 20.0));
+                draw_shiply_logo(
                     ui.painter(),
-                    refresh_box_rect.center(),
-                    if refresh_resp.hovered() {
-                        Color32::WHITE
-                    } else {
-                        icon_muted
-                    },
+                    logo_rect,
+                    5,
+                    FONT_SM,
+                    self.logo_texture.as_ref(),
                 );
+                x = logo_rect.right() + 8.0;
 
-                if refresh_resp
-                    .on_hover_text("Sync app directory & refresh active workspace metadata")
-                    .clicked()
-                {
-                    self.storage.reset_sync_cache();
-                    let _ = self.storage.sync_from_app_directory();
-                    self.refresh_selected_project_metadata(true);
-                } else if ws_resp.on_hover_text("Switch to Workspace Overview").clicked() {
-                    if let Some(first) = self.storage.projects.first() {
-                        self.selection = SidebarSelection::Project(first.id.clone());
-                    } else {
-                        self.selection = SidebarSelection::AllDeployments;
-                    }
-                }
-                x = ws_rect.right() + 8.0;
-
-                // 6. Plus (+) Button right next to Workspace pill
-                let plus_rect =
-                    Rect::from_center_size(Pos2::new(x + 14.0, cy), Vec2::new(28.0, pill_h));
-                let plus_resp = ui.interact(
-                    plus_rect,
-                    egui::Id::new("topbar_plus_add_proj_btn"),
-                    Sense::click(),
+                ui.painter().text(
+                    Pos2::new(x, cy),
+                    Align2::LEFT_CENTER,
+                    format!("Shiply v{APP_VERSION}"),
+                    FontId::proportional(FONT_MD),
+                    Color32::from_rgb(226, 232, 240),
                 );
-                if plus_resp.hovered() {
-                    ui.painter()
-                        .rect_filled(plus_rect, CornerRadius::same(6), pill_bg);
-                }
-                let pc = plus_rect.center();
-                let plus_fg = if plus_resp.hovered() {
-                    Color32::WHITE
-                } else {
-                    icon_muted
-                };
-                ui.painter().line_segment(
-                    [Pos2::new(pc.x - 5.5, pc.y), Pos2::new(pc.x + 5.5, pc.y)],
-                    Stroke::new(1.4_f32, plus_fg),
-                );
-                ui.painter().line_segment(
-                    [Pos2::new(pc.x, pc.y - 5.5), Pos2::new(pc.x, pc.y + 5.5)],
-                    Stroke::new(1.4_f32, plus_fg),
-                );
-                if plus_resp.on_hover_text("Add New Project").clicked() {
-                    self.show_new_project_modal = true;
-                }
-                let left_controls_end = plus_rect.right() + 8.0;
+                let left_controls_end = x + 100.0;
 
                 // =========================================================================
                 // Right-Side Window Actions (Bell, Minimize ─, Maximize/Restore ❐, Close ×)
@@ -1418,12 +1181,13 @@ impl ShiplyApp {
                     Sense::click_and_drag(),
                 );
                 if drag_resp.double_clicked() {
-                    ctx.send_viewport_cmd(egui::ViewportCommand::Maximized(!is_maximized));
+                    self.window_maximized = !self.window_maximized;
+                    ctx.send_viewport_cmd(egui::ViewportCommand::Maximized(self.window_maximized));
                 } else if drag_resp.drag_started_by(egui::PointerButton::Primary) {
                     ctx.send_viewport_cmd(egui::ViewportCommand::StartDrag);
                 }
 
-                // A. Notification Bell Button (🔔) — triggers/opens GitHub Update Popup
+                // A. Notification Bell Button (🔔) — acts as Update Information
                 let bell_resp = ui.interact(
                     bell_rect,
                     egui::Id::new("topbar_bell_update_btn"),
@@ -1442,23 +1206,23 @@ impl ShiplyApp {
                 };
                 draw_icon_bell(ui.painter(), bell_rect.center(), bell_fg);
                 if self.available_update.is_some() {
+                    // Yellow circle dot on top right of notification icon
                     ui.painter().circle_filled(
                         Pos2::new(bell_rect.center().x + 4.5, bell_rect.center().y - 4.5),
-                        3.0,
-                        Color32::from_rgb(248, 113, 113),
+                        3.2,
+                        Color32::from_rgb(250, 204, 21),
                     );
                 }
                 if bell_resp
                     .on_hover_text(if let Some(rel) = &self.available_update {
-                        format!("Update Available: {} (Click to view)", rel.tag_name)
+                        format!("Update Available: {} (Click to view details)", rel.tag_name)
                     } else {
-                        "Notifications & Check for Updates (GitHub)".to_string()
+                        "Update Information & Check for Updates (GitHub)".to_string()
                     })
                     .clicked()
                 {
-                    if self.available_update.is_some() {
-                        self.show_update_modal = true;
-                    } else if !self.update_checking {
+                    self.show_update_modal = true;
+                    if self.available_update.is_none() && !self.update_checking {
                         spawn_update_check(self.updater_tx.clone(), true);
                     }
                 }
@@ -1487,7 +1251,7 @@ impl ShiplyApp {
                     ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(true));
                 }
 
-                // C. Maximize / Restore Button (❐ — Termius double overlapping rounded squares)
+                // C. Maximize / Restore Button (Single box □ when normal, double overlapping squares ❐ when maximized)
                 let max_resp = ui.interact(
                     max_rect,
                     egui::Id::new("topbar_window_maximize_btn"),
@@ -1502,12 +1266,22 @@ impl ShiplyApp {
                 } else {
                     icon_muted
                 };
-                draw_icon_termius_restore_maximize(ui.painter(), max_rect.center(), max_fg);
+                draw_window_max_restore_icon(
+                    ui.painter(),
+                    max_rect.center(),
+                    self.window_maximized,
+                    max_fg,
+                );
                 if max_resp
-                    .on_hover_text(if is_maximized { "Restore" } else { "Maximize" })
+                    .on_hover_text(if self.window_maximized {
+                        "Restore Down"
+                    } else {
+                        "Maximize"
+                    })
                     .clicked()
                 {
-                    ctx.send_viewport_cmd(egui::ViewportCommand::Maximized(!is_maximized));
+                    self.window_maximized = !self.window_maximized;
+                    ctx.send_viewport_cmd(egui::ViewportCommand::Maximized(self.window_maximized));
                 }
 
                 // D. Close Button (×)
@@ -1640,17 +1414,22 @@ impl ShiplyApp {
             });
     }
 
-    fn render_sidebar(&mut self, ctx: &egui::Context) {
+    fn render_sidebar(&mut self, ctx: &egui::Context, anim_t: f32) {
+        let width = 248.0 * anim_t;
+        let pad_x = ((16.0 * anim_t).round() as i8).max(0);
         egui::SidePanel::left("shiply_sidebar")
             .resizable(false)
-            .exact_width(248.0)
+            .exact_width(width)
             .frame(
                 egui::Frame::new()
                     .fill(SIDEBAR_BG)
-                    .inner_margin(Margin::symmetric(16, 18))
+                    .inner_margin(Margin::symmetric(pad_x, 18))
                     .stroke(Stroke::new(1.0_f32, SIDEBAR_DIVIDER)),
             )
             .show(ctx, |ui| {
+                if anim_t < 0.25 {
+                    return;
+                }
                 ui.visuals_mut().override_text_color = Some(Color32::from_rgb(241, 245, 249));
                 let full_w = ui.available_width();
 
@@ -3030,10 +2809,6 @@ impl ShiplyApp {
         if !self.show_update_modal {
             return;
         }
-        let Some(release) = self.available_update.clone() else {
-            self.show_update_modal = false;
-            return;
-        };
 
         egui::Area::new(egui::Id::new("modal_backdrop_github_update"))
             .order(egui::Order::Middle)
@@ -3046,17 +2821,446 @@ impl ShiplyApp {
                 );
             });
 
-        egui::Window::new("Software Update Available")
+        if let Some(release) = self.available_update.clone() {
+            egui::Window::new("Software Update Available")
+                .order(egui::Order::Foreground)
+                .title_bar(false)
+                .collapsible(false)
+                .resizable(false)
+                .anchor(Align2::CENTER_CENTER, Vec2::ZERO)
+                .fixed_size(Vec2::new(560.0, 0.0))
+                .frame(
+                    egui::Frame::new()
+                        .fill(CARD_BG)
+                        .stroke(Stroke::new(1.0_f32, CARD_BORDER))
+                        .corner_radius(12.0)
+                        .shadow(Shadow {
+                            offset: [0, 8],
+                            blur: 24,
+                            spread: 0,
+                            color: Color32::from_black_alpha(45),
+                        })
+                        .inner_margin(Margin {
+                            left: 24,
+                            right: 24,
+                            top: 18,
+                            bottom: 22,
+                        }),
+                )
+                .show(ctx, |ui| {
+                    ui.set_width(512.0);
+                    if render_modal_header(
+                        ui,
+                        "close_github_update_modal",
+                        "Software Update Available",
+                        &format!(
+                            "A newer release of Shiply is available on GitHub Releases ({GITHUB_REPO})."
+                        ),
+                    ) && !self.update_downloading
+                    {
+                        self.show_update_modal = false;
+                    }
+
+                    ui.add_space(12.0);
+
+                    // Version Comparison Card (Current Version vs. New Version Tag)
+                    egui::Frame::new()
+                        .fill(SUBTLE_BG)
+                        .stroke(Stroke::new(1.0_f32, Color32::from_rgb(191, 219, 254)))
+                        .corner_radius(8.0)
+                        .inner_margin(Margin::symmetric(14, 12))
+                        .show(ui, |ui| {
+                            ui.set_width(ui.available_width());
+                            horizontal_row(ui, 26.0, |ui| {
+                                ui.label(
+                                    RichText::new("Current Version:")
+                                        .size(FONT_SM)
+                                        .strong()
+                                        .color(TEXT_SECONDARY),
+                                );
+                                render_pill(
+                                    ui,
+                                    &format!("v{APP_VERSION}"),
+                                    PILL_CONTAINER_BG,
+                                    TEXT_SECONDARY,
+                                );
+                                ui.label(
+                                    RichText::new("→")
+                                        .size(FONT_LG)
+                                        .strong()
+                                        .color(PRIMARY_BLUE),
+                                );
+                                ui.label(
+                                    RichText::new("New Release:")
+                                        .size(FONT_SM)
+                                        .strong()
+                                        .color(TEXT_SECONDARY),
+                                );
+                                render_pill(
+                                    ui,
+                                    &release.tag_name,
+                                    SUCCESS_PILL_BG,
+                                    SUCCESS_PILL_TEXT,
+                                );
+                            });
+                            ui.add_space(4.0);
+                            ui.label(
+                                RichText::new(format!(
+                                    "{}  •  Published: {}",
+                                    release.name, release.published_at
+                                ))
+                                .size(FONT_XS)
+                                .color(TEXT_MUTED),
+                            );
+                        });
+
+                    ui.add_space(12.0);
+
+                    // Release Notes / Changelog section
+                    ui.label(
+                        RichText::new("RELEASE NOTES / CHANGELOG")
+                            .size(FONT_XS)
+                            .strong()
+                            .color(TEXT_MUTED),
+                    );
+                    ui.add_space(4.0);
+                    egui::Frame::new()
+                        .fill(INPUT_BG)
+                        .stroke(Stroke::new(1.0_f32, CARD_BORDER))
+                        .corner_radius(8.0)
+                        .inner_margin(Margin::symmetric(14, 10))
+                        .show(ui, |ui| {
+                            ui.set_width(ui.available_width());
+                            ScrollArea::vertical()
+                                .id_salt("github_release_notes_scroll")
+                                .max_height(190.0)
+                                .show(ui, |ui| {
+                                    ui.set_width(ui.available_width());
+                                    for line in release.body.lines() {
+                                        let trimmed = line.trim();
+                                        if let Some(h) = trimmed.strip_prefix("### ") {
+                                            ui.add_space(4.0);
+                                            ui.label(
+                                                RichText::new(h)
+                                                    .size(FONT_MD)
+                                                    .strong()
+                                                    .color(TEXT_PRIMARY),
+                                            );
+                                        } else if let Some(h) = trimmed.strip_prefix("## ") {
+                                            ui.add_space(4.0);
+                                            ui.label(
+                                                RichText::new(h)
+                                                    .size(FONT_MD)
+                                                    .strong()
+                                                    .color(PRIMARY_BLUE),
+                                            );
+                                        } else {
+                                            ui.label(
+                                                RichText::new(line)
+                                                    .size(FONT_SM)
+                                                    .color(TEXT_SECONDARY),
+                                            );
+                                        }
+                                    }
+                                });
+                        });
+
+                    // Download Progress Bar / Status Indicator
+                    if self.update_downloading || self.update_progress > 0.0 {
+                        ui.add_space(12.0);
+                        let pct = (self.update_progress * 100.0).clamp(0.0, 100.0);
+                        ui.label(
+                            RichText::new(format!(
+                                "{} ({pct:.0}%)",
+                                if self.update_status_text.is_empty() {
+                                    "Downloading update..."
+                                } else {
+                                    &self.update_status_text
+                                }
+                            ))
+                            .size(FONT_SM)
+                            .strong()
+                            .color(PRIMARY_BLUE),
+                        );
+                        ui.add_space(4.0);
+                        let bar_w = ui.available_width();
+                        let (bar_rect, _) =
+                            ui.allocate_exact_size(Vec2::new(bar_w, 10.0), Sense::hover());
+                        ui.painter()
+                            .rect_filled(bar_rect, CornerRadius::same(5), PILL_CONTAINER_BG);
+                        let fill_w = (bar_w * self.update_progress.clamp(0.02, 1.0)).min(bar_w);
+                        let fill_rect = Rect::from_min_size(bar_rect.min, Vec2::new(fill_w, 10.0));
+                        ui.painter()
+                            .rect_filled(fill_rect, CornerRadius::same(5), PRIMARY_BLUE);
+                    }
+
+                    if let Some(err) = &self.update_error {
+                        ui.add_space(10.0);
+                        egui::Frame::new()
+                            .fill(FAIL_PILL_BG)
+                            .stroke(Stroke::new(1.0_f32, Color32::from_rgb(252, 165, 165)))
+                            .corner_radius(6.0)
+                            .inner_margin(Margin::symmetric(12, 8))
+                            .show(ui, |ui| {
+                                ui.label(
+                                    RichText::new(err)
+                                        .size(FONT_SM)
+                                        .strong()
+                                        .color(FAIL_PILL_TEXT),
+                                );
+                            });
+                    }
+
+                    ui.add_space(16.0);
+                    draw_divider(ui, CARD_BORDER);
+                    ui.add_space(12.0);
+
+                    horizontal_row(ui, 36.0, |ui| {
+                        let view_gh_btn = egui::Button::new(
+                            RichText::new("View on GitHub")
+                                .size(FONT_SM)
+                                .strong()
+                                .color(TEXT_SECONDARY),
+                        )
+                        .fill(SUBTLE_BG)
+                        .stroke(Stroke::new(1.0_f32, CARD_BORDER))
+                        .corner_radius(7.0)
+                        .min_size(Vec2::new(115.0, 34.0));
+                        if ui.add(view_gh_btn).clicked() {
+                            let url = if release.html_url.is_empty() {
+                                GITHUB_RELEASES_PAGE_URL
+                            } else {
+                                &release.html_url
+                            };
+                            open_url_in_browser(url);
+                        }
+
+                        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                            let update_btn_label = if self.update_downloading {
+                                "Updating...".to_string()
+                            } else {
+                                "Update & Restart".to_string()
+                            };
+                            let update_btn = egui::Button::new(
+                                RichText::new(update_btn_label)
+                                    .size(FONT_MD)
+                                    .strong()
+                                    .color(Color32::WHITE),
+                            )
+                            .fill(if self.update_downloading {
+                                TEXT_MUTED
+                            } else {
+                                PRIMARY_BLUE
+                            })
+                            .corner_radius(7.0)
+                            .min_size(Vec2::new(155.0, 36.0));
+
+                            if ui
+                                .add_enabled(!self.update_downloading, update_btn)
+                                .clicked()
+                            {
+                                self.update_error = None;
+                                if release.download_url.trim().is_empty() {
+                                    let url = if release.html_url.is_empty() {
+                                        GITHUB_RELEASES_PAGE_URL
+                                    } else {
+                                        &release.html_url
+                                    };
+                                    open_url_in_browser(url);
+                                } else {
+                                    self.update_downloading = true;
+                                    self.update_progress = 0.02;
+                                    self.update_status_text =
+                                        format!("Starting download of {}...", release.asset_name);
+                                    spawn_download_and_apply_update(release, self.updater_tx.clone());
+                                }
+                            }
+
+                            let later_btn = egui::Button::new(
+                                RichText::new("Remind Me Later")
+                                    .size(FONT_MD)
+                                    .strong()
+                                    .color(TEXT_SECONDARY),
+                            )
+                            .fill(SUBTLE_BG)
+                            .stroke(Stroke::new(1.0_f32, CARD_BORDER))
+                            .corner_radius(7.0)
+                            .min_size(Vec2::new(130.0, 36.0));
+
+                            if ui
+                                .add_enabled(!self.update_downloading, later_btn)
+                                .clicked()
+                            {
+                                self.show_update_modal = false;
+                            }
+                        });
+                    });
+                });
+        } else {
+            // Up-to-date Update Information Dialog (when clicking notification bell or checking)
+            egui::Window::new("Update Information")
+                .order(egui::Order::Foreground)
+                .title_bar(false)
+                .collapsible(false)
+                .resizable(false)
+                .anchor(Align2::CENTER_CENTER, Vec2::ZERO)
+                .fixed_size(Vec2::new(480.0, 0.0))
+                .frame(
+                    egui::Frame::new()
+                        .fill(CARD_BG)
+                        .stroke(Stroke::new(1.0_f32, CARD_BORDER))
+                        .corner_radius(12.0)
+                        .shadow(Shadow {
+                            offset: [0, 8],
+                            blur: 24,
+                            spread: 0,
+                            color: Color32::from_black_alpha(45),
+                        })
+                        .inner_margin(Margin {
+                            left: 24,
+                            right: 24,
+                            top: 20,
+                            bottom: 22,
+                        }),
+                )
+                .show(ctx, |ui| {
+                    ui.set_width(432.0);
+                    if render_modal_header(
+                        ui,
+                        "close_update_info_modal",
+                        "Update Information",
+                        "Check for newer versions published on GitHub Releases.",
+                    ) {
+                        self.show_update_modal = false;
+                    }
+
+                    ui.add_space(14.0);
+
+                    egui::Frame::new()
+                        .fill(SUCCESS_PILL_BG)
+                        .stroke(Stroke::new(1.0_f32, Color32::from_rgb(187, 247, 208)))
+                        .corner_radius(8.0)
+                        .inner_margin(Margin::symmetric(14, 12))
+                        .show(ui, |ui| {
+                            horizontal_row(ui, 24.0, |ui| {
+                                render_pill(
+                                    ui,
+                                    "UP TO DATE",
+                                    Color32::from_rgb(34, 197, 94),
+                                    Color32::WHITE,
+                                );
+                                ui.label(
+                                    RichText::new(format!("Shiply v{APP_VERSION}"))
+                                        .size(FONT_MD)
+                                        .strong()
+                                        .color(SUCCESS_PILL_TEXT),
+                                );
+                            });
+                            ui.add_space(6.0);
+                            ui.label(
+                                RichText::new(format!(
+                                    "You are running the latest version of Shiply. Update checks query {GITHUB_REPO} on startup."
+                                ))
+                                .size(FONT_SM)
+                                .color(Color32::from_rgb(20, 83, 45)),
+                            );
+                        });
+
+                    if self.update_checking {
+                        ui.add_space(10.0);
+                        ui.label(
+                            RichText::new("Checking GitHub Releases...")
+                                .size(FONT_SM)
+                                .color(PRIMARY_BLUE),
+                        );
+                    }
+
+                    ui.add_space(18.0);
+                    draw_divider(ui, CARD_BORDER);
+                    ui.add_space(14.0);
+
+                    horizontal_row(ui, 36.0, |ui| {
+                        let view_gh_btn = egui::Button::new(
+                            RichText::new("View on GitHub")
+                                .size(FONT_SM)
+                                .strong()
+                                .color(TEXT_SECONDARY),
+                        )
+                        .fill(SUBTLE_BG)
+                        .stroke(Stroke::new(1.0_f32, CARD_BORDER))
+                        .corner_radius(7.0)
+                        .min_size(Vec2::new(115.0, 34.0));
+                        if ui.add(view_gh_btn).clicked() {
+                            open_url_in_browser(GITHUB_RELEASES_PAGE_URL);
+                        }
+
+                        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                            let close_btn = egui::Button::new(
+                                RichText::new("Close")
+                                    .size(FONT_MD)
+                                    .strong()
+                                    .color(TEXT_SECONDARY),
+                            )
+                            .fill(SUBTLE_BG)
+                            .stroke(Stroke::new(1.0_f32, CARD_BORDER))
+                            .corner_radius(7.0)
+                            .min_size(Vec2::new(80.0, 36.0));
+                            if ui.add(close_btn).clicked() {
+                                self.show_update_modal = false;
+                            }
+
+                            let check_btn = egui::Button::new(
+                                RichText::new("Check Again")
+                                    .size(FONT_MD)
+                                    .strong()
+                                    .color(Color32::WHITE),
+                            )
+                            .fill(PRIMARY_BLUE)
+                            .corner_radius(7.0)
+                            .min_size(Vec2::new(115.0, 36.0));
+                            if ui
+                                .add_enabled(!self.update_checking, check_btn)
+                                .clicked()
+                            {
+                                spawn_update_check(self.updater_tx.clone(), true);
+                            }
+                        });
+                    });
+                });
+        }
+    }
+
+    /// Renders a confirmation dialog before deleting a project or an environment.
+    fn render_delete_confirmation_modal(&mut self, ctx: &egui::Context) {
+        let Some(action) = self.pending_delete_confirm.clone() else {
+            return;
+        };
+
+        egui::Area::new(egui::Id::new("modal_backdrop_delete_confirm"))
+            .order(egui::Order::Middle)
+            .fixed_pos(Pos2::ZERO)
+            .show(ctx, |ui| {
+                ui.painter().rect_filled(
+                    ctx.screen_rect(),
+                    CornerRadius::ZERO,
+                    Color32::from_black_alpha(110),
+                );
+            });
+
+        let mut execute_delete = false;
+        let mut dismiss = false;
+
+        egui::Window::new("Confirm Deletion")
             .order(egui::Order::Foreground)
             .title_bar(false)
             .collapsible(false)
             .resizable(false)
             .anchor(Align2::CENTER_CENTER, Vec2::ZERO)
-            .fixed_size(Vec2::new(560.0, 0.0))
+            .fixed_size(Vec2::new(480.0, 0.0))
             .frame(
                 egui::Frame::new()
                     .fill(CARD_BG)
-                    .stroke(Stroke::new(1.0_f32, CARD_BORDER))
+                    .stroke(Stroke::new(1.0_f32, Color32::from_rgb(252, 165, 165)))
                     .corner_radius(12.0)
                     .shadow(Shadow {
                         offset: [0, 8],
@@ -3067,241 +3271,89 @@ impl ShiplyApp {
                     .inner_margin(Margin {
                         left: 24,
                         right: 24,
-                        top: 18,
+                        top: 20,
                         bottom: 22,
                     }),
             )
             .show(ctx, |ui| {
-                ui.set_width(512.0);
+                ui.set_width(432.0);
+
+                let (modal_title, modal_subtitle, item_name, warning_text) = match &action {
+                    ConfirmDeleteAction::Project { project_name, .. } => (
+                        "Delete Project",
+                        "This will permanently delete the project from Shiply.",
+                        project_name.as_str(),
+                        "Are you sure you want to delete this project? All associated environments, pipeline configurations, and settings for this project will be removed.",
+                    ),
+                    ConfirmDeleteAction::Environment { env_name, .. } => (
+                        "Delete Environment",
+                        "This will permanently remove this environment from the project.",
+                        env_name.as_str(),
+                        "Are you sure you want to delete this environment? Its pipeline steps and SSH credentials mapping will be deleted.",
+                    ),
+                };
+
                 if render_modal_header(
                     ui,
-                    "close_github_update_modal",
-                    "Software Update Available",
-                    &format!(
-                        "A newer release of Shiply is available on GitHub Releases ({GITHUB_REPO})."
-                    ),
-                ) && !self.update_downloading
-                {
-                    self.show_update_modal = false;
+                    "close_delete_confirm_modal",
+                    modal_title,
+                    modal_subtitle,
+                ) {
+                    dismiss = true;
                 }
 
-                ui.add_space(12.0);
+                ui.add_space(14.0);
 
-                // Version Comparison Card (Current Version vs. New Version Tag)
                 egui::Frame::new()
-                    .fill(SUBTLE_BG)
-                    .stroke(Stroke::new(1.0_f32, Color32::from_rgb(191, 219, 254)))
+                    .fill(FAIL_PILL_BG)
+                    .stroke(Stroke::new(1.0_f32, Color32::from_rgb(254, 202, 202)))
                     .corner_radius(8.0)
                     .inner_margin(Margin::symmetric(14, 12))
                     .show(ui, |ui| {
-                        ui.set_width(ui.available_width());
-                        horizontal_row(ui, 26.0, |ui| {
-                            ui.label(
-                                RichText::new("Current Version:")
-                                    .size(FONT_SM)
-                                    .strong()
-                                    .color(TEXT_SECONDARY),
-                            );
+                        horizontal_row(ui, 24.0, |ui| {
                             render_pill(
                                 ui,
-                                &format!("v{APP_VERSION}"),
-                                PILL_CONTAINER_BG,
-                                TEXT_SECONDARY,
+                                "WARNING",
+                                Color32::from_rgb(239, 68, 68),
+                                Color32::WHITE,
                             );
                             ui.label(
-                                RichText::new("→")
-                                    .size(FONT_LG)
-                                    .strong()
-                                    .color(PRIMARY_BLUE),
-                            );
-                            ui.label(
-                                RichText::new("New Release:")
-                                    .size(FONT_SM)
-                                    .strong()
-                                    .color(TEXT_SECONDARY),
-                            );
-                            render_pill(
-                                ui,
-                                &release.tag_name,
-                                SUCCESS_PILL_BG,
-                                SUCCESS_PILL_TEXT,
-                            );
-                        });
-                        ui.add_space(4.0);
-                        ui.label(
-                            RichText::new(format!(
-                                "{}  •  Published: {}",
-                                release.name, release.published_at
-                            ))
-                            .size(FONT_XS)
-                            .color(TEXT_MUTED),
-                        );
-                    });
-
-                ui.add_space(12.0);
-
-                // Release Notes / Changelog section
-                ui.label(
-                    RichText::new("RELEASE NOTES / CHANGELOG")
-                        .size(FONT_XS)
-                        .strong()
-                        .color(TEXT_MUTED),
-                );
-                ui.add_space(4.0);
-                egui::Frame::new()
-                    .fill(INPUT_BG)
-                    .stroke(Stroke::new(1.0_f32, CARD_BORDER))
-                    .corner_radius(8.0)
-                    .inner_margin(Margin::symmetric(14, 10))
-                    .show(ui, |ui| {
-                        ui.set_width(ui.available_width());
-                        ScrollArea::vertical()
-                            .id_salt("github_release_notes_scroll")
-                            .max_height(190.0)
-                            .show(ui, |ui| {
-                                ui.set_width(ui.available_width());
-                                for line in release.body.lines() {
-                                    let trimmed = line.trim();
-                                    if let Some(h) = trimmed.strip_prefix("### ") {
-                                        ui.add_space(4.0);
-                                        ui.label(
-                                            RichText::new(h)
-                                                .size(FONT_MD)
-                                                .strong()
-                                                .color(TEXT_PRIMARY),
-                                        );
-                                    } else if let Some(h) = trimmed.strip_prefix("## ") {
-                                        ui.add_space(4.0);
-                                        ui.label(
-                                            RichText::new(h)
-                                                .size(FONT_MD)
-                                                .strong()
-                                                .color(PRIMARY_BLUE),
-                                        );
-                                    } else {
-                                        ui.label(
-                                            RichText::new(line)
-                                                .size(FONT_SM)
-                                                .color(TEXT_SECONDARY),
-                                        );
-                                    }
-                                }
-                            });
-                    });
-
-                // Download Progress Bar / Status Indicator
-                if self.update_downloading || self.update_progress > 0.0 {
-                    ui.add_space(12.0);
-                    let pct = (self.update_progress * 100.0).clamp(0.0, 100.0);
-                    ui.label(
-                        RichText::new(format!(
-                            "{} ({pct:.0}%)",
-                            if self.update_status_text.is_empty() {
-                                "Downloading update..."
-                            } else {
-                                &self.update_status_text
-                            }
-                        ))
-                        .size(FONT_SM)
-                        .strong()
-                        .color(PRIMARY_BLUE),
-                    );
-                    ui.add_space(4.0);
-                    let bar_w = ui.available_width();
-                    let (bar_rect, _) =
-                        ui.allocate_exact_size(Vec2::new(bar_w, 10.0), Sense::hover());
-                    ui.painter()
-                        .rect_filled(bar_rect, CornerRadius::same(5), PILL_CONTAINER_BG);
-                    let fill_w = (bar_w * self.update_progress.clamp(0.02, 1.0)).min(bar_w);
-                    let fill_rect = Rect::from_min_size(bar_rect.min, Vec2::new(fill_w, 10.0));
-                    ui.painter()
-                        .rect_filled(fill_rect, CornerRadius::same(5), PRIMARY_BLUE);
-                }
-
-                if let Some(err) = &self.update_error {
-                    ui.add_space(10.0);
-                    egui::Frame::new()
-                        .fill(FAIL_PILL_BG)
-                        .stroke(Stroke::new(1.0_f32, Color32::from_rgb(252, 165, 165)))
-                        .corner_radius(6.0)
-                        .inner_margin(Margin::symmetric(12, 8))
-                        .show(ui, |ui| {
-                            ui.label(
-                                RichText::new(err)
-                                    .size(FONT_SM)
+                                RichText::new(format!("Target: {item_name}"))
+                                    .size(FONT_MD)
                                     .strong()
                                     .color(FAIL_PILL_TEXT),
                             );
                         });
-                }
+                        ui.add_space(6.0);
+                        ui.label(
+                            RichText::new(warning_text)
+                                .size(FONT_SM)
+                                .color(Color32::from_rgb(127, 29, 29)),
+                        );
+                    });
 
-                ui.add_space(16.0);
+                ui.add_space(18.0);
                 draw_divider(ui, CARD_BORDER);
-                ui.add_space(12.0);
+                ui.add_space(14.0);
 
                 horizontal_row(ui, 36.0, |ui| {
-                    let view_gh_btn = egui::Button::new(
-                        RichText::new("View on GitHub")
-                            .size(FONT_SM)
-                            .strong()
-                            .color(TEXT_SECONDARY),
-                    )
-                    .fill(SUBTLE_BG)
-                    .stroke(Stroke::new(1.0_f32, CARD_BORDER))
-                    .corner_radius(7.0)
-                    .min_size(Vec2::new(115.0, 34.0));
-                    if ui.add(view_gh_btn).clicked() {
-                        let url = if release.html_url.is_empty() {
-                            GITHUB_RELEASES_PAGE_URL
-                        } else {
-                            &release.html_url
-                        };
-                        open_url_in_browser(url);
-                    }
-
                     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                        let update_btn_label = if self.update_downloading {
-                            "Updating...".to_string()
-                        } else {
-                            "Update & Restart".to_string()
-                        };
-                        let update_btn = egui::Button::new(
-                            RichText::new(update_btn_label)
+                        let delete_btn = egui::Button::new(
+                            RichText::new("Delete Permanently")
                                 .size(FONT_MD)
                                 .strong()
                                 .color(Color32::WHITE),
                         )
-                        .fill(if self.update_downloading {
-                            TEXT_MUTED
-                        } else {
-                            PRIMARY_BLUE
-                        })
+                        .fill(Color32::from_rgb(220, 38, 38))
                         .corner_radius(7.0)
                         .min_size(Vec2::new(155.0, 36.0));
 
-                        if ui
-                            .add_enabled(!self.update_downloading, update_btn)
-                            .clicked()
-                        {
-                            self.update_error = None;
-                            if release.download_url.trim().is_empty() {
-                                let url = if release.html_url.is_empty() {
-                                    GITHUB_RELEASES_PAGE_URL
-                                } else {
-                                    &release.html_url
-                                };
-                                open_url_in_browser(url);
-                            } else {
-                                self.update_downloading = true;
-                                self.update_progress = 0.02;
-                                self.update_status_text =
-                                    format!("Starting download of {}...", release.asset_name);
-                                spawn_download_and_apply_update(release, self.updater_tx.clone());
-                            }
+                        if ui.add(delete_btn).clicked() {
+                            execute_delete = true;
                         }
 
-                        let later_btn = egui::Button::new(
-                            RichText::new("Remind Me Later")
+                        let cancel_btn = egui::Button::new(
+                            RichText::new("Cancel")
                                 .size(FONT_MD)
                                 .strong()
                                 .color(TEXT_SECONDARY),
@@ -3309,17 +3361,84 @@ impl ShiplyApp {
                         .fill(SUBTLE_BG)
                         .stroke(Stroke::new(1.0_f32, CARD_BORDER))
                         .corner_radius(7.0)
-                        .min_size(Vec2::new(130.0, 36.0));
+                        .min_size(Vec2::new(88.0, 36.0));
 
-                        if ui
-                            .add_enabled(!self.update_downloading, later_btn)
-                            .clicked()
-                        {
-                            self.show_update_modal = false;
+                        if ui.add(cancel_btn).clicked() {
+                            dismiss = true;
                         }
                     });
                 });
             });
+
+        if execute_delete {
+            match action {
+                ConfirmDeleteAction::Project {
+                    project_id,
+                    project_name,
+                } => {
+                    if let Some(idx) = self
+                        .storage
+                        .projects
+                        .iter()
+                        .position(|p| p.id == project_id)
+                    {
+                        self.storage.projects.remove(idx);
+                        let _ = self.storage.save();
+                        self.selection = self
+                            .storage
+                            .projects
+                            .first()
+                            .map(|p| SidebarSelection::Project(p.id.clone()))
+                            .unwrap_or(SidebarSelection::AllDeployments);
+                        self.refresh_selected_project_metadata(true);
+                        self.status_banner =
+                            Some((format!("Removed project '{project_name}'."), true));
+                    }
+                }
+                ConfirmDeleteAction::Environment {
+                    project_id,
+                    env_key,
+                    env_name,
+                    ..
+                } => {
+                    let mut remove_res: Option<Result<String, String>> = None;
+                    if let Some(proj) = self
+                        .storage
+                        .projects
+                        .iter_mut()
+                        .find(|p| p.id == project_id)
+                    {
+                        if let Err(err) = proj.remove_environment(&env_key) {
+                            remove_res = Some(Err(err));
+                        } else {
+                            let next_key = proj
+                                .environments
+                                .first()
+                                .map(|e| e.key.clone())
+                                .unwrap_or_default();
+                            remove_res = Some(Ok(next_key));
+                        }
+                    }
+
+                    match remove_res {
+                        Some(Err(err)) => {
+                            self.status_banner = Some((err, false));
+                        }
+                        Some(Ok(next_key)) => {
+                            let _ = self.storage.save();
+                            self.selected_env_key = next_key;
+                            self.refresh_selected_project_metadata(true);
+                            self.status_banner =
+                                Some((format!("Removed environment '{env_name}'."), true));
+                        }
+                        None => {}
+                    }
+                }
+            }
+            self.pending_delete_confirm = None;
+        } else if dismiss {
+            self.pending_delete_confirm = None;
+        }
     }
 
     fn render_all_deployments_overview(&mut self, ui: &mut egui::Ui) {
@@ -3664,28 +3783,28 @@ impl ShiplyApp {
                     (
                         "STEP 1",
                         "Add or Auto-Import Project",
-                        "Click '+ ADD' in the sidebar or select a deploy-*.ps1 script to auto-populate project paths, servers, and steps.",
+                        "Click '+ ADD' in the sidebar or auto-import a deploy-*.ps1 script to populate project directories, remote server configs, and steps.",
                         BLUE_PILL_BG,
                         BLUE_PILL_TEXT,
                     ),
                     (
                         "STEP 2",
                         "Setup OS Credentials",
-                        "Store your SSH password once in Windows Credential Manager, Linux libsecret, or macOS Keychain (or use SSH Keys).",
+                        "Store your SSH password securely in Windows Credential Manager, Linux libsecret, or macOS Keychain — zero plain text passwords.",
                         TEAL_PILL_BG,
                         TEAL_PILL_TEXT,
                     ),
                     (
                         "STEP 3",
                         "Configure Pipeline Steps",
-                        "Add, reorder, or customize Local Command, Verify Path, SCP Upload, and Remote SSH steps with {template} variables.",
+                        "Customize Local Command, Verify Path, SCP Upload, and Remote SSH steps with real-time syntax highlighting and {template} variables.",
                         PURPLE_PILL_BG,
                         PURPLE_PILL_TEXT,
                     ),
                     (
                         "STEP 4",
                         "Deploy, Bulk Deploy & Rollback",
-                        "Pick a Git branch, verify the auto-bumped version, and run single or Bulk Deployments with 1-click Rollback.",
+                        "Pick target Git branches, verify auto-bumped versions, run sequential Bulk Deployments, or perform 1-click Rollback anytime.",
                         SUCCESS_PILL_BG,
                         SUCCESS_PILL_TEXT,
                     ),
@@ -3693,6 +3812,7 @@ impl ShiplyApp {
 
                 let spacing = 12.0;
                 let step_w = ((ui.available_width() - spacing * 3.0) / 4.0).max(185.0);
+                const ONBOARDING_CARD_HEIGHT: f32 = 138.0;
                 ui.horizontal_wrapped(|ui| {
                     ui.spacing_mut().item_spacing = Vec2::new(spacing, 10.0);
                     for (badge, title, desc, bg, fg) in steps {
@@ -3703,7 +3823,7 @@ impl ShiplyApp {
                             .inner_margin(Margin::symmetric(14, 12))
                             .show(ui, |ui| {
                                 ui.set_width((step_w - 28.0).max(150.0));
-                                ui.set_min_height(88.0);
+                                ui.set_height(ONBOARDING_CARD_HEIGHT);
                                 render_pill(ui, badge, bg, fg);
                                 ui.add_space(6.0);
                                 ui.label(
@@ -4501,17 +4621,10 @@ impl ShiplyApp {
         }
 
         if delete_project_clicked {
-            self.storage.projects.remove(proj_idx);
-            let _ = self.storage.save();
-            self.selection = self
-                .storage
-                .projects
-                .first()
-                .map(|p| SidebarSelection::Project(p.id.clone()))
-                .unwrap_or(SidebarSelection::AllDeployments);
-            self.refresh_selected_project_metadata(true);
-            self.status_banner = Some((format!("Removed project '{proj_name}'."), true));
-            return;
+            self.pending_delete_confirm = Some(ConfirmDeleteAction::Project {
+                project_id: project_id.to_string(),
+                project_name: proj_name.clone(),
+            });
         }
 
         if let Some(new_branch) = selected_branch_changed {
@@ -4764,19 +4877,12 @@ impl ShiplyApp {
         });
 
         if let Some((del_key, del_name)) = delete_env_key {
-            if let Err(err) = self.storage.projects[proj_idx].remove_environment(&del_key) {
-                self.status_banner = Some((err, false));
-            } else {
-                let _ = self.storage.save();
-                self.selected_env_key = self.storage.projects[proj_idx]
-                    .environments
-                    .first()
-                    .map(|e| e.key.clone())
-                    .unwrap_or_default();
-                self.refresh_selected_project_metadata(true);
-                self.status_banner =
-                    Some((format!("Removed environment '{del_name}'."), true));
-            }
+            self.pending_delete_confirm = Some(ConfirmDeleteAction::Environment {
+                project_id: project_id.to_string(),
+                project_name: proj_name.clone(),
+                env_key: del_key,
+                env_name: del_name,
+            });
         } else if let Some(env_key) = new_selected_env_key {
             self.selected_env_key = env_key;
             self.refresh_selected_project_metadata(true);
@@ -6695,19 +6801,29 @@ fn draw_icon_bell(painter: &egui::Painter, c: Pos2, color: Color32) {
     );
 }
 
-/// Draws the Termius-style overlapping double rounded-square maximize/restore icon (`❐`).
-fn draw_icon_termius_restore_maximize(painter: &egui::Painter, c: Pos2, color: Color32) {
+/// Draws the Maximize icon (`□`) when normal, and the Termius-style Restore Down icon (`❐`) when maximized.
+fn draw_window_max_restore_icon(
+    painter: &egui::Painter,
+    c: Pos2,
+    is_maximized: bool,
+    color: Color32,
+) {
     let s = Stroke::new(1.3_f32, color);
-    // Front-left rounded square
-    let front_rect = Rect::from_center_size(Pos2::new(c.x - 1.2, c.y + 1.2), Vec2::new(8.0, 8.0));
-    painter.rect_stroke(front_rect, CornerRadius::same(2), s, StrokeKind::Inside);
-
-    // Back-right overlapping L-edges
-    let back_top_left = Pos2::new(c.x - 1.5, c.y - 5.0);
-    let back_top_right = Pos2::new(c.x + 5.0, c.y - 5.0);
-    let back_bot_right = Pos2::new(c.x + 5.0, c.y + 1.5);
-    painter.line_segment([back_top_left, back_top_right], s);
-    painter.line_segment([back_top_right, back_bot_right], s);
+    if is_maximized {
+        // Restore Down: overlapping double rounded rectangles
+        let front_rect =
+            Rect::from_center_size(Pos2::new(c.x - 1.5, c.y + 1.5), Vec2::new(7.5, 7.5));
+        painter.rect_stroke(front_rect, CornerRadius::same(1), s, StrokeKind::Inside);
+        let back_tl = Pos2::new(c.x - 1.5, c.y - 4.5);
+        let back_tr = Pos2::new(c.x + 4.5, c.y - 4.5);
+        let back_br = Pos2::new(c.x + 4.5, c.y + 1.5);
+        painter.line_segment([back_tl, back_tr], s);
+        painter.line_segment([back_tr, back_br], s);
+    } else {
+        // Maximize: Single clean rounded square
+        let r = Rect::from_center_size(c, Vec2::new(9.0, 9.0));
+        painter.rect_stroke(r, CornerRadius::same(1), s, StrokeKind::Inside);
+    }
 }
 
 // =============================================================================
