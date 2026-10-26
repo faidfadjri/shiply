@@ -209,6 +209,7 @@ pub struct ShiplyApp {
 
     // Status banner
     status_banner: Option<(String, bool)>,
+    sidebar_collapsed: bool,
     fonts_initialized: bool,
     logo_texture: Option<egui::TextureHandle>,
 }
@@ -305,6 +306,7 @@ impl ShiplyApp {
             update_error: None,
             last_sync_check: Instant::now(),
             status_banner: None,
+            sidebar_collapsed: false,
             fonts_initialized: false,
             logo_texture: None,
         };
@@ -937,12 +939,16 @@ impl eframe::App for ShiplyApp {
         self.poll_executor_events(ctx);
         Self::configure_light_workspace_style(ctx);
 
-        self.render_sidebar(ctx);
+        self.render_termius_topbar(ctx);
+        if !self.sidebar_collapsed {
+            self.render_sidebar(ctx);
+        }
         self.render_new_project_modal(ctx);
         self.render_edit_project_modal(ctx);
         self.render_new_environment_modal(ctx);
         self.render_bulk_deploy_modal(ctx);
         self.render_github_update_modal(ctx);
+        self.render_window_resize_handles(ctx);
 
         egui::CentralPanel::default()
             .frame(
@@ -1038,6 +1044,602 @@ impl eframe::App for ShiplyApp {
 }
 
 impl ShiplyApp {
+    /// Renders the custom frameless Termius-style topbar with left navigation pills,
+    /// draggable window region, notification bell, and Minimize / Maximize / Close actions.
+    fn render_termius_topbar(&mut self, ctx: &egui::Context) {
+        let topbar_bg = Color32::from_rgb(13, 17, 30); // #0d111e (Termius deep midnight bar)
+        let pill_bg = Color32::from_rgb(31, 38, 55); // #1f2637 (Termius pill fill)
+        let pill_hover_bg = Color32::from_rgb(41, 50, 72);
+        let inner_badge_bg = Color32::from_rgb(46, 56, 78);
+        let icon_muted = Color32::from_rgb(148, 163, 184);
+
+        let is_maximized = ctx.input(|i| i.viewport().maximized.unwrap_or(false));
+
+        egui::TopBottomPanel::top("shiply_termius_topbar")
+            .exact_height(42.0)
+            .frame(
+                egui::Frame::new()
+                    .fill(topbar_bg)
+                    .inner_margin(Margin::symmetric(10, 0))
+                    .stroke(Stroke::new(1.0_f32, Color32::from_rgb(26, 34, 52))),
+            )
+            .show(ctx, |ui| {
+                let bar_rect = ui.max_rect();
+                let cy = bar_rect.center().y;
+                let pill_h = 28.0;
+                let mut x = bar_rect.left() + 2.0;
+
+                // 1. Left Hamburger Menu Button (≡) — toggles sidebar visibility
+                let menu_rect =
+                    Rect::from_center_size(Pos2::new(x + 14.0, cy), Vec2::new(28.0, pill_h));
+                let menu_resp = ui.interact(
+                    menu_rect,
+                    egui::Id::new("topbar_hamburger_btn"),
+                    Sense::click(),
+                );
+                if menu_resp.hovered() {
+                    ui.painter()
+                        .rect_filled(menu_rect, CornerRadius::same(6), pill_bg);
+                }
+                let menu_fg = if menu_resp.hovered() {
+                    Color32::WHITE
+                } else {
+                    icon_muted
+                };
+                let mc = menu_rect.center();
+                for dy in [-4.0_f32, 0.0, 4.0] {
+                    ui.painter().line_segment(
+                        [Pos2::new(mc.x - 6.5, mc.y + dy), Pos2::new(mc.x + 6.5, mc.y + dy)],
+                        Stroke::new(1.5_f32, menu_fg),
+                    );
+                }
+                if menu_resp.on_hover_text("Toggle Sidebar").clicked() {
+                    self.sidebar_collapsed = !self.sidebar_collapsed;
+                }
+                x = menu_rect.right() + 8.0;
+
+                // 2. Termius-style Split Pill: [ Vaults ☁ | ⌄ ]
+                let vaults_left_w = 96.0;
+                let vaults_right_w = 26.0;
+                let vaults_left_rect = Rect::from_min_size(
+                    Pos2::new(x, cy - pill_h * 0.5),
+                    Vec2::new(vaults_left_w, pill_h),
+                );
+                let vaults_right_rect = Rect::from_min_size(
+                    Pos2::new(vaults_left_rect.right() + 1.0, cy - pill_h * 0.5),
+                    Vec2::new(vaults_right_w, pill_h),
+                );
+                let v_left_resp = ui.interact(
+                    vaults_left_rect,
+                    egui::Id::new("topbar_vaults_left"),
+                    Sense::click(),
+                );
+                let v_right_resp = ui.interact(
+                    vaults_right_rect,
+                    egui::Id::new("topbar_vaults_right"),
+                    Sense::click(),
+                );
+
+                ui.painter().rect_filled(
+                    vaults_left_rect,
+                    CornerRadius {
+                        nw: 7,
+                        sw: 7,
+                        ne: 0,
+                        se: 0,
+                    },
+                    if v_left_resp.hovered() {
+                        pill_hover_bg
+                    } else {
+                        pill_bg
+                    },
+                );
+                ui.painter().rect_filled(
+                    vaults_right_rect,
+                    CornerRadius {
+                        nw: 0,
+                        sw: 0,
+                        ne: 7,
+                        se: 7,
+                    },
+                    if v_right_resp.hovered() {
+                        pill_hover_bg
+                    } else {
+                        pill_bg
+                    },
+                );
+
+                // Safe / Vault icon on the left of "Vaults"
+                let safe_rect = Rect::from_center_size(
+                    Pos2::new(vaults_left_rect.left() + 15.0, cy),
+                    Vec2::new(13.0, 12.0),
+                );
+                ui.painter()
+                    .rect_filled(safe_rect, CornerRadius::same(3), Color32::WHITE);
+                ui.painter().circle_stroke(
+                    safe_rect.center(),
+                    2.6,
+                    Stroke::new(1.3_f32, pill_bg),
+                );
+                ui.painter().text(
+                    Pos2::new(safe_rect.right() + 7.0, cy),
+                    Align2::LEFT_CENTER,
+                    "Vaults",
+                    FontId::proportional(FONT_MD),
+                    Color32::WHITE,
+                );
+                // Subtle cloud/status icon inside Vaults pill
+                let cloud_c = Pos2::new(vaults_left_rect.right() - 14.0, cy + 0.5);
+                ui.painter().circle_stroke(
+                    cloud_c,
+                    4.2,
+                    Stroke::new(1.2_f32, Color32::from_rgb(100, 116, 139)),
+                );
+
+                // Downward chevron inside right split segment
+                draw_icon_chevron(ui.painter(), vaults_right_rect.center(), true, Color32::WHITE);
+
+                if v_left_resp
+                    .on_hover_text("Open All Deployments & OS Credentials Vault Setup")
+                    .clicked()
+                {
+                    self.selection = SidebarSelection::AllDeployments;
+                    self.show_credential_guide = true;
+                }
+                if v_right_resp
+                    .on_hover_text("Toggle Quick-Start & OS Credentials Guides")
+                    .clicked()
+                {
+                    self.selection = SidebarSelection::AllDeployments;
+                    self.show_credential_guide = !self.show_credential_guide;
+                }
+                x = vaults_right_rect.right() + 8.0;
+
+                // 3. Termius-style SFTP / Files Pill: [ 📁 SFTP ]
+                let sftp_w = 74.0;
+                let sftp_rect = Rect::from_min_size(
+                    Pos2::new(x, cy - pill_h * 0.5),
+                    Vec2::new(sftp_w, pill_h),
+                );
+                let sftp_resp = ui.interact(
+                    sftp_rect,
+                    egui::Id::new("topbar_sftp_pill"),
+                    Sense::click(),
+                );
+                ui.painter().rect_filled(
+                    sftp_rect,
+                    CornerRadius::same(7),
+                    if sftp_resp.hovered() {
+                        pill_hover_bg
+                    } else {
+                        pill_bg
+                    },
+                );
+                // Filled white folder icon matching Termius SFTP icon
+                let fld_c = Pos2::new(sftp_rect.left() + 16.0, cy + 1.0);
+                let fld_body = Rect::from_center_size(fld_c, Vec2::new(12.0, 8.0));
+                let fld_tab = Rect::from_min_size(
+                    Pos2::new(fld_body.left(), fld_body.top() - 2.0),
+                    Vec2::new(5.5, 3.0),
+                );
+                ui.painter()
+                    .rect_filled(fld_body, CornerRadius::same(1), Color32::WHITE);
+                ui.painter()
+                    .rect_filled(fld_tab, CornerRadius::same(1), Color32::WHITE);
+                ui.painter().text(
+                    Pos2::new(fld_body.right() + 7.0, cy),
+                    Align2::LEFT_CENTER,
+                    "SFTP",
+                    FontId::proportional(FONT_MD),
+                    Color32::WHITE,
+                );
+                if sftp_resp
+                    .on_hover_text("Open Shiply App Directory (JSON state & .ps1 scripts)")
+                    .clicked()
+                {
+                    let dir = self.storage.app_data_dir();
+                    let _ = fs::create_dir_all(&dir);
+                    open_directory_in_os(&dir);
+                }
+                x = sftp_rect.right() + 10.0;
+
+                // 4. Subtle Vertical Separator (|)
+                ui.painter().line_segment(
+                    [Pos2::new(x, cy - 8.0), Pos2::new(x, cy + 8.0)],
+                    Stroke::new(1.0_f32, Color32::from_rgb(38, 47, 69)),
+                );
+                x += 10.0;
+
+                // 5. Termius-style Active Workspace Tab Pill: [ ⊞• Workspace    ↻ ]
+                let ws_w = 186.0;
+                let ws_rect = Rect::from_min_size(
+                    Pos2::new(x, cy - pill_h * 0.5),
+                    Vec2::new(ws_w, pill_h),
+                );
+                let refresh_box_rect = Rect::from_center_size(
+                    Pos2::new(ws_rect.right() - 15.0, cy),
+                    Vec2::new(20.0, 20.0),
+                );
+                let refresh_resp = ui.interact(
+                    refresh_box_rect,
+                    egui::Id::new("topbar_ws_refresh_btn"),
+                    Sense::click(),
+                );
+                let ws_resp = ui.interact(
+                    ws_rect,
+                    egui::Id::new("topbar_workspace_pill"),
+                    Sense::click(),
+                );
+
+                ui.painter().rect_filled(
+                    ws_rect,
+                    CornerRadius::same(7),
+                    if ws_resp.hovered() && !refresh_resp.hovered() {
+                        pill_hover_bg
+                    } else {
+                        pill_bg
+                    },
+                );
+
+                // Left 2x2 grid badge + coral notification dot
+                let grid_badge_rect = Rect::from_center_size(
+                    Pos2::new(ws_rect.left() + 15.0, cy),
+                    Vec2::new(20.0, 20.0),
+                );
+                ui.painter().rect_filled(
+                    grid_badge_rect,
+                    CornerRadius::same(5),
+                    inner_badge_bg,
+                );
+                let gc = grid_badge_rect.center();
+                for (dx, dy) in [(-2.6_f32, -2.6_f32), (2.6, -2.6), (-2.6, 2.6), (2.6, 2.6)] {
+                    ui.painter().rect_filled(
+                        Rect::from_center_size(Pos2::new(gc.x + dx, gc.y + dy), Vec2::new(3.5, 3.5)),
+                        CornerRadius::same(1),
+                        Color32::WHITE,
+                    );
+                }
+                // Coral-red status dot on top-right corner of grid badge (matching Termius screenshot)
+                ui.painter().circle_filled(
+                    Pos2::new(grid_badge_rect.right() - 1.5, grid_badge_rect.top() + 1.5),
+                    3.2,
+                    Color32::from_rgb(248, 113, 113),
+                );
+
+                ui.painter().text(
+                    Pos2::new(grid_badge_rect.right() + 8.0, cy),
+                    Align2::LEFT_CENTER,
+                    "Workspace",
+                    FontId::proportional(FONT_MD),
+                    Color32::WHITE,
+                );
+
+                // Inline refresh button box on the right of the Workspace pill
+                ui.painter().rect_filled(
+                    refresh_box_rect,
+                    CornerRadius::same(5),
+                    if refresh_resp.hovered() {
+                        Color32::from_rgb(59, 72, 100)
+                    } else {
+                        inner_badge_bg
+                    },
+                );
+                draw_icon_refresh(
+                    ui.painter(),
+                    refresh_box_rect.center(),
+                    if refresh_resp.hovered() {
+                        Color32::WHITE
+                    } else {
+                        icon_muted
+                    },
+                );
+
+                if refresh_resp
+                    .on_hover_text("Sync app directory & refresh active workspace metadata")
+                    .clicked()
+                {
+                    self.storage.reset_sync_cache();
+                    let _ = self.storage.sync_from_app_directory();
+                    self.refresh_selected_project_metadata(true);
+                } else if ws_resp.on_hover_text("Switch to Workspace Overview").clicked() {
+                    if let Some(first) = self.storage.projects.first() {
+                        self.selection = SidebarSelection::Project(first.id.clone());
+                    } else {
+                        self.selection = SidebarSelection::AllDeployments;
+                    }
+                }
+                x = ws_rect.right() + 8.0;
+
+                // 6. Plus (+) Button right next to Workspace pill
+                let plus_rect =
+                    Rect::from_center_size(Pos2::new(x + 14.0, cy), Vec2::new(28.0, pill_h));
+                let plus_resp = ui.interact(
+                    plus_rect,
+                    egui::Id::new("topbar_plus_add_proj_btn"),
+                    Sense::click(),
+                );
+                if plus_resp.hovered() {
+                    ui.painter()
+                        .rect_filled(plus_rect, CornerRadius::same(6), pill_bg);
+                }
+                let pc = plus_rect.center();
+                let plus_fg = if plus_resp.hovered() {
+                    Color32::WHITE
+                } else {
+                    icon_muted
+                };
+                ui.painter().line_segment(
+                    [Pos2::new(pc.x - 5.5, pc.y), Pos2::new(pc.x + 5.5, pc.y)],
+                    Stroke::new(1.4_f32, plus_fg),
+                );
+                ui.painter().line_segment(
+                    [Pos2::new(pc.x, pc.y - 5.5), Pos2::new(pc.x, pc.y + 5.5)],
+                    Stroke::new(1.4_f32, plus_fg),
+                );
+                if plus_resp.on_hover_text("Add New Project").clicked() {
+                    self.show_new_project_modal = true;
+                }
+                let left_controls_end = plus_rect.right() + 8.0;
+
+                // =========================================================================
+                // Right-Side Window Actions (Bell, Minimize ─, Maximize/Restore ❐, Close ×)
+                // =========================================================================
+                let btn_w = 34.0;
+                let btn_gap = 4.0;
+                let right_edge = bar_rect.right() - 2.0;
+
+                let close_rect = Rect::from_center_size(
+                    Pos2::new(right_edge - btn_w * 0.5, cy),
+                    Vec2::new(btn_w, pill_h),
+                );
+                let max_rect = Rect::from_center_size(
+                    Pos2::new(close_rect.left() - btn_gap - btn_w * 0.5, cy),
+                    Vec2::new(btn_w, pill_h),
+                );
+                let min_rect = Rect::from_center_size(
+                    Pos2::new(max_rect.left() - btn_gap - btn_w * 0.5, cy),
+                    Vec2::new(btn_w, pill_h),
+                );
+                let bell_rect = Rect::from_center_size(
+                    Pos2::new(min_rect.left() - 8.0 - btn_w * 0.5, cy),
+                    Vec2::new(btn_w, pill_h),
+                );
+
+                // Interactive Drag Region in the middle empty space of the topbar
+                let drag_left = left_controls_end;
+                let drag_right = (bell_rect.left() - 6.0).max(drag_left + 10.0);
+                let drag_rect = Rect::from_min_max(
+                    Pos2::new(drag_left, bar_rect.top()),
+                    Pos2::new(drag_right, bar_rect.bottom()),
+                );
+                let drag_resp = ui.interact(
+                    drag_rect,
+                    egui::Id::new("topbar_window_drag_zone"),
+                    Sense::click_and_drag(),
+                );
+                if drag_resp.double_clicked() {
+                    ctx.send_viewport_cmd(egui::ViewportCommand::Maximized(!is_maximized));
+                } else if drag_resp.drag_started_by(egui::PointerButton::Primary) {
+                    ctx.send_viewport_cmd(egui::ViewportCommand::StartDrag);
+                }
+
+                // A. Notification Bell Button (🔔) — triggers/opens GitHub Update Popup
+                let bell_resp = ui.interact(
+                    bell_rect,
+                    egui::Id::new("topbar_bell_update_btn"),
+                    Sense::click(),
+                );
+                if bell_resp.hovered() {
+                    ui.painter()
+                        .rect_filled(bell_rect, CornerRadius::same(6), pill_bg);
+                }
+                let bell_fg = if self.available_update.is_some() {
+                    TERM_YELLOW
+                } else if bell_resp.hovered() {
+                    Color32::WHITE
+                } else {
+                    icon_muted
+                };
+                draw_icon_bell(ui.painter(), bell_rect.center(), bell_fg);
+                if self.available_update.is_some() {
+                    ui.painter().circle_filled(
+                        Pos2::new(bell_rect.center().x + 4.5, bell_rect.center().y - 4.5),
+                        3.0,
+                        Color32::from_rgb(248, 113, 113),
+                    );
+                }
+                if bell_resp
+                    .on_hover_text(if let Some(rel) = &self.available_update {
+                        format!("Update Available: {} (Click to view)", rel.tag_name)
+                    } else {
+                        "Notifications & Check for Updates (GitHub)".to_string()
+                    })
+                    .clicked()
+                {
+                    if self.available_update.is_some() {
+                        self.show_update_modal = true;
+                    } else if !self.update_checking {
+                        spawn_update_check(self.updater_tx.clone(), true);
+                    }
+                }
+
+                // B. Minimize Button (─)
+                let min_resp = ui.interact(
+                    min_rect,
+                    egui::Id::new("topbar_window_minimize_btn"),
+                    Sense::click(),
+                );
+                if min_resp.hovered() {
+                    ui.painter()
+                        .rect_filled(min_rect, CornerRadius::same(6), pill_bg);
+                }
+                let min_fg = if min_resp.hovered() {
+                    Color32::WHITE
+                } else {
+                    icon_muted
+                };
+                let min_c = min_rect.center();
+                ui.painter().line_segment(
+                    [Pos2::new(min_c.x - 5.0, min_c.y), Pos2::new(min_c.x + 5.0, min_c.y)],
+                    Stroke::new(1.5_f32, min_fg),
+                );
+                if min_resp.on_hover_text("Minimize").clicked() {
+                    ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(true));
+                }
+
+                // C. Maximize / Restore Button (❐ — Termius double overlapping rounded squares)
+                let max_resp = ui.interact(
+                    max_rect,
+                    egui::Id::new("topbar_window_maximize_btn"),
+                    Sense::click(),
+                );
+                if max_resp.hovered() {
+                    ui.painter()
+                        .rect_filled(max_rect, CornerRadius::same(6), pill_bg);
+                }
+                let max_fg = if max_resp.hovered() {
+                    Color32::WHITE
+                } else {
+                    icon_muted
+                };
+                draw_icon_termius_restore_maximize(ui.painter(), max_rect.center(), max_fg);
+                if max_resp
+                    .on_hover_text(if is_maximized { "Restore" } else { "Maximize" })
+                    .clicked()
+                {
+                    ctx.send_viewport_cmd(egui::ViewportCommand::Maximized(!is_maximized));
+                }
+
+                // D. Close Button (×)
+                let close_resp = ui.interact(
+                    close_rect,
+                    egui::Id::new("topbar_window_close_btn"),
+                    Sense::click(),
+                );
+                if close_resp.hovered() {
+                    ui.painter().rect_filled(
+                        close_rect,
+                        CornerRadius::same(6),
+                        Color32::from_rgb(220, 38, 38),
+                    );
+                }
+                let close_fg = if close_resp.hovered() {
+                    Color32::WHITE
+                } else {
+                    icon_muted
+                };
+                let cc = close_rect.center();
+                let cs = Stroke::new(1.5_f32, close_fg);
+                ui.painter().line_segment(
+                    [Pos2::new(cc.x - 4.5, cc.y - 4.5), Pos2::new(cc.x + 4.5, cc.y + 4.5)],
+                    cs,
+                );
+                ui.painter().line_segment(
+                    [Pos2::new(cc.x + 4.5, cc.y - 4.5), Pos2::new(cc.x - 4.5, cc.y + 4.5)],
+                    cs,
+                );
+                if close_resp.on_hover_text("Close").clicked() {
+                    ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+                }
+            });
+    }
+
+    /// Provides invisible 5px interactive resize borders around the frameless window edges when unmaximized.
+    fn render_window_resize_handles(&self, ctx: &egui::Context) {
+        if ctx.input(|i| i.viewport().maximized.unwrap_or(false)) {
+            return;
+        }
+        let screen = ctx.screen_rect();
+        let border = 5.0;
+
+        let zones: [(&str, Rect, egui::ResizeDirection, egui::CursorIcon); 8] = [
+            (
+                "resize_n",
+                Rect::from_min_max(
+                    Pos2::new(screen.left() + border, screen.top()),
+                    Pos2::new(screen.right() - border, screen.top() + border),
+                ),
+                egui::ResizeDirection::North,
+                egui::CursorIcon::ResizeNorth,
+            ),
+            (
+                "resize_s",
+                Rect::from_min_max(
+                    Pos2::new(screen.left() + border, screen.bottom() - border),
+                    Pos2::new(screen.right() - border, screen.bottom()),
+                ),
+                egui::ResizeDirection::South,
+                egui::CursorIcon::ResizeSouth,
+            ),
+            (
+                "resize_w",
+                Rect::from_min_max(
+                    Pos2::new(screen.left(), screen.top() + border),
+                    Pos2::new(screen.left() + border, screen.bottom() - border),
+                ),
+                egui::ResizeDirection::West,
+                egui::CursorIcon::ResizeWest,
+            ),
+            (
+                "resize_e",
+                Rect::from_min_max(
+                    Pos2::new(screen.right() - border, screen.top() + border),
+                    Pos2::new(screen.right(), screen.bottom() - border),
+                ),
+                egui::ResizeDirection::East,
+                egui::CursorIcon::ResizeEast,
+            ),
+            (
+                "resize_nw",
+                Rect::from_min_size(screen.left_top(), Vec2::splat(border * 2.0)),
+                egui::ResizeDirection::NorthWest,
+                egui::CursorIcon::ResizeNorthWest,
+            ),
+            (
+                "resize_ne",
+                Rect::from_min_size(
+                    Pos2::new(screen.right() - border * 2.0, screen.top()),
+                    Vec2::splat(border * 2.0),
+                ),
+                egui::ResizeDirection::NorthEast,
+                egui::CursorIcon::ResizeNorthEast,
+            ),
+            (
+                "resize_sw",
+                Rect::from_min_size(
+                    Pos2::new(screen.left(), screen.bottom() - border * 2.0),
+                    Vec2::splat(border * 2.0),
+                ),
+                egui::ResizeDirection::SouthWest,
+                egui::CursorIcon::ResizeSouthWest,
+            ),
+            (
+                "resize_se",
+                Rect::from_min_size(
+                    Pos2::new(screen.right() - border * 2.0, screen.bottom() - border * 2.0),
+                    Vec2::splat(border * 2.0),
+                ),
+                egui::ResizeDirection::SouthEast,
+                egui::CursorIcon::ResizeSouthEast,
+            ),
+        ];
+
+        egui::Area::new(egui::Id::new("window_resize_handles_overlay"))
+            .order(egui::Order::Foreground)
+            .fixed_pos(Pos2::ZERO)
+            .show(ctx, |ui| {
+                for (id, rect, dir, cursor) in zones {
+                    let resp = ui.interact(rect, egui::Id::new(id), Sense::drag());
+                    if resp.hovered() {
+                        ctx.set_cursor_icon(cursor);
+                    }
+                    if resp.drag_started_by(egui::PointerButton::Primary) {
+                        ctx.send_viewport_cmd(egui::ViewportCommand::BeginResize(dir));
+                    }
+                }
+            });
+    }
+
     fn render_sidebar(&mut self, ctx: &egui::Context) {
         egui::SidePanel::left("shiply_sidebar")
             .resizable(false)
@@ -6059,6 +6661,53 @@ fn open_url_in_browser(url: &str) {
     {
         let _ = Command::new("xdg-open").arg(url).spawn();
     }
+}
+
+/// Draws a crisp outline notification bell icon (`🔔`) matching the Termius topbar.
+fn draw_icon_bell(painter: &egui::Painter, c: Pos2, color: Color32) {
+    let s = Stroke::new(1.4_f32, color);
+    // Bell dome & body
+    painter.line_segment(
+        [Pos2::new(c.x - 3.5, c.y - 3.5), Pos2::new(c.x, c.y - 5.5)],
+        s,
+    );
+    painter.line_segment(
+        [Pos2::new(c.x, c.y - 5.5), Pos2::new(c.x + 3.5, c.y - 3.5)],
+        s,
+    );
+    painter.line_segment(
+        [Pos2::new(c.x - 3.5, c.y - 3.5), Pos2::new(c.x - 4.8, c.y + 2.5)],
+        s,
+    );
+    painter.line_segment(
+        [Pos2::new(c.x + 3.5, c.y - 3.5), Pos2::new(c.x + 4.8, c.y + 2.5)],
+        s,
+    );
+    // Base rim
+    painter.line_segment(
+        [Pos2::new(c.x - 5.5, c.y + 2.5), Pos2::new(c.x + 5.5, c.y + 2.5)],
+        s,
+    );
+    // Clapper at bottom
+    painter.line_segment(
+        [Pos2::new(c.x - 1.5, c.y + 4.5), Pos2::new(c.x + 1.5, c.y + 4.5)],
+        s,
+    );
+}
+
+/// Draws the Termius-style overlapping double rounded-square maximize/restore icon (`❐`).
+fn draw_icon_termius_restore_maximize(painter: &egui::Painter, c: Pos2, color: Color32) {
+    let s = Stroke::new(1.3_f32, color);
+    // Front-left rounded square
+    let front_rect = Rect::from_center_size(Pos2::new(c.x - 1.2, c.y + 1.2), Vec2::new(8.0, 8.0));
+    painter.rect_stroke(front_rect, CornerRadius::same(2), s, StrokeKind::Inside);
+
+    // Back-right overlapping L-edges
+    let back_top_left = Pos2::new(c.x - 1.5, c.y - 5.0);
+    let back_top_right = Pos2::new(c.x + 5.0, c.y - 5.0);
+    let back_bot_right = Pos2::new(c.x + 5.0, c.y + 1.5);
+    painter.line_segment([back_top_left, back_top_right], s);
+    painter.line_segment([back_top_right, back_bot_right], s);
 }
 
 // =============================================================================
