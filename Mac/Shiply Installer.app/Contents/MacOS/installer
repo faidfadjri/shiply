@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+set -e
+BUNDLE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+MAC_DIR="$(cd "$BUNDLE_DIR/.." && pwd)"
+
+# Open Terminal to display installation progress
+if command -v osascript >/dev/null 2>&1; then
+    osascript <<EOF
+tell application "Terminal"
+    activate
+    do script "bash '$MAC_DIR/install-mac.sh'; exit"
+end tell
+EOF
+else
+    bash "$MAC_DIR/install-mac.sh"
+fi

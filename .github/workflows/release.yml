@@ -92,17 +92,22 @@ jobs:
       - name: Cache Cargo build artifacts
         uses: Swatinem/rust-cache@v2
 
-      - name: Build Release Binary
+      - name: Build Release Binary & Package macOS Installer
         run: |
           cargo build --release
           cp target/release/shiply shiply-macos-aarch64
           chmod +x shiply-macos-aarch64
+          cp target/release/shiply Mac/shiply
+          chmod +x Mac/shiply Mac/setup Mac/*.command Mac/*.sh "Mac/Shiply Installer.app/Contents/MacOS/installer"
+          zip -r shiply-macos-installer.zip Mac
 
       - name: Upload macOS Release Asset
         uses: actions/upload-artifact@v4
         with:
           name: macos-binaries
-          path: shiply-macos-aarch64
+          path: |
+            shiply-macos-aarch64
+            shiply-macos-installer.zip
 
   publish-release:
     name: Publish GitHub Release
@@ -163,4 +168,5 @@ jobs:
             release_assets/shiply-windows-x86_64.exe
             release_assets/shiply-linux-x86_64
             release_assets/shiply-macos-aarch64
+            release_assets/shiply-macos-installer.zip
             release_assets/latest.json

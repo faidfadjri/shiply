@@ -640,4 +640,43 @@ mod tests {
         assert_eq!(&ico[0..6], &[0, 0, 1, 0, 1, 0]);
         assert_eq!(ico.len(), EMBEDDED_LOGO_ICO.len());
     }
+
+    #[test]
+    fn test_mac_directory_installers_present_and_valid() {
+        let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        let mac_dir = manifest_dir.join("Mac");
+        assert!(mac_dir.exists(), "Mac directory must exist");
+
+        // Verify installer scripts exist and are non-empty
+        let install_sh = mac_dir.join("install-mac.sh");
+        assert!(install_sh.exists(), "install-mac.sh must exist");
+        let content_sh = fs::read_to_string(&install_sh).expect("read install-mac.sh");
+        assert!(content_sh.contains("#!/usr/bin/env bash"));
+        assert!(content_sh.contains("/Applications/Shiply.app"));
+
+        let install_cmd = mac_dir.join("install-mac.command");
+        assert!(install_cmd.exists(), "install-mac.command must exist");
+
+        let setup_cmd = mac_dir.join("setup.command");
+        assert!(setup_cmd.exists(), "setup.command must exist");
+
+        let setup = mac_dir.join("setup");
+        assert!(setup.exists(), "setup must exist");
+
+        // Verify Shiply Installer.app bundle
+        let app_bundle = mac_dir.join("Shiply Installer.app");
+        assert!(app_bundle.exists(), "Shiply Installer.app bundle must exist");
+
+        let info_plist = app_bundle.join("Contents").join("Info.plist");
+        assert!(info_plist.exists(), "Info.plist must exist in bundle");
+        let plist_content = fs::read_to_string(&info_plist).expect("read Info.plist");
+        assert!(plist_content.contains("<key>CFBundleName</key>"));
+        assert!(plist_content.contains("<string>Shiply Installer</string>"));
+
+        let installer_exec = app_bundle.join("Contents").join("MacOS").join("installer");
+        assert!(installer_exec.exists(), "installer executable must exist in bundle");
+
+        let icon_png = app_bundle.join("Contents").join("Resources").join("logo.png");
+        assert!(icon_png.exists(), "logo.png must exist in bundle resources");
+    }
 }
