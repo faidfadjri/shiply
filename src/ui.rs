@@ -229,6 +229,8 @@ pub struct ShiplyApp {
     pending_delete_confirm: Option<ConfirmDeleteAction>,
     fonts_initialized: bool,
     logo_texture: Option<egui::TextureHandle>,
+    project_switch_loading_id: Option<String>,
+    project_switch_loading_start: Option<Instant>,
 }
 
 impl ShiplyApp {
@@ -329,6 +331,8 @@ impl ShiplyApp {
             pending_delete_confirm: None,
             fonts_initialized: false,
             logo_texture: None,
+            project_switch_loading_id: None,
+            project_switch_loading_start: None,
         };
         app.refresh_selected_project_metadata(true);
         app
@@ -977,6 +981,9 @@ impl ShiplyApp {
         visuals.widgets.open.fg_stroke = Stroke::new(1.0_f32, TEXT_PRIMARY);
         visuals.widgets.open.corner_radius = 6.0.into();
 
+        // Change cursor to pointer (PointingHand) whenever hovering clickable / interactive elements
+        visuals.interact_cursor = Some(egui::CursorIcon::PointingHand);
+
         style.visuals = visuals;
         ctx.set_style(style);
     }
@@ -993,6 +1000,10 @@ impl eframe::App for ShiplyApp {
         }
         self.poll_executor_events(ctx);
         Self::configure_light_workspace_style(ctx);
+
+        if self.project_switch_loading_id.is_some() {
+            ctx.request_repaint();
+        }
 
         if let Some(m) = ctx.input(|i| i.viewport().maximized) {
             self.window_maximized = m;
@@ -1073,7 +1084,8 @@ impl eframe::App for ShiplyApp {
                                         close_rect,
                                         egui::Id::new("close_status_banner"),
                                         Sense::click(),
-                                    );
+                                    )
+                                    .on_hover_cursor(egui::CursorIcon::PointingHand);
                                     ui.painter().text(
                                         close_rect.center(),
                                         Align2::CENTER_CENTER,
@@ -1138,7 +1150,8 @@ impl ShiplyApp {
                     menu_rect,
                     egui::Id::new("topbar_hamburger_btn"),
                     Sense::click(),
-                );
+                )
+                .on_hover_cursor(egui::CursorIcon::PointingHand);
                 if menu_resp.hovered() {
                     ui.painter()
                         .rect_filled(menu_rect, CornerRadius::same(6), pill_bg);
@@ -1229,7 +1242,8 @@ impl ShiplyApp {
                     bell_rect,
                     egui::Id::new("topbar_bell_update_btn"),
                     Sense::click(),
-                );
+                )
+                .on_hover_cursor(egui::CursorIcon::PointingHand);
                 if bell_resp.hovered() {
                     ui.painter()
                         .rect_filled(bell_rect, CornerRadius::same(6), pill_bg);
@@ -1269,7 +1283,8 @@ impl ShiplyApp {
                     min_rect,
                     egui::Id::new("topbar_window_minimize_btn"),
                     Sense::click(),
-                );
+                )
+                .on_hover_cursor(egui::CursorIcon::PointingHand);
                 if min_resp.hovered() {
                     ui.painter()
                         .rect_filled(min_rect, CornerRadius::same(6), pill_bg);
@@ -1293,7 +1308,8 @@ impl ShiplyApp {
                     max_rect,
                     egui::Id::new("topbar_window_maximize_btn"),
                     Sense::click(),
-                );
+                )
+                .on_hover_cursor(egui::CursorIcon::PointingHand);
                 if max_resp.hovered() {
                     ui.painter()
                         .rect_filled(max_rect, CornerRadius::same(6), pill_bg);
@@ -1326,7 +1342,8 @@ impl ShiplyApp {
                     close_rect,
                     egui::Id::new("topbar_window_close_btn"),
                     Sense::click(),
-                );
+                )
+                .on_hover_cursor(egui::CursorIcon::PointingHand);
                 if close_resp.hovered() {
                     ui.painter().rect_filled(
                         close_rect,
@@ -1507,6 +1524,7 @@ impl ShiplyApp {
                 let is_overview = matches!(self.selection, SidebarSelection::AllDeployments);
                 let (nav_rect, nav_resp) =
                     ui.allocate_exact_size(Vec2::new(full_w, 38.0), Sense::click());
+                let nav_resp = nav_resp.on_hover_cursor(egui::CursorIcon::PointingHand);
                 let nav_bg = if is_overview {
                     SIDEBAR_CARD_ACTIVE
                 } else if nav_resp.hovered() {
@@ -1552,6 +1570,8 @@ impl ShiplyApp {
                     ui.add_space(4.0);
                     let (bulk_nav_rect, bulk_nav_resp) =
                         ui.allocate_exact_size(Vec2::new(full_w, 34.0), Sense::click());
+                    let bulk_nav_resp =
+                        bulk_nav_resp.on_hover_cursor(egui::CursorIcon::PointingHand);
                     let bulk_nav_bg = if self.show_bulk_deploy_modal {
                         SIDEBAR_CARD_ACTIVE
                     } else if bulk_nav_resp.hovered() {
@@ -1597,11 +1617,13 @@ impl ShiplyApp {
                     Pos2::new(hdr_rect.right() - 52.0, hdr_rect.center().y - 11.0),
                     Vec2::new(52.0, 22.0),
                 );
-                let add_btn_resp = ui.interact(
-                    add_btn_rect,
-                    egui::Id::new("sidebar_add_proj_btn"),
-                    Sense::click(),
-                );
+                let add_btn_resp = ui
+                    .interact(
+                        add_btn_rect,
+                        egui::Id::new("sidebar_add_proj_btn"),
+                        Sense::click(),
+                    )
+                    .on_hover_cursor(egui::CursorIcon::PointingHand);
                 ui.painter().rect_filled(
                     add_btn_rect,
                     CornerRadius::same(5),
@@ -1656,6 +1678,7 @@ impl ShiplyApp {
                         );
                         let (p_rect, p_resp) =
                             ui.allocate_exact_size(Vec2::new(full_w, 66.0), Sense::click());
+                        let p_resp = p_resp.on_hover_cursor(egui::CursorIcon::PointingHand);
 
                         let fill = if is_selected {
                             SIDEBAR_CARD_ACTIVE
@@ -1687,6 +1710,22 @@ impl ShiplyApp {
                                 Color32::WHITE
                             },
                         );
+
+                        // Loading indicator spinner on the right side if changing active project
+                        let is_switching =
+                            self.project_switch_loading_id.as_deref() == Some(&project.id);
+                        if is_switching {
+                            ui.ctx().request_repaint();
+                            let spinner_center =
+                                Pos2::new(p_rect.right() - 20.0, p_rect.top() + 20.0);
+                            draw_circle_loading_spinner(
+                                ui.painter(),
+                                spinner_center,
+                                6.5,
+                                Color32::from_rgb(96, 165, 250),
+                                ui.input(|i| i.time),
+                            );
+                        }
 
                         // Environment version pills row inside project card
                         let mut pill_x = p_rect.left() + 12.0;
@@ -1735,7 +1774,15 @@ impl ShiplyApp {
                     }
 
                     if let Some(pid) = clicked_project_id {
-                        self.selection = SidebarSelection::Project(pid);
+                        let was_different = match &self.selection {
+                            SidebarSelection::Project(cur) => cur != &pid,
+                            SidebarSelection::AllDeployments => true,
+                        };
+                        self.selection = SidebarSelection::Project(pid.clone());
+                        if was_different {
+                            self.project_switch_loading_id = Some(pid);
+                            self.project_switch_loading_start = Some(Instant::now());
+                        }
                         self.refresh_selected_project_metadata(true);
                     }
                 }
@@ -1764,6 +1811,7 @@ impl ShiplyApp {
 
                     let (inst_rect, inst_resp) =
                         ui.allocate_exact_size(Vec2::new(full_w, 24.0), Sense::click());
+                    let inst_resp = inst_resp.on_hover_cursor(egui::CursorIcon::PointingHand);
                     ui.painter().circle_filled(
                         Pos2::new(inst_rect.left() + 6.0, inst_rect.center().y),
                         4.0,
@@ -1787,6 +1835,7 @@ impl ShiplyApp {
                     ui.add_space(4.0);
                     let (upd_rect, upd_resp) =
                         ui.allocate_exact_size(Vec2::new(full_w, 24.0), Sense::click());
+                    let upd_resp = upd_resp.on_hover_cursor(egui::CursorIcon::PointingHand);
                     let (upd_label, upd_color) = if let Some(rel) = &self.available_update {
                         (
                             format!("Update Available: {}!", rel.tag_name),
@@ -1835,6 +1884,7 @@ impl ShiplyApp {
                     ui.add_space(4.0);
                     let (dir_rect, dir_resp) =
                         ui.allocate_exact_size(Vec2::new(full_w, 24.0), Sense::click());
+                    let dir_resp = dir_resp.on_hover_cursor(egui::CursorIcon::PointingHand);
                     draw_icon_folder(
                         ui.painter(),
                         Pos2::new(dir_rect.left() + 6.0, dir_rect.center().y),
@@ -1865,6 +1915,7 @@ impl ShiplyApp {
                     ui.add_space(4.0);
                     let (sync_rect, sync_resp) =
                         ui.allocate_exact_size(Vec2::new(full_w, 24.0), Sense::click());
+                    let sync_resp = sync_resp.on_hover_cursor(egui::CursorIcon::PointingHand);
                     draw_icon_refresh(
                         ui.painter(),
                         Pos2::new(sync_rect.left() + 6.0, sync_rect.center().y),
@@ -3663,17 +3714,20 @@ impl ShiplyApp {
                 let is_checked = self.bulk_selected_projects.contains(&project.id);
                 let (rect, resp) =
                     ui.allocate_exact_size(Vec2::new(card_w, 108.0), Sense::click());
+                let resp = resp.on_hover_cursor(egui::CursorIcon::PointingHand);
 
                 // Checkbox hit target in top-right of the project card
                 let chk_rect = Rect::from_center_size(
                     Pos2::new(rect.right() - 24.0, rect.top() + 24.0),
                     Vec2::new(22.0, 22.0),
                 );
-                let chk_resp = ui.interact(
-                    chk_rect,
-                    egui::Id::new(("bulk_chk_card", &project.id)),
-                    Sense::click(),
-                );
+                let chk_resp = ui
+                    .interact(
+                        chk_rect,
+                        egui::Id::new(("bulk_chk_card", &project.id)),
+                        Sense::click(),
+                    )
+                    .on_hover_cursor(egui::CursorIcon::PointingHand);
 
                 draw_elevated_card(
                     ui.painter(),
@@ -3788,7 +3842,9 @@ impl ShiplyApp {
                 self.bulk_selected_projects.insert(tid);
             }
         } else if let Some(pid) = clicked_proj {
-            self.selection = SidebarSelection::Project(pid);
+            self.selection = SidebarSelection::Project(pid.clone());
+            self.project_switch_loading_id = Some(pid);
+            self.project_switch_loading_start = Some(Instant::now());
             self.refresh_selected_project_metadata(true);
             return;
         }
@@ -4547,6 +4603,20 @@ impl ShiplyApp {
             return;
         };
 
+        let proj_name = self.storage.projects[proj_idx].name.clone();
+
+        // If currently in the loading indicator transition for switching active project:
+        if self.project_switch_loading_id.as_deref() == Some(project_id) {
+            if let Some(start) = self.project_switch_loading_start {
+                if start.elapsed() < Duration::from_millis(300) {
+                    render_project_loading_indicator(ui, &proj_name);
+                    return;
+                }
+            }
+            self.project_switch_loading_id = None;
+            self.project_switch_loading_start = None;
+        }
+
         if self.storage.projects[proj_idx]
             .get_env(&self.selected_env_key)
             .is_none()
@@ -4558,7 +4628,6 @@ impl ShiplyApp {
                 .unwrap_or_default();
         }
 
-        let proj_name = self.storage.projects[proj_idx].name.clone();
         let proj_desc = self.storage.projects[proj_idx].description.clone();
         let proj_path = self.storage.projects[proj_idx].local_path.clone();
         let path_exists = PathBuf::from(&proj_path).exists();
@@ -4784,17 +4853,20 @@ impl ShiplyApp {
                     Vec2::new(card_w, ENV_CARD_HEIGHT),
                     Sense::click(),
                 );
+                let card_resp = card_resp.on_hover_cursor(egui::CursorIcon::PointingHand);
 
                 // Outline Trash delete button rect at top-right of the card
                 let del_rect = Rect::from_center_size(
                     Pos2::new(card_rect.right() - 22.0, card_rect.top() + 24.0),
                     Vec2::new(24.0, 24.0),
                 );
-                let del_resp = ui.interact(
-                    del_rect,
-                    egui::Id::new(("del_env_card_btn", project_id, env_key)),
-                    Sense::click(),
-                );
+                let del_resp = ui
+                    .interact(
+                        del_rect,
+                        egui::Id::new(("del_env_card_btn", project_id, env_key)),
+                        Sense::click(),
+                    )
+                    .on_hover_cursor(egui::CursorIcon::PointingHand);
 
                 let stroke = if is_active {
                     Stroke::new(2.0_f32, PRIMARY_BLUE)
@@ -4921,6 +4993,7 @@ impl ShiplyApp {
                 Vec2::new(card_w, ENV_CARD_HEIGHT),
                 Sense::click(),
             );
+            let add_resp = add_resp.on_hover_cursor(egui::CursorIcon::PointingHand);
             let add_bg = if add_resp.hovered() {
                 CARD_BG
             } else {
@@ -5176,7 +5249,13 @@ impl ShiplyApp {
             ),
             Vec2::new(btn_w, btn_h),
         );
-        let btn_resp = ui.interact(btn_rect, egui::Id::new("primary_deploy_btn"), Sense::click());
+        let btn_resp = ui
+            .interact(btn_rect, egui::Id::new("primary_deploy_btn"), Sense::click())
+            .on_hover_cursor(if is_busy {
+                egui::CursorIcon::NotAllowed
+            } else {
+                egui::CursorIcon::PointingHand
+            });
         let btn_bg = if is_busy {
             TEXT_MUTED
         } else if btn_resp.hovered() {
@@ -5223,11 +5302,17 @@ impl ShiplyApp {
                 ),
                 Vec2::new(rb_w, btn_h),
             );
-            let rb_resp = ui.interact(
-                rb_rect,
-                egui::Id::new("quick_rollback_btn"),
-                Sense::click(),
-            );
+            let rb_resp = ui
+                .interact(
+                    rb_rect,
+                    egui::Id::new("quick_rollback_btn"),
+                    Sense::click(),
+                )
+                .on_hover_cursor(if is_busy {
+                    egui::CursorIcon::NotAllowed
+                } else {
+                    egui::CursorIcon::PointingHand
+                });
             ui.painter().rect_filled(
                 rb_rect,
                 CornerRadius::same(8),
@@ -6542,6 +6627,7 @@ impl ShiplyApp {
                     horizontal_row(ui, 26.0, |ui| {
                         let (chev_r, chev_resp) =
                             ui.allocate_exact_size(Vec2::new(18.0, 18.0), Sense::click());
+                        let chev_resp = chev_resp.on_hover_cursor(egui::CursorIcon::PointingHand);
                         draw_icon_chevron(
                             ui.painter(),
                             chev_r.center(),
@@ -6588,6 +6674,7 @@ impl ShiplyApp {
             horizontal_row(ui, 32.0, |ui| {
                 let (chev_r, chev_resp) =
                     ui.allocate_exact_size(Vec2::new(18.0, 18.0), Sense::click());
+                let chev_resp = chev_resp.on_hover_cursor(egui::CursorIcon::PointingHand);
                 draw_icon_chevron(
                     ui.painter(),
                     chev_r.center(),
@@ -6789,7 +6876,8 @@ impl ShiplyApp {
                                 );
                             })
                             .response
-                            .interact(Sense::click());
+                            .interact(Sense::click())
+                            .on_hover_cursor(egui::CursorIcon::PointingHand);
 
                             if step_resp
                                 .on_hover_text("Click to collapse or expand this step")
@@ -7244,11 +7332,13 @@ fn render_modal_header(
         Pos2::new(top_pos.x + full_w - 22.0, top_pos.y - 4.0),
         Vec2::new(28.0, 28.0),
     );
-    let close_resp = ui.interact(
-        close_rect,
-        ui.make_persistent_id(id_salt),
-        Sense::click(),
-    );
+    let close_resp = ui
+        .interact(
+            close_rect,
+            ui.make_persistent_id(id_salt),
+            Sense::click(),
+        )
+        .on_hover_cursor(egui::CursorIcon::PointingHand);
 
     let (title_rect, _) =
         ui.allocate_exact_size(Vec2::new(full_w - 36.0, 24.0), Sense::hover());
@@ -7321,7 +7411,9 @@ fn render_uniform_tab_button(
     );
     let width = galley.size().x + 32.0;
     let (rect, _) = ui.allocate_exact_size(Vec2::new(width, height), Sense::hover());
-    let resp = ui.interact(rect, ui.make_persistent_id(id_salt), Sense::click());
+    let resp = ui
+        .interact(rect, ui.make_persistent_id(id_salt), Sense::click())
+        .on_hover_cursor(egui::CursorIcon::PointingHand);
 
     let (fill, stroke, text_color) = if is_active {
         (
@@ -7604,6 +7696,55 @@ fn paint_running_pill_right_aligned(
     w
 }
 
+/// Renders a centered, polished loading indicator card while switching active project.
+fn render_project_loading_indicator(ui: &mut egui::Ui, proj_name: &str) {
+    ui.ctx().request_repaint();
+    let avail_w = ui.available_width();
+    let avail_h = ui.available_height().max(320.0);
+    let time = ui.input(|i| i.time);
+
+    ui.allocate_ui_with_layout(
+        Vec2::new(avail_w, avail_h),
+        Layout::top_down(Align::Center),
+        |ui| {
+            ui.add_space(avail_h * 0.22);
+            let card_w = (avail_w * 0.6).clamp(380.0, 520.0);
+            let card_h = 175.0;
+            let (card_rect, _) = ui.allocate_exact_size(Vec2::new(card_w, card_h), Sense::hover());
+
+            // Card background & subtle border
+            ui.painter().rect_filled(card_rect, CornerRadius::same(12), CARD_BG);
+            ui.painter().rect_stroke(
+                card_rect,
+                CornerRadius::same(12),
+                Stroke::new(1.0_f32, CARD_BORDER),
+                StrokeKind::Inside,
+            );
+
+            // Large animated circular loading spinner
+            let spinner_center = Pos2::new(card_rect.center().x, card_rect.top() + 46.0);
+            draw_circle_loading_spinner(ui.painter(), spinner_center, 18.0, PRIMARY_BLUE, time);
+
+            // Project name & status text
+            ui.painter().text(
+                Pos2::new(card_rect.center().x, card_rect.top() + 92.0),
+                Align2::CENTER_CENTER,
+                format!("Switching to {proj_name}..."),
+                FontId::proportional(FONT_LG),
+                TEXT_PRIMARY,
+            );
+
+            ui.painter().text(
+                Pos2::new(card_rect.center().x, card_rect.top() + 124.0),
+                Align2::CENTER_CENTER,
+                "Loading Git repository status, branches & deployment pipelines...",
+                FontId::proportional(FONT_SM),
+                TEXT_SECONDARY,
+            );
+        },
+    );
+}
+
 fn render_light_status_badge(ui: &mut egui::Ui, status: DeploymentStatus) {
     let (bg, fg) = status_pill_colors(status);
     let text = status.label().to_uppercase();
@@ -7842,7 +7983,7 @@ fn outline_icon_button(
     };
 
     let (rect, _) = ui.allocate_exact_size(Vec2::new(width, height), Sense::hover());
-    let resp = ui.interact(
+    let mut resp = ui.interact(
         rect,
         ui.make_persistent_id(id_salt),
         if enabled {
@@ -7851,6 +7992,9 @@ fn outline_icon_button(
             Sense::hover()
         },
     );
+    if enabled {
+        resp = resp.on_hover_cursor(egui::CursorIcon::PointingHand);
+    }
 
     let fill = if enabled && resp.hovered() {
         hover_bg
@@ -8194,5 +8338,24 @@ mod tests {
             filtered[0].git_changes,
             vec!["feat(api): add auth endpoint".to_string()]
         );
+    }
+
+    #[test]
+    fn test_project_switch_loading_indicator_and_hover_cursor() {
+        let ctx = egui::Context::default();
+        ShiplyApp::configure_light_workspace_style(&ctx);
+
+        // Verify global visuals hover interact cursor is set to PointingHand (Pointer)
+        assert_eq!(
+            ctx.style().visuals.interact_cursor,
+            Some(egui::CursorIcon::PointingHand)
+        );
+
+        // Test render_project_loading_indicator execution without panic
+        let _ = ctx.run(Default::default(), |ctx| {
+            egui::CentralPanel::default().show(ctx, |ui| {
+                render_project_loading_indicator(ui, "Backend API");
+            });
+        });
     }
 }
