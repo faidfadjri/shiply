@@ -154,11 +154,16 @@ jobs:
           }
           EOF
 
+          # Generate SHA256 checksums for all release artifacts
+          cd release_assets
+          sha256sum * > SHA256SUMS.txt
+          cd ..
+
       - name: Create & Publish GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ github.ref_name }}
-          name: "Shiply ${{ github.ref_name }}"
+          tag_name: ${{ github.event.inputs.tag || github.ref_name }}
+          name: "Shiply ${{ github.event.inputs.tag || github.ref_name }}"
           generate_release_notes: true
           draft: false
           prerelease: false
@@ -170,3 +175,4 @@ jobs:
             release_assets/shiply-macos-aarch64
             release_assets/shiply-macos-installer.zip
             release_assets/latest.json
+            release_assets/SHA256SUMS.txt

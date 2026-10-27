@@ -1,58 +1,43 @@
-# Builds Shiply in release mode, places setup.exe and shiply.exe in ./Windows/, ./dist/, and ./setup.exe,
-# syncs logo.ico into ./Windows/, ./Linux/, and ./Mac/, and installs or updates Shiply in
-# %LOCALAPPDATA%\Programs\Shiply\shiply.exe along with Desktop and Start Menu shortcuts.
+# Shiply Universal Windows Installer Script
+# Builds Shiply from source (or downloads the latest release from GitHub if Cargo is absent)
+# and installs/updates Shiply in %LOCALAPPDATA%\Programs\Shiply\shiply.exe with Desktop/Start Menu shortcuts.
 
 $ErrorActionPreference = 'Stop'
+$GithubRepo = "faidfadjri/shiply"
 
 if ($PSScriptRoot) {
     Set-Location -LiteralPath $PSScriptRoot
 }
 
-Write-Host "[1/3] Building Shiply release binary (cargo build --release)..." -ForegroundColor Cyan
-cargo build --release
-if ($LASTEXITCODE -ne 0) {
-    throw "Cargo release build failed (exit code $LASTEXITCODE)."
-}
-
-Write-Host "[2/3] Populating platform installer directories (./Windows/, ./Linux/, ./Mac/, ./dist/)..." -ForegroundColor Cyan
-foreach ($dir in @("./Windows", "./Linux", "./Mac", "./dist")) {
-    New-Item -ItemType Directory -Force -Path $dir | Out-Null
-}
-
-foreach ($target in @(
-    "./Windows/setup.exe",
-    "./Windows/shiply.exe",
-    "./dist/shiply.exe",
-    "./dist/setup.exe",
-    "./setup.exe"
-)) {
-    $old = "$target.old"
-    if (Test-Path $old) {
-        Remove-Item -Path $old -Force -ErrorAction SilentlyContinue
+if ((Get-Command "cargo" -ErrorAction SilentlyContinue) -and (Test-Path "Cargo.toml")) {
+    Write-Host "[1/2] Building Shiply release binary (cargo build --release)..." -ForegroundColor Cyan
+    cargo build --release
+    if ($LASTEXITCODE -ne 0) {
+        throw "Cargo release build failed (exit code $LASTEXITCODE)."
     }
-    if (Test-Path $target) {
-        Move-Item -Path $target -Destination $old -Force -ErrorAction SilentlyContinue
+
+    $InstallerExe = "./target/release/shiply.exe"
+    Write-Host "[2/2] Running self-installer ($InstallerExe --install)..." -ForegroundColor Cyan
+    & $InstallerExe --install
+    if ($LASTEXITCODE -ne 0) {
+        throw "Installation failed (exit code $LASTEXITCODE)."
     }
-    Copy-Item -Path "./target/release/shiply.exe" -Destination $target -Force
-    if (Test-Path $old) {
-        Remove-Item -Path $old -Force -ErrorAction SilentlyContinue
+} else {
+    Write-Host "Cargo not found; downloading latest Shiply binary from GitHub Releases..." -ForegroundColor Cyan
+    $DownloadUrl = "https://github.com/$GithubRepo/releases/latest/download/shiply-windows-x86_64.exe"
+    $TempInstaller = Join-Path $env:TEMP "shiply-installer-$([System.Guid]::NewGuid().ToString('N')).exe"
+    try {
+        Write-Host "Downloading $DownloadUrl..." -ForegroundColor Gray
+        [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+        Invoke-WebRequest -Uri $DownloadUrl -OutFile $TempInstaller -UseBasicParsing
+        Write-Host "Running downloaded installer ($TempInstaller --install)..." -ForegroundColor Cyan
+        & $TempInstaller --install
+    } finally {
+        if (Test-Path $TempInstaller) {
+            Remove-Item $TempInstaller -Force -ErrorAction SilentlyContinue
+        }
     }
 }
 
-if (Test-Path "./logo.ico") {
-    Copy-Item -Path "./logo.ico" -Destination "./Windows/logo.ico" -Force
-    Copy-Item -Path "./logo.ico" -Destination "./Linux/logo.ico" -Force
-    Copy-Item -Path "./logo.ico" -Destination "./Mac/logo.ico" -Force
-}
-
-Write-Host "[3/3] Running self-installer (./target/release/shiply.exe --install)..." -ForegroundColor Cyan
-& "./target/release/shiply.exe" --install
-if ($LASTEXITCODE -ne 0) {
-    throw "Installation failed (exit code $LASTEXITCODE)."
-}
-
-Write-Host "Successfully built and installed/updated Shiply!" -ForegroundColor Green
-Write-Host "  Windows Installer: $(Resolve-Path './Windows/setup.exe')" -ForegroundColor Gray
-Write-Host "  Linux Installer:   $(Resolve-Path './Linux/install-linux.sh')" -ForegroundColor Gray
-Write-Host "  Mac Installer:     $(Resolve-Path './Mac/install-mac.command')" -ForegroundColor Gray
-Write-Host "  Installed path:    $env:LOCALAPPDATA\Programs\Shiply\shiply.exe" -ForegroundColor Gray
+Write-Host "Successfully installed/updated Shiply!" -ForegroundColor Green
+Write-Host "  Installed path: $env:LOCALAPPDATA\Programs\Shiply\shiply.exe" -ForegroundColor Gray

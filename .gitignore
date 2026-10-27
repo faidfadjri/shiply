@@ -1,6 +1,16 @@
 /target
 /dist
-/setup.exe
+*.exe
+*.dll
+*.dylib
+*.so
+*.dmg
+*.deb
+*.rpm
+*.zip
+*.tar.gz
+setup.exe
+Windows/*.exe
 .shiply_state.json
 shiply_state.json
 *.tmp
