@@ -233,6 +233,20 @@ pub fn resolve_credentials(
     }
 }
 
+/// Redacts all occurrences of sensitive secret strings from a given text string.
+/// Replaces every occurrence with `[REDACTED]`.
+pub fn redact_secrets(text: &str, secrets: &[&str]) -> String {
+    let mut sanitized = text.to_string();
+    for secret in secrets {
+        let trimmed = secret.trim();
+        // Ignore single-character or trivial substrings to avoid over-redaction
+        if trimmed.len() >= 2 {
+            sanitized = sanitized.replace(trimmed, "[REDACTED]");
+        }
+    }
+    sanitized
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -270,5 +284,16 @@ mod tests {
         let read_pw = read_askpass_secret_from_env();
         env::remove_var(ENV_ASKPASS_FILE);
         assert_eq!(read_pw.as_deref(), Some("s3cr3t_pw"));
+    }
+
+    #[test]
+    fn test_redact_secrets_from_command_output() {
+        let text = "Connecting to user@10.0.0.1 with password SuperSecretPassword123! in /var/app";
+        let redacted = redact_secrets(text, &["SuperSecretPassword123!"]);
+        assert_eq!(
+            redacted,
+            "Connecting to user@10.0.0.1 with password [REDACTED] in /var/app"
+        );
+        assert!(!redacted.contains("SuperSecretPassword123!"));
     }
 }

@@ -1,5 +1,5 @@
 use crate::credentials::{
-    resolve_credentials, ENV_ASKPASS_FILE, ENV_ASKPASS_MODE,
+    redact_secrets, resolve_credentials, ENV_ASKPASS_FILE, ENV_ASKPASS_MODE,
 };
 use crate::domain::{
     DeploymentRecord, DeploymentStatus, EnvironmentConfig, PipelineStep, StepExecutionLog,
@@ -52,9 +52,23 @@ impl AskpassGuard {
         let dir = env::temp_dir().join(format!("shiply-askpass-{}", Uuid::new_v4().simple()));
         fs::create_dir_all(&dir)
             .map_err(|e| format!("Failed to create temp askpass directory: {e}"))?;
+
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let _ = fs::set_permissions(&dir, fs::Permissions::from_mode(0o700));
+        }
+
         let password_file = dir.join("p");
         fs::write(&password_file, password.as_bytes())
             .map_err(|e| format!("Failed to write temporary askpass secret: {e}"))?;
+
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let _ = fs::set_permissions(&password_file, fs::Permissions::from_mode(0o600));
+        }
+
         Ok(Self { dir, password_file })
     }
 
@@ -71,6 +85,13 @@ impl AskpassGuard {
 
 impl Drop for AskpassGuard {
     fn drop(&mut self) {
+        if self.password_file.exists() {
+            if let Ok(meta) = fs::metadata(&self.password_file) {
+                let zeros = vec![0u8; meta.len() as usize];
+                let _ = fs::write(&self.password_file, zeros);
+            }
+            let _ = fs::remove_file(&self.password_file);
+        }
         let _ = fs::remove_dir_all(&self.dir);
     }
 }
@@ -84,6 +105,13 @@ impl StagingGuard {
         let dir = env::temp_dir().join(format!("shiply-stage-{}", Uuid::new_v4().simple()));
         fs::create_dir_all(&dir)
             .map_err(|e| format!("Failed to create temporary staging directory: {e}"))?;
+
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let _ = fs::set_permissions(&dir, fs::Permissions::from_mode(0o700));
+        }
+
         let dest = dir.join(".env");
         fs::copy(source_file, &dest).map_err(|e| {
             format!(
@@ -92,12 +120,27 @@ impl StagingGuard {
                 dest.display()
             )
         })?;
+
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let _ = fs::set_permissions(&dest, fs::Permissions::from_mode(0o600));
+        }
+
         Ok((Self { dir }, dest))
     }
 }
 
 impl Drop for StagingGuard {
     fn drop(&mut self) {
+        let dest = self.dir.join(".env");
+        if dest.exists() {
+            if let Ok(meta) = fs::metadata(&dest) {
+                let zeros = vec![0u8; meta.len() as usize];
+                let _ = fs::write(&dest, zeros);
+            }
+            let _ = fs::remove_file(&dest);
+        }
         let _ = fs::remove_dir_all(&self.dir);
     }
 }
@@ -219,6 +262,112 @@ fn execute_local_shell_command(
     run_command_capture(&mut cmd)
 }
 
+/// Validates deployment parameters to prevent template and command/flag injection.
+pub fn validate_deployment_request(req: &DeploymentRequest) -> Result<(), String> {
+    // 1. Version validation: must be non-empty and match safe characters [a-zA-Z0-9._+-]
+    let ver = req.version.trim();
+    if ver.is_empty() {
+        return Err("Deployment version cannot be empty.".to_string());
+    }
+    if !ver
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '_' || c == '+' || c == '-')
+    {
+        return Err(format!(
+            "Invalid deployment version '{ver}': only alphanumeric characters, '.', '_', '+', and '-' are allowed."
+        ));
+    }
+
+    // 2. App name validation: no shell metacharacters or whitespace
+    let app_name = req.env_config.app_name.trim();
+    if app_name
+        .chars()
+        .any(|c| matches!(c, ';' | '&' | '|' | '$' | '>' | '<' | '`' | '\n' | '\r' | '\0' | ' '))
+    {
+        return Err(format!(
+            "Invalid app_name '{app_name}': cannot contain whitespace or shell metacharacters."
+        ));
+    }
+
+    // 3. Remote user validation: no option injection (- prefix), valid username chars
+    let remote_user = req.env_config.remote_user.trim();
+    if remote_user.starts_with('-') {
+        return Err(format!(
+            "Invalid remote_user '{remote_user}': cannot start with '-'."
+        ));
+    }
+    if !remote_user.is_empty()
+        && !remote_user
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '_' || c == '-')
+    {
+        return Err(format!(
+            "Invalid remote_user '{remote_user}': contains invalid characters."
+        ));
+    }
+
+    // 4. Server address validation: no option injection (- prefix), valid host/IP characters
+    for server in &req.env_config.servers {
+        let s = server.trim();
+        if s.starts_with('-') {
+            return Err(format!("Invalid server '{s}': cannot start with '-'."));
+        }
+        if s.chars().any(|c| {
+            c.is_whitespace()
+                || matches!(
+                    c,
+                    ';' | '&' | '|' | '$' | '>' | '<' | '`' | '\n' | '\r' | '\0' | '"' | '\''
+                )
+        }) {
+            return Err(format!(
+                "Invalid server '{s}': contains whitespace or shell metacharacters."
+            ));
+        }
+    }
+
+    // 5. Remote dir validation: cannot start with '-' to prevent option injection, no control chars
+    let remote_dir = req.env_config.remote_dir.trim();
+    if remote_dir.starts_with('-') {
+        return Err(format!(
+            "Invalid remote_dir '{remote_dir}': cannot start with '-'."
+        ));
+    }
+    if remote_dir
+        .chars()
+        .any(|c| c == '\0' || c == '\n' || c == '\r')
+    {
+        return Err("Invalid remote_dir: cannot contain newline or null characters.".to_string());
+    }
+
+    // 6. HTTP proxy validation: no shell metacharacters or control characters
+    if let Some(proxy) = &req.env_config.http_proxy {
+        let p = proxy.trim();
+        if p.chars().any(|c| {
+            c.is_whitespace()
+                || matches!(
+                    c,
+                    ';' | '&' | '|' | '$' | '>' | '<' | '`' | '\n' | '\r' | '\0' | '"' | '\''
+                )
+        }) {
+            return Err(format!(
+                "Invalid http_proxy '{p}': contains whitespace or shell metacharacters."
+            ));
+        }
+    }
+
+    // 7. Env source validation: no control chars or null bytes
+    if let Some(env_src) = &req.env_config.env_source {
+        let es = env_src.trim();
+        if es.starts_with('-') || es.chars().any(|c| c == '\0' || c == '\n' || c == '\r') {
+            return Err(format!(
+                "Invalid env_source '{es}': cannot start with '-' or contain control characters."
+            ));
+        }
+    }
+
+    Ok(())
+}
+
 fn build_ssh_command(
     remote_user: &str,
     server: &str,
@@ -229,7 +378,7 @@ fn build_ssh_command(
     let mut cmd = Command::new(ssh_bin);
     cmd.args([
         "-o",
-        "StrictHostKeyChecking=no",
+        "StrictHostKeyChecking=accept-new",
         "-o",
         "ConnectTimeout=10",
         "-o",
@@ -256,7 +405,7 @@ fn build_scp_command(
     let mut cmd = Command::new(scp_bin);
     cmd.args([
         "-o",
-        "StrictHostKeyChecking=no",
+        "StrictHostKeyChecking=accept-new",
         "-o",
         "ConnectTimeout=10",
         "-o",
@@ -324,6 +473,46 @@ pub fn run_deployment(
 
     notify(&record);
 
+    let resolved_creds = resolve_credentials(
+        &req.env_config.remote_user,
+        &req.env_config.vault_target,
+        req.manual_password.as_deref(),
+    );
+
+    let mut secrets_to_redact: Vec<&str> = Vec::new();
+    if let Some(pw) = req.manual_password.as_deref() {
+        secrets_to_redact.push(pw);
+    }
+    if let Some(pw) = resolved_creds.password.as_deref() {
+        if !secrets_to_redact.contains(&pw) {
+            secrets_to_redact.push(pw);
+        }
+    }
+
+    if let Err(val_err) = validate_deployment_request(&req) {
+        record.step_logs.push(StepExecutionLog {
+            step_name: "Validate Deployment Parameters".to_string(),
+            command_summary: "Security parameter validation".to_string(),
+            status: DeploymentStatus::Failed,
+            output: val_err,
+            duration_ms: 0,
+        });
+        return finalize_record(
+            record,
+            DeploymentStatus::Failed,
+            started_instant,
+            tx,
+            &secrets_to_redact,
+        );
+    }
+
+    let push_log = |rec: &mut DeploymentRecord, mut log: StepExecutionLog| {
+        log.output = redact_secrets(&log.output, &secrets_to_redact);
+        log.command_summary = redact_secrets(&log.command_summary, &secrets_to_redact);
+        rec.step_logs.push(log);
+        notify(rec);
+    };
+
     // Optional Rollback or Git Branch Checkout pre-step
     if req.is_rollback {
         let step_start = Instant::now();
@@ -356,14 +545,16 @@ pub fn run_deployment(
             record.git_changes =
                 read_git_code_changes(&req.local_path, req.previous_commit.as_deref());
         }
-        record.step_logs.push(StepExecutionLog {
-            step_name: format!("Rollback to v{}", req.version),
-            command_summary: format!("rollback -> v{}", req.version),
-            status: DeploymentStatus::Succeeded,
-            output: rollback_msg,
-            duration_ms: step_start.elapsed().as_millis() as u64,
-        });
-        notify(&record);
+        push_log(
+            &mut record,
+            StepExecutionLog {
+                step_name: format!("Rollback to v{}", req.version),
+                command_summary: format!("rollback -> v{}", req.version),
+                status: DeploymentStatus::Succeeded,
+                output: rollback_msg,
+                duration_ms: step_start.elapsed().as_millis() as u64,
+            },
+        );
     } else if let Some(target_branch) = &req.target_git_branch {
         let trimmed_branch = target_branch.trim();
         if !trimmed_branch.is_empty()
@@ -377,24 +568,35 @@ pub fn run_deployment(
                     record.git_commit = updated_meta.commit_short;
                     record.git_changes =
                         read_git_code_changes(&req.local_path, req.previous_commit.as_deref());
-                    record.step_logs.push(StepExecutionLog {
-                        step_name: "Checkout Git Branch".to_string(),
-                        command_summary: format!("git checkout {trimmed_branch}"),
-                        status: DeploymentStatus::Succeeded,
-                        output: out,
-                        duration_ms: step_start.elapsed().as_millis() as u64,
-                    });
-                    notify(&record);
+                    push_log(
+                        &mut record,
+                        StepExecutionLog {
+                            step_name: "Checkout Git Branch".to_string(),
+                            command_summary: format!("git checkout {trimmed_branch}"),
+                            status: DeploymentStatus::Succeeded,
+                            output: out,
+                            duration_ms: step_start.elapsed().as_millis() as u64,
+                        },
+                    );
                 }
                 Err(err) => {
-                    record.step_logs.push(StepExecutionLog {
-                        step_name: "Checkout Git Branch".to_string(),
-                        command_summary: format!("git checkout {trimmed_branch}"),
-                        status: DeploymentStatus::Failed,
-                        output: err,
-                        duration_ms: step_start.elapsed().as_millis() as u64,
-                    });
-                    return finalize_record(record, DeploymentStatus::Failed, started_instant, tx);
+                    push_log(
+                        &mut record,
+                        StepExecutionLog {
+                            step_name: "Checkout Git Branch".to_string(),
+                            command_summary: format!("git checkout {trimmed_branch}"),
+                            status: DeploymentStatus::Failed,
+                            output: err,
+                            duration_ms: step_start.elapsed().as_millis() as u64,
+                        },
+                    );
+                    return finalize_record(
+                        record,
+                        DeploymentStatus::Failed,
+                        started_instant,
+                        tx,
+                        &secrets_to_redact,
+                    );
                 }
             }
         }
@@ -405,28 +607,39 @@ pub fn run_deployment(
         let step_start = Instant::now();
         match update_package_json_version(&req.local_path, &req.version) {
             Ok(()) => {
-                record.step_logs.push(StepExecutionLog {
-                    step_name: "Update package.json Version".to_string(),
-                    command_summary: format!("package.json -> version {}", req.version),
-                    status: DeploymentStatus::Succeeded,
-                    output: format!(
-                        "Updated package.json version to '{}' in {}",
-                        req.version,
-                        req.local_path.display()
-                    ),
-                    duration_ms: step_start.elapsed().as_millis() as u64,
-                });
-                notify(&record);
+                push_log(
+                    &mut record,
+                    StepExecutionLog {
+                        step_name: "Update package.json Version".to_string(),
+                        command_summary: format!("package.json -> version {}", req.version),
+                        status: DeploymentStatus::Succeeded,
+                        output: format!(
+                            "Updated package.json version to '{}' in {}",
+                            req.version,
+                            req.local_path.display()
+                        ),
+                        duration_ms: step_start.elapsed().as_millis() as u64,
+                    },
+                );
             }
             Err(err) => {
-                record.step_logs.push(StepExecutionLog {
-                    step_name: "Update package.json Version".to_string(),
-                    command_summary: format!("package.json -> version {}", req.version),
-                    status: DeploymentStatus::Failed,
-                    output: err,
-                    duration_ms: step_start.elapsed().as_millis() as u64,
-                });
-                return finalize_record(record, DeploymentStatus::Failed, started_instant, tx);
+                push_log(
+                    &mut record,
+                    StepExecutionLog {
+                        step_name: "Update package.json Version".to_string(),
+                        command_summary: format!("package.json -> version {}", req.version),
+                        status: DeploymentStatus::Failed,
+                        output: err,
+                        duration_ms: step_start.elapsed().as_millis() as u64,
+                    },
+                );
+                return finalize_record(
+                    record,
+                    DeploymentStatus::Failed,
+                    started_instant,
+                    tx,
+                    &secrets_to_redact,
+                );
             }
         }
     }
@@ -439,12 +652,6 @@ pub fn run_deployment(
         )
     });
 
-    let resolved_creds = resolve_credentials(
-        &req.env_config.remote_user,
-        &req.env_config.vault_target,
-        req.manual_password.as_deref(),
-    );
-
     let mut env_cfg = req.env_config.clone();
     env_cfg.remote_user = resolved_creds.username.clone();
 
@@ -452,14 +659,23 @@ pub fn run_deployment(
         match AskpassGuard::new(pw) {
             Ok(guard) => Some(guard),
             Err(err) => {
-                record.step_logs.push(StepExecutionLog {
-                    step_name: "Initialize SSH AskPass".to_string(),
-                    command_summary: "Setup temporary SSH_ASKPASS helper".to_string(),
-                    status: DeploymentStatus::Failed,
-                    output: err,
-                    duration_ms: 0,
-                });
-                return finalize_record(record, DeploymentStatus::Failed, started_instant, tx);
+                push_log(
+                    &mut record,
+                    StepExecutionLog {
+                        step_name: "Initialize SSH AskPass".to_string(),
+                        command_summary: "Setup temporary SSH_ASKPASS helper".to_string(),
+                        status: DeploymentStatus::Failed,
+                        output: err,
+                        duration_ms: 0,
+                    },
+                );
+                return finalize_record(
+                    record,
+                    DeploymentStatus::Failed,
+                    started_instant,
+                    tx,
+                    &secrets_to_redact,
+                );
             }
         }
     } else {
@@ -470,14 +686,23 @@ pub fn run_deployment(
     if needs_ssh && !req.skip_ssh_preflight {
         let step_start = Instant::now();
         if env_cfg.servers.is_empty() {
-            record.step_logs.push(StepExecutionLog {
-                step_name: "Pre-flight SSH Verification".to_string(),
-                command_summary: "Verify target servers configured".to_string(),
-                status: DeploymentStatus::Failed,
-                output: "No target servers configured for this environment.".to_string(),
-                duration_ms: 0,
-            });
-            return finalize_record(record, DeploymentStatus::Failed, started_instant, tx);
+            push_log(
+                &mut record,
+                StepExecutionLog {
+                    step_name: "Pre-flight SSH Verification".to_string(),
+                    command_summary: "Verify target servers configured".to_string(),
+                    status: DeploymentStatus::Failed,
+                    output: "No target servers configured for this environment.".to_string(),
+                    duration_ms: 0,
+                },
+            );
+            return finalize_record(
+                record,
+                DeploymentStatus::Failed,
+                started_instant,
+                tx,
+                &secrets_to_redact,
+            );
         }
 
         let mut preflight_log = format!(
@@ -505,45 +730,65 @@ pub fn run_deployment(
                             &out
                         }
                     ));
-                    record.step_logs.push(StepExecutionLog {
-                        step_name: "Pre-flight SSH Verification".to_string(),
-                        command_summary: format!(
-                            "ssh {}@({}) true",
-                            env_cfg.remote_user,
-                            env_cfg.servers.join(", ")
-                        ),
-                        status: DeploymentStatus::Failed,
-                        output: preflight_log,
-                        duration_ms: step_start.elapsed().as_millis() as u64,
-                    });
-                    return finalize_record(record, DeploymentStatus::Failed, started_instant, tx);
+                    push_log(
+                        &mut record,
+                        StepExecutionLog {
+                            step_name: "Pre-flight SSH Verification".to_string(),
+                            command_summary: format!(
+                                "ssh {}@({}) true",
+                                env_cfg.remote_user,
+                                env_cfg.servers.join(", ")
+                            ),
+                            status: DeploymentStatus::Failed,
+                            output: preflight_log,
+                            duration_ms: step_start.elapsed().as_millis() as u64,
+                        },
+                    );
+                    return finalize_record(
+                        record,
+                        DeploymentStatus::Failed,
+                        started_instant,
+                        tx,
+                        &secrets_to_redact,
+                    );
                 }
                 Err(err) => {
                     preflight_log.push_str(&format!("\n  [ERROR] {server}: {err}"));
-                    record.step_logs.push(StepExecutionLog {
-                        step_name: "Pre-flight SSH Verification".to_string(),
-                        command_summary: "ssh pre-flight check".to_string(),
-                        status: DeploymentStatus::Failed,
-                        output: preflight_log,
-                        duration_ms: step_start.elapsed().as_millis() as u64,
-                    });
-                    return finalize_record(record, DeploymentStatus::Failed, started_instant, tx);
+                    push_log(
+                        &mut record,
+                        StepExecutionLog {
+                            step_name: "Pre-flight SSH Verification".to_string(),
+                            command_summary: "ssh pre-flight check".to_string(),
+                            status: DeploymentStatus::Failed,
+                            output: preflight_log,
+                            duration_ms: step_start.elapsed().as_millis() as u64,
+                        },
+                    );
+                    return finalize_record(
+                        record,
+                        DeploymentStatus::Failed,
+                        started_instant,
+                        tx,
+                        &secrets_to_redact,
+                    );
                 }
             }
         }
 
-        record.step_logs.push(StepExecutionLog {
-            step_name: "Pre-flight SSH Verification".to_string(),
-            command_summary: format!(
-                "ssh {}@({}) true",
-                env_cfg.remote_user,
-                env_cfg.servers.join(", ")
-            ),
-            status: DeploymentStatus::Succeeded,
-            output: preflight_log,
-            duration_ms: step_start.elapsed().as_millis() as u64,
-        });
-        notify(&record);
+        push_log(
+            &mut record,
+            StepExecutionLog {
+                step_name: "Pre-flight SSH Verification".to_string(),
+                command_summary: format!(
+                    "ssh {}@({}) true",
+                    env_cfg.remote_user,
+                    env_cfg.servers.join(", ")
+                ),
+                status: DeploymentStatus::Succeeded,
+                output: preflight_log,
+                duration_ms: step_start.elapsed().as_millis() as u64,
+            },
+        );
     }
 
     // Execute each enabled pipeline step in order
@@ -556,27 +801,38 @@ pub fn run_deployment(
                 let interpolated = env_cfg.interpolate(path, &req.version);
                 let full_path = req.local_path.join(&interpolated);
                 if full_path.exists() {
-                    record.step_logs.push(StepExecutionLog {
-                        step_name: step.name.clone(),
-                        command_summary: summary,
-                        status: DeploymentStatus::Succeeded,
-                        output: format!("Verified path exists: {}", full_path.display()),
-                        duration_ms: step_start.elapsed().as_millis() as u64,
-                    });
-                    notify(&record);
+                    push_log(
+                        &mut record,
+                        StepExecutionLog {
+                            step_name: step.name.clone(),
+                            command_summary: summary,
+                            status: DeploymentStatus::Succeeded,
+                            output: format!("Verified path exists: {}", full_path.display()),
+                            duration_ms: step_start.elapsed().as_millis() as u64,
+                        },
+                    );
                 } else {
-                    record.step_logs.push(StepExecutionLog {
-                        step_name: step.name.clone(),
-                        command_summary: summary,
-                        status: DeploymentStatus::Failed,
-                        output: format!(
-                            "Required path '{}' was not found in '{}'. Deployment aborted.",
-                            interpolated,
-                            req.local_path.display()
-                        ),
-                        duration_ms: step_start.elapsed().as_millis() as u64,
-                    });
-                    return finalize_record(record, DeploymentStatus::Failed, started_instant, tx);
+                    push_log(
+                        &mut record,
+                        StepExecutionLog {
+                            step_name: step.name.clone(),
+                            command_summary: summary,
+                            status: DeploymentStatus::Failed,
+                            output: format!(
+                                "Required path '{}' was not found in '{}'. Deployment aborted.",
+                                interpolated,
+                                req.local_path.display()
+                            ),
+                            duration_ms: step_start.elapsed().as_millis() as u64,
+                        },
+                    );
+                    return finalize_record(
+                        record,
+                        DeploymentStatus::Failed,
+                        started_instant,
+                        tx,
+                        &secrets_to_redact,
+                    );
                 }
             }
 
@@ -587,66 +843,78 @@ pub fn run_deployment(
                 let interpolated = env_cfg.interpolate(command, &req.version);
                 match execute_local_shell_command(&req.local_path, &interpolated) {
                     Ok((true, out)) => {
-                        record.step_logs.push(StepExecutionLog {
-                            step_name: step.name.clone(),
-                            command_summary: summary,
-                            status: DeploymentStatus::Succeeded,
-                            output: if out.is_empty() {
-                                format!("Command '{}' completed (exit 0).", interpolated)
-                            } else {
-                                out
+                        push_log(
+                            &mut record,
+                            StepExecutionLog {
+                                step_name: step.name.clone(),
+                                command_summary: summary,
+                                status: DeploymentStatus::Succeeded,
+                                output: if out.is_empty() {
+                                    format!("Command '{}' completed (exit 0).", interpolated)
+                                } else {
+                                    out
+                                },
+                                duration_ms: step_start.elapsed().as_millis() as u64,
                             },
-                            duration_ms: step_start.elapsed().as_millis() as u64,
-                        });
-                        notify(&record);
+                        );
                     }
                     Ok((false, out)) if *allow_failure => {
-                        record.step_logs.push(StepExecutionLog {
-                            step_name: step.name.clone(),
-                            command_summary: summary,
-                            status: DeploymentStatus::Succeeded,
-                            output: format!(
-                                "{out}\n[Warning] Command exited with non-zero status, but allow_failure is enabled. Proceeding with existing artifacts."
-                            ),
-                            duration_ms: step_start.elapsed().as_millis() as u64,
-                        });
-                        notify(&record);
+                        push_log(
+                            &mut record,
+                            StepExecutionLog {
+                                step_name: step.name.clone(),
+                                command_summary: summary,
+                                status: DeploymentStatus::Succeeded,
+                                output: format!(
+                                    "{out}\n[Warning] Command exited with non-zero status, but allow_failure is enabled. Proceeding with existing artifacts."
+                                ),
+                                duration_ms: step_start.elapsed().as_millis() as u64,
+                            },
+                        );
                     }
                     Ok((false, out)) => {
-                        record.step_logs.push(StepExecutionLog {
-                            step_name: step.name.clone(),
-                            command_summary: summary,
-                            status: DeploymentStatus::Failed,
-                            output: if out.is_empty() {
-                                format!(
-                                    "Command '{}' failed with non-zero exit code.",
-                                    interpolated
-                                )
-                            } else {
-                                out
+                        push_log(
+                            &mut record,
+                            StepExecutionLog {
+                                step_name: step.name.clone(),
+                                command_summary: summary,
+                                status: DeploymentStatus::Failed,
+                                output: if out.is_empty() {
+                                    format!(
+                                        "Command '{}' failed with non-zero exit code.",
+                                        interpolated
+                                    )
+                                } else {
+                                    out
+                                },
+                                duration_ms: step_start.elapsed().as_millis() as u64,
                             },
-                            duration_ms: step_start.elapsed().as_millis() as u64,
-                        });
+                        );
                         return finalize_record(
                             record,
                             DeploymentStatus::Failed,
                             started_instant,
                             tx,
+                            &secrets_to_redact,
                         );
                     }
                     Err(err) => {
-                        record.step_logs.push(StepExecutionLog {
-                            step_name: step.name.clone(),
-                            command_summary: summary,
-                            status: DeploymentStatus::Failed,
-                            output: err,
-                            duration_ms: step_start.elapsed().as_millis() as u64,
-                        });
+                        push_log(
+                            &mut record,
+                            StepExecutionLog {
+                                step_name: step.name.clone(),
+                                command_summary: summary,
+                                status: DeploymentStatus::Failed,
+                                output: err,
+                                duration_ms: step_start.elapsed().as_millis() as u64,
+                            },
+                        );
                         return finalize_record(
                             record,
                             DeploymentStatus::Failed,
                             started_instant,
                             tx,
+                            &secrets_to_redact,
                         );
                     }
                 }
@@ -665,18 +933,22 @@ pub fn run_deployment(
                     match expand_transfer_sources(&req.local_path, &interpolated_sources) {
                         Ok(files) => files,
                         Err(err) => {
-                            record.step_logs.push(StepExecutionLog {
-                                step_name: step.name.clone(),
-                                command_summary: summary,
-                                status: DeploymentStatus::Failed,
-                                output: err,
-                                duration_ms: step_start.elapsed().as_millis() as u64,
-                            });
+                            push_log(
+                                &mut record,
+                                StepExecutionLog {
+                                    step_name: step.name.clone(),
+                                    command_summary: summary,
+                                    status: DeploymentStatus::Failed,
+                                    output: err,
+                                    duration_ms: step_start.elapsed().as_millis() as u64,
+                                },
+                            );
                             return finalize_record(
                                 record,
                                 DeploymentStatus::Failed,
                                 started_instant,
                                 tx,
+                                &secrets_to_redact,
                             );
                         }
                     };
@@ -684,20 +956,24 @@ pub fn run_deployment(
                 let mut _staging_guard = None;
                 if *stage_env_file {
                     let Some(env_src_rel) = &env_cfg.env_source else {
-                        record.step_logs.push(StepExecutionLog {
-                            step_name: step.name.clone(),
-                            command_summary: summary,
-                            status: DeploymentStatus::Failed,
-                            output:
-                                "Step requires staging an env file, but no env_source is configured."
-                                    .to_string(),
-                            duration_ms: step_start.elapsed().as_millis() as u64,
-                        });
+                        push_log(
+                            &mut record,
+                            StepExecutionLog {
+                                step_name: step.name.clone(),
+                                command_summary: summary,
+                                status: DeploymentStatus::Failed,
+                                output:
+                                    "Step requires staging an env file, but no env_source is configured."
+                                        .to_string(),
+                                duration_ms: step_start.elapsed().as_millis() as u64,
+                            },
+                        );
                         return finalize_record(
                             record,
                             DeploymentStatus::Failed,
                             started_instant,
                             tx,
+                            &secrets_to_redact,
                         );
                     };
 
@@ -708,18 +984,22 @@ pub fn run_deployment(
                             _staging_guard = Some(guard);
                         }
                         Err(err) => {
-                            record.step_logs.push(StepExecutionLog {
-                                step_name: step.name.clone(),
-                                command_summary: summary,
-                                status: DeploymentStatus::Failed,
-                                output: err,
-                                duration_ms: step_start.elapsed().as_millis() as u64,
-                            });
+                            push_log(
+                                &mut record,
+                                StepExecutionLog {
+                                    step_name: step.name.clone(),
+                                    command_summary: summary,
+                                    status: DeploymentStatus::Failed,
+                                    output: err,
+                                    duration_ms: step_start.elapsed().as_millis() as u64,
+                                },
+                            );
                             return finalize_record(
                                 record,
                                 DeploymentStatus::Failed,
                                 started_instant,
                                 tx,
+                                &secrets_to_redact,
                             );
                         }
                     }
@@ -751,47 +1031,57 @@ pub fn run_deployment(
                         Ok((false, out)) => {
                             transfer_output
                                 .push_str(&format!("[{server}] SCP upload failed: {out}"));
-                            record.step_logs.push(StepExecutionLog {
-                                step_name: step.name.clone(),
-                                command_summary: summary,
-                                status: DeploymentStatus::Failed,
-                                output: transfer_output.trim().to_string(),
-                                duration_ms: step_start.elapsed().as_millis() as u64,
-                            });
+                            push_log(
+                                &mut record,
+                                StepExecutionLog {
+                                    step_name: step.name.clone(),
+                                    command_summary: summary,
+                                    status: DeploymentStatus::Failed,
+                                    output: transfer_output.trim().to_string(),
+                                    duration_ms: step_start.elapsed().as_millis() as u64,
+                                },
+                            );
                             return finalize_record(
                                 record,
                                 DeploymentStatus::Failed,
                                 started_instant,
                                 tx,
+                                &secrets_to_redact,
                             );
                         }
                         Err(err) => {
                             transfer_output.push_str(&format!("[{server}] Error: {err}"));
-                            record.step_logs.push(StepExecutionLog {
-                                step_name: step.name.clone(),
-                                command_summary: summary,
-                                status: DeploymentStatus::Failed,
-                                output: transfer_output.trim().to_string(),
-                                duration_ms: step_start.elapsed().as_millis() as u64,
-                            });
+                            push_log(
+                                &mut record,
+                                StepExecutionLog {
+                                    step_name: step.name.clone(),
+                                    command_summary: summary,
+                                    status: DeploymentStatus::Failed,
+                                    output: transfer_output.trim().to_string(),
+                                    duration_ms: step_start.elapsed().as_millis() as u64,
+                                },
+                            );
                             return finalize_record(
                                 record,
                                 DeploymentStatus::Failed,
                                 started_instant,
                                 tx,
+                                &secrets_to_redact,
                             );
                         }
                     }
                 }
 
-                record.step_logs.push(StepExecutionLog {
-                    step_name: step.name.clone(),
-                    command_summary: summary,
-                    status: DeploymentStatus::Succeeded,
-                    output: transfer_output.trim().to_string(),
-                    duration_ms: step_start.elapsed().as_millis() as u64,
-                });
-                notify(&record);
+                push_log(
+                    &mut record,
+                    StepExecutionLog {
+                        step_name: step.name.clone(),
+                        command_summary: summary,
+                        status: DeploymentStatus::Succeeded,
+                        output: transfer_output.trim().to_string(),
+                        duration_ms: step_start.elapsed().as_millis() as u64,
+                    },
+                );
             }
 
             StepKind::RemoteCommand { command } => {
@@ -815,47 +1105,57 @@ pub fn run_deployment(
                         }
                         Ok((false, out)) => {
                             remote_output.push_str(&format!("[{server}] Command failed:\n{out}"));
-                            record.step_logs.push(StepExecutionLog {
-                                step_name: step.name.clone(),
-                                command_summary: summary,
-                                status: DeploymentStatus::Failed,
-                                output: remote_output.trim().to_string(),
-                                duration_ms: step_start.elapsed().as_millis() as u64,
-                            });
+                            push_log(
+                                &mut record,
+                                StepExecutionLog {
+                                    step_name: step.name.clone(),
+                                    command_summary: summary,
+                                    status: DeploymentStatus::Failed,
+                                    output: remote_output.trim().to_string(),
+                                    duration_ms: step_start.elapsed().as_millis() as u64,
+                                },
+                            );
                             return finalize_record(
                                 record,
                                 DeploymentStatus::Failed,
                                 started_instant,
                                 tx,
+                                &secrets_to_redact,
                             );
                         }
                         Err(err) => {
                             remote_output.push_str(&format!("[{server}] Error: {err}"));
-                            record.step_logs.push(StepExecutionLog {
-                                step_name: step.name.clone(),
-                                command_summary: summary,
-                                status: DeploymentStatus::Failed,
-                                output: remote_output.trim().to_string(),
-                                duration_ms: step_start.elapsed().as_millis() as u64,
-                            });
+                            push_log(
+                                &mut record,
+                                StepExecutionLog {
+                                    step_name: step.name.clone(),
+                                    command_summary: summary,
+                                    status: DeploymentStatus::Failed,
+                                    output: remote_output.trim().to_string(),
+                                    duration_ms: step_start.elapsed().as_millis() as u64,
+                                },
+                            );
                             return finalize_record(
                                 record,
                                 DeploymentStatus::Failed,
                                 started_instant,
                                 tx,
+                                &secrets_to_redact,
                             );
                         }
                     }
                 }
 
-                record.step_logs.push(StepExecutionLog {
-                    step_name: step.name.clone(),
-                    command_summary: summary,
-                    status: DeploymentStatus::Succeeded,
-                    output: remote_output.trim().to_string(),
-                    duration_ms: step_start.elapsed().as_millis() as u64,
-                });
-                notify(&record);
+                push_log(
+                    &mut record,
+                    StepExecutionLog {
+                        step_name: step.name.clone(),
+                        command_summary: summary,
+                        status: DeploymentStatus::Succeeded,
+                        output: remote_output.trim().to_string(),
+                        duration_ms: step_start.elapsed().as_millis() as u64,
+                    },
+                );
             }
         }
     }
@@ -865,29 +1165,46 @@ pub fn run_deployment(
         let step_start = Instant::now();
         match create_git_tag(&req.local_path, &req.version, &req.env_config.key) {
             Ok(tag_name) => {
-                record.step_logs.push(StepExecutionLog {
-                    step_name: "Create Git Tag".to_string(),
-                    command_summary: format!("git tag -f -a {tag_name}"),
-                    status: DeploymentStatus::Succeeded,
-                    output: format!("Created Git tag '{tag_name}'"),
-                    duration_ms: step_start.elapsed().as_millis() as u64,
-                });
-                notify(&record);
+                push_log(
+                    &mut record,
+                    StepExecutionLog {
+                        step_name: "Create Git Tag".to_string(),
+                        command_summary: format!("git tag -f -a {tag_name}"),
+                        status: DeploymentStatus::Succeeded,
+                        output: format!("Created Git tag '{tag_name}'"),
+                        duration_ms: step_start.elapsed().as_millis() as u64,
+                    },
+                );
             }
             Err(err) => {
-                record.step_logs.push(StepExecutionLog {
-                    step_name: "Create Git Tag".to_string(),
-                    command_summary: format!("git tag {}", req.version),
-                    status: DeploymentStatus::Failed,
-                    output: err,
-                    duration_ms: step_start.elapsed().as_millis() as u64,
-                });
-                return finalize_record(record, DeploymentStatus::Failed, started_instant, tx);
+                push_log(
+                    &mut record,
+                    StepExecutionLog {
+                        step_name: "Create Git Tag".to_string(),
+                        command_summary: format!("git tag {}", req.version),
+                        status: DeploymentStatus::Failed,
+                        output: err,
+                        duration_ms: step_start.elapsed().as_millis() as u64,
+                    },
+                );
+                return finalize_record(
+                    record,
+                    DeploymentStatus::Failed,
+                    started_instant,
+                    tx,
+                    &secrets_to_redact,
+                );
             }
         }
     }
 
-    finalize_record(record, DeploymentStatus::Succeeded, started_instant, tx)
+    finalize_record(
+        record,
+        DeploymentStatus::Succeeded,
+        started_instant,
+        tx,
+        &secrets_to_redact,
+    )
 }
 
 fn finalize_record(
@@ -895,10 +1212,15 @@ fn finalize_record(
     status: DeploymentStatus,
     started_instant: Instant,
     tx: Option<&Sender<ExecutorEvent>>,
+    secrets: &[&str],
 ) -> DeploymentRecord {
     record.status = status;
     record.finished_at = Some(Utc::now());
     record.duration_ms = Some(started_instant.elapsed().as_millis() as u64);
+    for log in &mut record.step_logs {
+        log.output = redact_secrets(&log.output, secrets);
+        log.command_summary = redact_secrets(&log.command_summary, secrets);
+    }
     if let Some(sender) = tx {
         let _ = sender.send(ExecutorEvent::Finished(record.clone()));
     }
@@ -1010,6 +1332,126 @@ mod tests {
         assert_eq!(
             crate::version::read_package_json_version(tmp.path()).as_deref(),
             Some("1.0.0")
+        );
+    }
+
+    #[test]
+    fn test_validate_deployment_request_blocks_injections() {
+        let base_env = EnvironmentConfig {
+            key: "dev".to_string(),
+            name: "Development".to_string(),
+            app_name: "valid-app".to_string(),
+            servers: vec!["10.0.0.1".to_string()],
+            remote_user: "deployer".to_string(),
+            vault_target: "indyserver".to_string(),
+            remote_dir: "/data/app".to_string(),
+            env_source: None,
+            http_proxy: None,
+            steps: vec![],
+        };
+
+        let mut req = DeploymentRequest {
+            deployment_id: "test-sec-1".to_string(),
+            project_id: "demo".to_string(),
+            project_name: "Demo".to_string(),
+            local_path: PathBuf::from("."),
+            env_config: base_env.clone(),
+            version: "1.0.0; rm -rf /".to_string(),
+            bump_package_json: false,
+            create_git_tag_on_success: false,
+            manual_password: None,
+            skip_ssh_preflight: true,
+            target_git_branch: None,
+            rollback_commit: None,
+            previous_commit: None,
+            is_rollback: false,
+        };
+
+        // Malicious version
+        assert!(validate_deployment_request(&req).is_err());
+
+        // Valid version
+        req.version = "1.0.0-rc.1+build2".to_string();
+        assert!(validate_deployment_request(&req).is_ok());
+
+        // Option injection in server
+        req.env_config.servers = vec!["-oProxyCommand=evil".to_string()];
+        assert!(validate_deployment_request(&req).is_err());
+        req.env_config.servers = vec!["192.168.1.100".to_string()];
+        assert!(validate_deployment_request(&req).is_ok());
+
+        // Option injection in remote_user
+        req.env_config.remote_user = "-Fconfig".to_string();
+        assert!(validate_deployment_request(&req).is_err());
+        req.env_config.remote_user = "deployer".to_string();
+        assert!(validate_deployment_request(&req).is_ok());
+
+        // Shell injection in app_name
+        req.env_config.app_name = "app;calc.exe".to_string();
+        assert!(validate_deployment_request(&req).is_err());
+        req.env_config.app_name = "safe-app_1".to_string();
+        assert!(validate_deployment_request(&req).is_ok());
+
+        // Malicious proxy
+        req.env_config.http_proxy = Some("http://proxy.internal:8080 && evil".to_string());
+        assert!(validate_deployment_request(&req).is_err());
+    }
+
+    #[test]
+    fn test_deployment_redacts_secrets_from_logs() {
+        let tmp = TempDir::new().expect("tempdir");
+        let secret_pw = "SuperSecretPassword987!";
+        let env_config = EnvironmentConfig {
+            key: "dev".to_string(),
+            name: "Development".to_string(),
+            app_name: "demo-dev".to_string(),
+            servers: vec![],
+            remote_user: "appndq".to_string(),
+            vault_target: "indyserver".to_string(),
+            remote_dir: "/data/demo".to_string(),
+            env_source: None,
+            http_proxy: None,
+            steps: vec![PipelineStep::new(
+                "Echo Secret in Output",
+                StepKind::LocalCommand {
+                    command: format!("echo leaked secret: {secret_pw}"),
+                    allow_failure: false,
+                },
+            )],
+        };
+
+        let req = DeploymentRequest {
+            deployment_id: "test-redact-1".to_string(),
+            project_id: "demo".to_string(),
+            project_name: "Demo".to_string(),
+            local_path: tmp.path().to_path_buf(),
+            env_config,
+            version: "1.0.0".to_string(),
+            bump_package_json: false,
+            create_git_tag_on_success: false,
+            manual_password: Some(secret_pw.to_string()),
+            skip_ssh_preflight: true,
+            target_git_branch: None,
+            rollback_commit: None,
+            previous_commit: None,
+            is_rollback: false,
+        };
+
+        let record = run_deployment(req, None);
+        assert_eq!(record.status, DeploymentStatus::Succeeded);
+        assert_eq!(record.step_logs.len(), 1);
+        let log = &record.step_logs[0];
+        assert!(
+            !log.output.contains(secret_pw),
+            "Output leaked secret password!"
+        );
+        assert!(
+            log.output.contains("[REDACTED]"),
+            "Output did not contain [REDACTED]"
+        );
+        assert!(
+            !log.command_summary.contains(secret_pw),
+            "Summary leaked secret password!"
         );
     }
 }
