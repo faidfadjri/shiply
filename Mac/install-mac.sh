@@ -16,7 +16,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." 2>/dev/null && pwd || echo "$SCRIPT_DIR")"
 GITHUB_REPO="faidfadjri/shiply"
 APP_NAME="Shiply"
-VERSION="0.9.0"
+VERSION="0.9.1"
 
 echo "========================================================"
 echo "           Shiply macOS Application Installer           "

@@ -139,7 +139,13 @@ pub struct ShiplyApp {
     selected_env_key: String,
     active_tab: WorkspaceTab,
     history_env_filter: Option<String>,
+    history_visible_limit: usize,
     selected_deployment_id: Option<String>,
+
+    // Debounced disk save & field editing buffers
+    dirty_save_pending: bool,
+    last_edit_time: Option<Instant>,
+    servers_edit_buffer: Option<(String, String)>,
 
     // Collapsible Console Output & Code Changes state
     console_collapsed: bool,
@@ -259,7 +265,11 @@ impl ShiplyApp {
             selected_env_key: initial_env_key.clone(),
             active_tab: WorkspaceTab::HistoryAndLogs,
             history_env_filter: None,
+            history_visible_limit: 5,
             selected_deployment_id: initial_selected_dep,
+            dirty_save_pending: false,
+            last_edit_time: None,
+            servers_edit_buffer: None,
             console_collapsed: false,
             changes_collapsed: false,
             collapsed_step_indices: HashSet::new(),
@@ -368,6 +378,19 @@ impl ShiplyApp {
         ctx.set_fonts(fonts);
     }
 
+    pub fn mark_config_dirty(&mut self) {
+        self.dirty_save_pending = true;
+        self.last_edit_time = Some(Instant::now());
+    }
+
+    pub fn flush_pending_save(&mut self) {
+        if self.dirty_save_pending {
+            let _ = self.storage.save();
+            self.dirty_save_pending = false;
+            self.last_edit_time = None;
+        }
+    }
+
     fn refresh_selected_project_metadata(&mut self, update_version_input: bool) {
         let SidebarSelection::Project(proj_id) = &self.selection else {
             return;
@@ -385,6 +408,10 @@ impl ShiplyApp {
         }
 
         let path = PathBuf::from(&proj.local_path);
+        if self.cached_project_id.as_deref() != Some(&proj.id) {
+            self.history_visible_limit = 5;
+            self.servers_edit_buffer = None;
+        }
         self.cached_project_id = Some(proj.id.clone());
         self.cached_pkg_version = read_package_json_version(&path);
         self.cached_git_meta = read_git_metadata(&path);
@@ -597,6 +624,7 @@ impl ShiplyApp {
     }
 
     fn start_deployment(&mut self, req: DeploymentRequest) {
+        self.flush_pending_save();
         if self.active_deployment_id.is_some() {
             self.status_banner = Some((
                 "A deployment is already running. Please wait for it to finish.".to_string(),
@@ -1114,6 +1142,22 @@ impl eframe::App for ShiplyApp {
                             });
                     });
             });
+
+        // Debounced state saving: writes to disk 400ms after user finishes typing
+        if self.dirty_save_pending {
+            if let Some(last) = self.last_edit_time {
+                if last.elapsed() >= Duration::from_millis(400) {
+                    let _ = self.storage.save();
+                    self.dirty_save_pending = false;
+                    self.last_edit_time = None;
+                } else {
+                    ctx.request_repaint_after(Duration::from_millis(100));
+                }
+            } else {
+                let _ = self.storage.save();
+                self.dirty_save_pending = false;
+            }
+        }
     }
 }
 
@@ -5037,6 +5081,7 @@ impl ShiplyApp {
                 env_name: del_name,
             });
         } else if let Some(env_key) = new_selected_env_key {
+            self.servers_edit_buffer = None;
             self.selected_env_key = env_key;
             self.refresh_selected_project_metadata(true);
         }
@@ -5872,7 +5917,7 @@ impl ShiplyApp {
         }
 
         if config_changed {
-            let _ = self.storage.save();
+            self.mark_config_dirty();
         }
     }
 
@@ -6025,14 +6070,21 @@ impl ShiplyApp {
                                     .color(TEXT_SECONDARY)
                                     .strong(),
                             );
-                            let mut servers_joined = env_cfg.servers.join(", ");
+                            let servers_text = match &mut self.servers_edit_buffer {
+                                Some((k, buf)) if k == &env_key => buf,
+                                _ => {
+                                    self.servers_edit_buffer =
+                                        Some((env_key.clone(), env_cfg.servers.join(", ")));
+                                    &mut self.servers_edit_buffer.as_mut().unwrap().1
+                                }
+                            };
                             if styled_text_edit(
                                 ui,
-                                &mut servers_joined,
+                                servers_text,
                                 field_width,
                                 Some("e.g. 192.168.1.10, 192.168.1.11"),
                             ) {
-                                env_cfg.servers = servers_joined
+                                env_cfg.servers = servers_text
                                     .split(',')
                                     .map(|s| s.trim().to_string())
                                     .filter(|s| !s.is_empty())
@@ -6086,6 +6138,8 @@ impl ShiplyApp {
                                     field_width - 102.0,
                                     Some("e.g. prod-ssh-server or my-vault-target"),
                                 ) {
+                                    self.cached_vault_found =
+                                        read_os_vault_credential(&env_cfg.vault_target).is_some();
                                     config_changed = true;
                                 }
                                 if outline_icon_button(
@@ -6146,7 +6200,7 @@ impl ShiplyApp {
                                 env_cfg.env_source = if env_src.trim().is_empty() {
                                     None
                                 } else {
-                                    Some(env_src.trim().to_string())
+                                    Some(env_src)
                                 };
                                 config_changed = true;
                             }
@@ -6168,7 +6222,7 @@ impl ShiplyApp {
                                 env_cfg.http_proxy = if proxy.trim().is_empty() {
                                     None
                                 } else {
-                                    Some(proxy.trim().to_string())
+                                    Some(proxy)
                                 };
                                 config_changed = true;
                             }
@@ -6215,6 +6269,8 @@ impl ShiplyApp {
                 ));
             }
         } else if delete_current_env {
+            self.servers_edit_buffer = None;
+            self.flush_pending_save();
             if let Err(err) = self.storage.projects[proj_idx].remove_environment(&env_key) {
                 self.status_banner = Some((err, false));
             } else {
@@ -6231,8 +6287,7 @@ impl ShiplyApp {
                 ));
             }
         } else if config_changed {
-            let _ = self.storage.save();
-            self.refresh_selected_project_metadata(false);
+            self.mark_config_dirty();
         }
     }
 
@@ -6273,6 +6328,7 @@ impl ShiplyApp {
                     .corner_radius(6.0);
                     if ui.add(btn).clicked() {
                         self.history_env_filter = filter_val;
+                        self.history_visible_limit = 5;
                     }
                 }
             });
@@ -6367,7 +6423,10 @@ impl ShiplyApp {
                     });
                 }
 
-                for (idx, dep) in filtered.iter().enumerate() {
+                let total_count = filtered.len();
+                let visible_count = total_count.min(self.history_visible_limit.max(5));
+
+                for (idx, dep) in filtered.iter().take(visible_count).enumerate() {
                     if idx > 0 {
                         draw_divider(ui, SUBTLE_BG);
                     }
@@ -6579,6 +6638,64 @@ impl ShiplyApp {
                         });
                     });
                     ui.add_space(6.0);
+                }
+
+                if total_count > visible_count {
+                    if visible_count > 0 {
+                        draw_divider(ui, SUBTLE_BG);
+                    }
+                    ui.add_space(10.0);
+                    ui.vertical_centered(|ui| {
+                        let remaining = total_count - visible_count;
+                        let next_chunk = remaining.min(10);
+                        let btn_text = format!("Show More (+{next_chunk} of {remaining} remaining)...");
+                        let show_more_btn = egui::Button::new(
+                            RichText::new(btn_text)
+                                .size(FONT_SM)
+                                .strong()
+                                .color(PRIMARY_BLUE),
+                        )
+                        .fill(SUBTLE_BG)
+                        .stroke(Stroke::new(1.0_f32, PRIMARY_BLUE.gamma_multiply(0.4)))
+                        .corner_radius(6.0)
+                        .min_size(Vec2::new(240.0, 32.0));
+
+                        if ui
+                            .add(show_more_btn)
+                            .on_hover_cursor(egui::CursorIcon::PointingHand)
+                            .clicked()
+                        {
+                            self.history_visible_limit = self.history_visible_limit.saturating_add(10);
+                        }
+                    });
+                    ui.add_space(4.0);
+                } else if total_count > 5 {
+                    draw_divider(ui, SUBTLE_BG);
+                    ui.add_space(8.0);
+                    ui.vertical_centered(|ui| {
+                        horizontal_row(ui, 24.0, |ui| {
+                            ui.label(
+                                RichText::new(format!("Showing all {total_count} deployment records."))
+                                    .size(FONT_XS)
+                                    .color(TEXT_MUTED),
+                            );
+                            let collapse_btn = egui::Button::new(
+                                RichText::new("Collapse to Last 5")
+                                    .size(FONT_XS)
+                                    .color(TEXT_SECONDARY),
+                            )
+                            .fill(Color32::TRANSPARENT)
+                            .stroke(Stroke::NONE);
+                            if ui
+                                .add(collapse_btn)
+                                .on_hover_cursor(egui::CursorIcon::PointingHand)
+                                .clicked()
+                            {
+                                self.history_visible_limit = 5;
+                            }
+                        });
+                    });
+                    ui.add_space(4.0);
                 }
             });
 
@@ -8447,5 +8564,126 @@ mod tests {
                 app.render_deploy_action_bar(ui, "Production", None);
             });
         });
+    }
+
+    #[test]
+    fn test_deployment_history_pagination_last_5_and_show_more_10() {
+        let ctx = egui::Context::default();
+        ShiplyApp::configure_light_workspace_style(&ctx);
+
+        let mut storage = crate::storage::AppStorage::default();
+        // Create 18 mock deployments
+        for i in 1..=18 {
+            storage.deployments.push(DeploymentRecord {
+                id: format!("dep-{i}"),
+                project_id: "p1".to_string(),
+                project_name: "Test App".to_string(),
+                environment: "dev".to_string(),
+                app_name: "test-app".to_string(),
+                version: format!("1.0.{i}"),
+                git_branch: Some("main".to_string()),
+                git_commit: Some(format!("c{i}")),
+                git_changes: vec![],
+                is_rollback: false,
+                servers: vec!["10.0.0.1".to_string()],
+                status: DeploymentStatus::Succeeded,
+                started_at: chrono::Utc::now(),
+                finished_at: Some(chrono::Utc::now()),
+                duration_ms: Some(1000),
+                step_logs: vec![],
+                executed_steps: vec![],
+            });
+        }
+
+        let mut app = ShiplyApp::new(storage);
+        assert_eq!(app.history_visible_limit, 5);
+
+        // Render UI with initially 5 items
+        let _ = ctx.run(Default::default(), |ctx| {
+            egui::CentralPanel::default().show(ctx, |ui| {
+                app.render_history_and_logs_view(ui, None);
+            });
+        });
+
+        // Simulate Show More click -> increases by 10 to 15
+        app.history_visible_limit = app.history_visible_limit.saturating_add(10);
+        assert_eq!(app.history_visible_limit, 15);
+
+        let _ = ctx.run(Default::default(), |ctx| {
+            egui::CentralPanel::default().show(ctx, |ui| {
+                app.render_history_and_logs_view(ui, None);
+            });
+        });
+
+        // Next Show More click -> increases by 10 to 25 (exceeds 18 total)
+        app.history_visible_limit = app.history_visible_limit.saturating_add(10);
+        assert_eq!(app.history_visible_limit, 25);
+
+        let _ = ctx.run(Default::default(), |ctx| {
+            egui::CentralPanel::default().show(ctx, |ui| {
+                app.render_history_and_logs_view(ui, None);
+            });
+        });
+
+        // Reset/Collapse to last 5
+        app.history_visible_limit = 5;
+        assert_eq!(app.history_visible_limit, 5);
+    }
+
+    #[test]
+    fn test_server_settings_input_buffering_and_debounced_save() {
+        let ctx = egui::Context::default();
+        ShiplyApp::configure_light_workspace_style(&ctx);
+
+        let mut storage = crate::storage::AppStorage::default();
+        let env = EnvironmentConfig {
+            key: "dev".to_string(),
+            name: "Development".to_string(),
+            app_name: "api-dev".to_string(),
+            servers: vec!["10.0.0.1".to_string()],
+            remote_user: "deploy".to_string(),
+            vault_target: "dev_vault".to_string(),
+            remote_dir: "/apps/api".to_string(),
+            env_source: None,
+            http_proxy: None,
+            steps: vec![],
+        };
+        let project = Project {
+            id: "p1".to_string(),
+            name: "Test Project".to_string(),
+            description: "Desc".to_string(),
+            local_path: ".".to_string(),
+            environments: vec![env],
+        };
+        storage.projects.push(project);
+
+        let mut app = ShiplyApp::new(storage);
+        app.selected_env_key = "dev".to_string();
+
+        assert!(!app.dirty_save_pending);
+        assert!(app.servers_edit_buffer.is_none());
+
+        // Render Server Settings Tab without panic
+        let _ = ctx.run(Default::default(), |ctx| {
+            egui::CentralPanel::default().show(ctx, |ui| {
+                app.render_server_settings_tab(ui, 0);
+            });
+        });
+
+        // The buffer should now be initialized with the joined server string
+        assert_eq!(
+            app.servers_edit_buffer,
+            Some(("dev".to_string(), "10.0.0.1".to_string()))
+        );
+
+        // Simulate typing and mark dirty
+        app.mark_config_dirty();
+        assert!(app.dirty_save_pending);
+        assert!(app.last_edit_time.is_some());
+
+        // Flush pending save
+        app.flush_pending_save();
+        assert!(!app.dirty_save_pending);
+        assert!(app.last_edit_time.is_none());
     }
 }
