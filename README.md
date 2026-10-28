@@ -34,16 +34,11 @@ Deploying applications to on-premise servers that require VPN access is a freque
 
 ## Screenshots
 
-> _Screenshots showing the project dashboard, pipeline configuration, and deployment history._
+![Shiply Dashboard](preview/dashboard.png)
+*Project workspace with multi-environment status cards, Git branch switcher, version bump controls, and one-click deployment.*
 
-![Shiply Dashboard](docs/screenshots/dashboard.png)
-*Project dashboard with multi-environment status badges, Git branch switcher, and version controls.*
-
-![Pipeline Configuration](docs/screenshots/pipeline.png)
-*Visual pipeline step editor: Local build commands, path verification, SCP transfer, and remote SSH commands.*
-
-![Deployment Progress & History](docs/screenshots/deployment.png)
-*Live execution log output with secret redaction, timing stats, and one-click rollback.*
+![Deployment Progress & History](preview/deployment.png)
+*Live terminal output with collapsible pipeline steps, execution timing stats, automated credential redaction, and rollback history.*
 
 ---
 

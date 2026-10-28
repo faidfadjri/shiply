@@ -5238,10 +5238,55 @@ impl ShiplyApp {
                 .color(TEXT_SECONDARY),
         );
 
-        // Right-aligned Deploy Button + Rollback Button (Feature #3)
+        // Right-aligned Deploy Button + Rollback Button (Feature #3: Dynamic sizing based on env & version)
         let is_busy = self.active_deployment_id.is_some();
-        let btn_w = 236.0;
+        let btn_text = if is_busy {
+            "Deploying...".to_string()
+        } else {
+            let ver = self.deploy_version_input.trim();
+            if ver.is_empty() {
+                format!("Deploy to {env_display_name}")
+            } else {
+                format!("Deploy to {env_display_name} (v{ver})")
+            }
+        };
+
+        let deploy_galley = ui.painter().layout_no_wrap(
+            btn_text,
+            FontId::proportional(FONT_MD),
+            Color32::WHITE,
+        );
+        let deploy_icon_w = 14.0;
+        let deploy_gap = 8.0;
+        let deploy_pad_x = 18.0;
+        let deploy_content_w = deploy_icon_w + deploy_gap + deploy_galley.size().x;
+        let mut btn_w = (deploy_content_w + deploy_pad_x * 2.0).max(180.0);
         let btn_h = 42.0;
+
+        let rollback_info = rollback_candidate.as_ref().map(|prev_dep| {
+            let rb_text = format!("Rollback v{}", prev_dep.version);
+            let rb_galley = ui.painter().layout_no_wrap(
+                rb_text,
+                FontId::proportional(FONT_SM),
+                WARN_PILL_TEXT,
+            );
+            let rb_icon_w = 14.0;
+            let rb_gap = 7.0;
+            let rb_pad_x = 14.0;
+            let rb_content_w = rb_icon_w + rb_gap + rb_galley.size().x;
+            let rb_w = (rb_content_w + rb_pad_x * 2.0).max(136.0);
+            (rb_galley, rb_icon_w, rb_gap, rb_content_w, rb_w)
+        });
+
+        let left_controls_right = child.cursor().min.x;
+        let max_right_area_w = (bar_rect.right() - 20.0 - (left_controls_right + 16.0)).max(180.0);
+        let rb_total_w = rollback_info.as_ref().map(|(_, _, _, _, w)| *w + 10.0).unwrap_or(0.0);
+        let total_needed = btn_w + rb_total_w;
+        if total_needed > max_right_area_w {
+            let overflow = total_needed - max_right_area_w;
+            btn_w = (btn_w - overflow).max(140.0);
+        }
+
         let btn_rect = Rect::from_min_size(
             Pos2::new(
                 bar_rect.right() - 20.0 - btn_w,
@@ -5266,35 +5311,28 @@ impl ShiplyApp {
         ui.painter()
             .rect_filled(btn_rect, CornerRadius::same(8), btn_bg);
 
+        // Center icon and text together as a cohesive unit
+        let deploy_start_x = (btn_rect.center().x - deploy_content_w / 2.0)
+            .max(btn_rect.left() + 10.0);
         draw_icon_send(
             ui.painter(),
-            Pos2::new(btn_rect.left() + 24.0, btn_rect.center().y),
+            Pos2::new(deploy_start_x + deploy_icon_w / 2.0, btn_rect.center().y),
             Color32::WHITE,
         );
-        let btn_text = if is_busy {
-            "Deploying...".to_string()
-        } else {
-            format!(
-                "Deploy to {} (v{})",
-                env_display_name,
-                self.deploy_version_input.trim()
-            )
-        };
-        ui.painter().text(
-            Pos2::new(btn_rect.center().x + 10.0, btn_rect.center().y),
-            Align2::CENTER_CENTER,
-            btn_text,
-            FontId::proportional(FONT_MD),
-            Color32::WHITE,
+        let text_pos = Pos2::new(
+            deploy_start_x + deploy_icon_w + deploy_gap,
+            btn_rect.center().y - deploy_galley.size().y / 2.0,
         );
+        ui.painter().galley(text_pos, deploy_galley, Color32::WHITE);
 
         if !is_busy && btn_resp.clicked() {
             trigger_deploy = true;
         }
 
         // Quick Rollback Button if a previous succeeded deployment exists
-        if let Some(prev_dep) = rollback_candidate {
-            let rb_w = 158.0;
+        if let (Some(prev_dep), Some((rb_galley, rb_icon_w, rb_gap, rb_content_w, rb_w))) =
+            (rollback_candidate, rollback_info)
+        {
             let rb_rect = Rect::from_min_size(
                 Pos2::new(
                     btn_rect.left() - 10.0 - rb_w,
@@ -5328,19 +5366,21 @@ impl ShiplyApp {
                 Stroke::new(1.0_f32, WARN_PILL_TEXT),
                 StrokeKind::Inside,
             );
+
+            let rb_start_x = (rb_rect.center().x - rb_content_w / 2.0)
+                .max(rb_rect.left() + 8.0);
             draw_outline_icon(
                 ui.painter(),
-                Pos2::new(rb_rect.left() + 20.0, rb_rect.center().y),
+                Pos2::new(rb_start_x + rb_icon_w / 2.0, rb_rect.center().y),
                 OutlineIcon::RotateCcw,
                 WARN_PILL_TEXT,
             );
-            ui.painter().text(
-                Pos2::new(rb_rect.center().x + 8.0, rb_rect.center().y),
-                Align2::CENTER_CENTER,
-                format!("Rollback v{}", prev_dep.version),
-                FontId::proportional(FONT_SM),
-                WARN_PILL_TEXT,
+            let rb_text_pos = Pos2::new(
+                rb_start_x + rb_icon_w + rb_gap,
+                rb_rect.center().y - rb_galley.size().y / 2.0,
             );
+            ui.painter().galley(rb_text_pos, rb_galley, WARN_PILL_TEXT);
+
             if !is_busy
                 && rb_resp
                     .on_hover_text(format!(
@@ -8355,6 +8395,56 @@ mod tests {
         let _ = ctx.run(Default::default(), |ctx| {
             egui::CentralPanel::default().show(ctx, |ui| {
                 render_project_loading_indicator(ui, "Backend API");
+            });
+        });
+    }
+
+    #[test]
+    fn test_deploy_and_rollback_button_dynamic_sizing_no_offset() {
+        let ctx = egui::Context::default();
+        ShiplyApp::configure_light_workspace_style(&ctx);
+
+        let mut app = ShiplyApp::new(crate::storage::AppStorage::default());
+        app.deploy_version_input = "1.0.10-beta.2+build.2026".to_string();
+
+        let rollback_dep = DeploymentRecord {
+            id: "dep-rb-test".to_string(),
+            project_id: "p1".to_string(),
+            project_name: "Customer Data Ops".to_string(),
+            environment: "development".to_string(),
+            app_name: "data-ops".to_string(),
+            version: "1.0.9-hotfix".to_string(),
+            git_branch: Some("main".to_string()),
+            git_commit: Some("abc1234".to_string()),
+            git_changes: vec![],
+            is_rollback: false,
+            servers: vec!["10.0.0.1".to_string()],
+            status: DeploymentStatus::Succeeded,
+            started_at: chrono::Utc::now(),
+            finished_at: Some(chrono::Utc::now()),
+            duration_ms: Some(1200),
+            step_logs: vec![],
+            executed_steps: vec![],
+        };
+
+        // Run UI render with long environment name and version
+        let _ = ctx.run(Default::default(), |ctx| {
+            egui::CentralPanel::default().show(ctx, |ui| {
+                ui.set_min_width(1200.0);
+                app.render_deploy_action_bar(
+                    ui,
+                    "Development Customer Data Ops",
+                    Some(rollback_dep.clone()),
+                );
+            });
+        });
+
+        // Also test with empty version string to ensure clean fallback text
+        app.deploy_version_input = "   ".to_string();
+        let _ = ctx.run(Default::default(), |ctx| {
+            egui::CentralPanel::default().show(ctx, |ui| {
+                ui.set_min_width(1000.0);
+                app.render_deploy_action_bar(ui, "Production", None);
             });
         });
     }
