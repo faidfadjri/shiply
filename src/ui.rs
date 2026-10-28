@@ -133,6 +133,16 @@ enum ConfirmDeleteAction {
     },
 }
 
+#[derive(Debug)]
+pub struct GitInspectionResult {
+    pub project_id: String,
+    pub pkg_version: Option<String>,
+    pub git_meta: GitMetadata,
+    pub git_branches: Vec<String>,
+    pub git_changes: Vec<String>,
+    pub update_version_input: bool,
+}
+
 pub struct ShiplyApp {
     storage: AppStorage,
     selection: SidebarSelection,
@@ -172,6 +182,10 @@ pub struct ShiplyApp {
     event_tx: Sender<ExecutorEvent>,
     event_rx: Receiver<ExecutorEvent>,
     active_deployment_id: Option<String>,
+
+    // Async Git inspection channel (instant project switching without UI freezing)
+    git_inspect_tx: Sender<GitInspectionResult>,
+    git_inspect_rx: Receiver<GitInspectionResult>,
 
     // Add Project & Auto-Import .ps1 Modal state
     show_new_project_modal: bool,
@@ -244,6 +258,8 @@ impl ShiplyApp {
     pub fn new(storage: AppStorage) -> Self {
         let (event_tx, event_rx) = mpsc::channel();
         let (updater_tx, updater_rx) = mpsc::channel();
+        let (git_inspect_tx, git_inspect_rx) = mpsc::channel();
+        let migration_notice = storage.migration_notice.clone();
         // Run a non-blocking background check against GitHub Releases on startup
         spawn_update_check(updater_tx.clone(), false);
 
@@ -345,7 +361,12 @@ impl ShiplyApp {
             logo_texture: None,
             project_switch_loading_id: None,
             project_switch_loading_start: None,
+            git_inspect_tx,
+            git_inspect_rx,
         };
+        if let Some(notice) = migration_notice {
+            app.status_banner = Some((notice, true));
+        }
         app.refresh_selected_project_metadata(true);
         app
     }
@@ -393,6 +414,46 @@ impl ShiplyApp {
         }
     }
 
+    pub fn process_pending_git_inspect(&mut self) -> bool {
+        let mut received = false;
+        while let Ok(res) = self.git_inspect_rx.try_recv() {
+            if let SidebarSelection::Project(cur_id) = &self.selection {
+                if cur_id == &res.project_id {
+                    self.cached_pkg_version = res.pkg_version;
+                    self.cached_git_meta = res.git_meta;
+                    self.cached_git_branches = res.git_branches;
+                    self.cached_git_changes = res.git_changes;
+
+                    if let Some(current_branch) = &self.cached_git_meta.branch {
+                        self.selected_git_branch = current_branch.clone();
+                        if !self.cached_git_branches.contains(current_branch) {
+                            self.cached_git_branches.insert(0, current_branch.clone());
+                        }
+                    } else if let Some(first_b) = self.cached_git_branches.first() {
+                        self.selected_git_branch = first_b.clone();
+                    } else {
+                        self.selected_git_branch.clear();
+                    }
+
+                    if res.update_version_input {
+                        self.deploy_version_input = self.storage.next_auto_bumped_version(
+                            cur_id,
+                            &self.selected_env_key,
+                            self.cached_pkg_version.as_deref(),
+                        );
+                    }
+
+                    if self.project_switch_loading_id.as_deref() == Some(&res.project_id) {
+                        self.project_switch_loading_id = None;
+                        self.project_switch_loading_start = None;
+                    }
+                    received = true;
+                }
+            }
+        }
+        received
+    }
+
     fn refresh_selected_project_metadata(&mut self, update_version_input: bool) {
         let SidebarSelection::Project(proj_id) = &self.selection else {
             return;
@@ -409,39 +470,22 @@ impl ShiplyApp {
                 .unwrap_or_default();
         }
 
-        let path = PathBuf::from(&proj.local_path);
-        if self.cached_project_id.as_deref() != Some(&proj.id) {
+        let is_different_proj = self.cached_project_id.as_deref() != Some(&proj.id);
+        if is_different_proj {
             self.history_visible_limit = 5;
             self.servers_edit_buffer = None;
+            self.cached_pkg_version = None;
+            self.cached_git_changes.clear();
+            self.project_switch_loading_id = Some(proj.id.clone());
+            self.project_switch_loading_start = Some(Instant::now());
         }
         self.cached_project_id = Some(proj.id.clone());
-        self.cached_pkg_version = read_package_json_version(&path);
-        self.cached_git_meta = read_git_metadata(&path);
-        self.cached_git_branches = list_git_branches(&path);
-
-        if let Some(current_branch) = &self.cached_git_meta.branch {
-            self.selected_git_branch = current_branch.clone();
-            if !self.cached_git_branches.contains(current_branch) {
-                self.cached_git_branches.insert(0, current_branch.clone());
-            }
-        } else if let Some(first_b) = self.cached_git_branches.first() {
-            self.selected_git_branch = first_b.clone();
-        } else {
-            self.selected_git_branch.clear();
-        }
 
         if let Some(env_cfg) = proj.get_env(&self.selected_env_key) {
             self.cached_vault_found = read_os_vault_credential(&env_cfg.vault_target).is_some();
         } else {
             self.cached_vault_found = false;
         }
-
-        // Fetch live code changes for the active project from Git
-        let last_deploy_commit = self
-            .storage
-            .last_succeeded_deployment(proj_id, &self.selected_env_key)
-            .and_then(|d| d.git_commit.clone());
-        self.cached_git_changes = read_git_code_changes(&path, last_deploy_commit.as_deref());
 
         // Ensure selected_deployment_id belongs strictly to this active project
         let belongs_to_current_project = self
@@ -466,6 +510,31 @@ impl ShiplyApp {
                 self.cached_pkg_version.as_deref(),
             );
         }
+
+        // Dispatch heavy Git inspection to a background worker so project switching is instant (0ms latency, zero UI freeze)
+        let tx = self.git_inspect_tx.clone();
+        let proj_id_clone = proj.id.clone();
+        let path = PathBuf::from(&proj.local_path);
+        let last_deploy_commit = self
+            .storage
+            .last_succeeded_deployment(proj_id, &self.selected_env_key)
+            .and_then(|d| d.git_commit.clone());
+
+        std::thread::spawn(move || {
+            let pkg_version = read_package_json_version(&path);
+            let git_meta = read_git_metadata(&path);
+            let git_branches = list_git_branches(&path);
+            let git_changes = read_git_code_changes(&path, last_deploy_commit.as_deref());
+
+            let _ = tx.send(GitInspectionResult {
+                project_id: proj_id_clone,
+                pkg_version,
+                git_meta,
+                git_branches,
+                git_changes,
+                update_version_input,
+            });
+        });
     }
 
     fn poll_executor_events(&mut self, ctx: &egui::Context) {
@@ -616,12 +685,17 @@ impl ShiplyApp {
             }
         }
 
+        if self.process_pending_git_inspect() {
+            received = true;
+        }
+
         if received
             || self.active_deployment_id.is_some()
             || self.update_checking
             || self.update_downloading
+            || self.project_switch_loading_id.is_some()
         {
-            ctx.request_repaint_after(Duration::from_millis(80));
+            ctx.request_repaint_after(Duration::from_millis(50));
         }
     }
 
@@ -8839,5 +8913,58 @@ mod tests {
         assert_eq!(app.storage.projects[0].environments[0].steps[1].name, "Build");
         assert_eq!(app.storage.projects[0].environments[0].steps[2].name, "Verify");
         assert!(app.dirty_save_pending);
+    }
+
+    #[test]
+    fn test_async_git_inspect_channel_and_project_switch() {
+        let mut storage = crate::storage::AppStorage::default();
+        let project = Project {
+            id: "proj-async".to_string(),
+            name: "Async Project".to_string(),
+            description: "Desc".to_string(),
+            local_path: ".".to_string(),
+            environments: vec![EnvironmentConfig {
+                key: "dev".to_string(),
+                name: "Development".to_string(),
+                app_name: "async-dev".to_string(),
+                servers: vec!["127.0.0.1".to_string()],
+                remote_user: "deploy".to_string(),
+                vault_target: "vault".to_string(),
+                remote_dir: "/app".to_string(),
+                env_source: None,
+                http_proxy: None,
+                steps: Vec::new(),
+            }],
+        };
+        storage.projects.push(project);
+        let mut app = ShiplyApp::new(storage);
+
+        // Simulate fast project selection
+        app.selection = SidebarSelection::Project("proj-async".to_string());
+        app.refresh_selected_project_metadata(true);
+
+        // Project selection was updated immediately without UI freeze
+        assert_eq!(app.cached_project_id.as_deref(), Some("proj-async"));
+
+        // Simulate incoming background inspection result
+        let _ = app.git_inspect_tx.send(GitInspectionResult {
+            project_id: "proj-async".to_string(),
+            pkg_version: Some("2.5.0".to_string()),
+            git_meta: GitMetadata {
+                branch: Some("feature/instant-switch".to_string()),
+                commit_short: Some("999aaaa".to_string()),
+                commit_subject: Some("feat: instant switch".to_string()),
+            },
+            git_branches: vec!["main".to_string(), "feature/instant-switch".to_string()],
+            git_changes: vec!["M src/ui.rs".to_string()],
+            update_version_input: true,
+        });
+
+        let received = app.process_pending_git_inspect();
+        assert!(received);
+        assert_eq!(app.cached_pkg_version.as_deref(), Some("2.5.0"));
+        assert_eq!(app.selected_git_branch, "feature/instant-switch");
+        assert_eq!(app.cached_git_changes, vec!["M src/ui.rs"]);
+        assert!(app.project_switch_loading_id.is_none());
     }
 }

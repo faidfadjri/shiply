@@ -71,7 +71,7 @@ Deploying applications to on-premise servers that require VPN access is a freque
 Shiply is intentionally designed as a local desktop tool. Please consider the following trade-offs:
 
 1. **Local State (No Central Audit Trail)**:
-   - State and deployment history are stored locally in `shiply_state.json` on each developer's computer.
+   - State and deployment history are stored locally in an embedded SQLite database (`shiply_state.db`) on each developer's computer (with seamless auto-migration from legacy `shiply_state.json`).
    - There is no central server, team database, or unified web dashboard. Other team members cannot see your local deployment history unless files are shared manually.
 2. **Dependent on the Developer's Machine**:
    - Deployments run from the developer's workstation. If the machine disconnects from the VPN, sleeps, or loses network access during transfer, the deployment will fail or pause.
@@ -142,12 +142,13 @@ The compiled binary will be located at `./target/release/shiply` (or `shiply.exe
 
 ## Security & State Privacy
 
-- **Credential Storage**: Credentials are never written in plain text to `shiply_state.json`. Shiply uses your operating system's native secure credential manager (Windows Credential Manager, macOS Keychain, Linux Secret Service).
+- **Credential Storage**: Credentials are never written in plain text to storage. Shiply uses your operating system's native secure credential manager (Windows Credential Manager, macOS Keychain, Linux Secret Service).
 - **Log Redaction**: Active passwords and secrets are systematically redacted (`[REDACTED]`) before command logs are displayed in the UI or written to history.
-- **State File (`shiply_state.json`)**:
-  - `shiply_state.json` stores your project configs, server hostnames, IP addresses, remote user names, and deployment step history.
-  - **Safe for local private backups**: You can back up or migrate `shiply_state.json` between your own machines.
-  - **NOT safe for public sharing**: Do **not** commit `shiply_state.json` to public repositories or share it with untrusted parties, as it contains internal network topology and infrastructure metadata.
+- **Embedded SQLite Database (`shiply_state.db`) & State Privacy**:
+  - `shiply_state.db` stores your project configurations, server hostnames, IP addresses, remote user names, and indexed deployment history locally using SQLite WAL mode.
+  - **Seamless Migration**: Upgrading from older versions automatically detects and imports legacy `shiply_state.json` without any data loss.
+  - **Safe for local private backups**: You can back up or migrate `shiply_state.db` between your own machines.
+  - **NOT safe for public sharing**: Do **not** commit `shiply_state.db` (or legacy `shiply_state.json`) to public repositories or share it with untrusted parties, as it contains internal network topology and infrastructure metadata.
 
 ---
 
