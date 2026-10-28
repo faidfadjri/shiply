@@ -151,6 +151,7 @@ pub struct ShiplyApp {
     console_collapsed: bool,
     changes_collapsed: bool,
     collapsed_step_indices: HashSet<usize>,
+    dragged_step_idx: Option<usize>,
 
     // Deployment version, branch & release controls
     deploy_version_input: String,
@@ -273,6 +274,7 @@ impl ShiplyApp {
             console_collapsed: false,
             changes_collapsed: false,
             collapsed_step_indices: HashSet::new(),
+            dragged_step_idx: None,
             deploy_version_input: "1.0.0".to_string(),
             selected_git_branch: String::new(),
             bump_package_json: true,
@@ -5595,11 +5597,22 @@ impl ShiplyApp {
         let mut move_up_idx = None;
         let mut move_down_idx = None;
         let mut delete_idx = None;
+        let mut drag_reorder = None;
         let total_steps = env_cfg.steps.len();
 
+        let pointer_pos = ui.input(|i| i.pointer.hover_pos());
+        let is_pointer_released = ui.input(|i| i.pointer.any_released());
+
+        if self.dragged_step_idx.is_some() {
+            ui.ctx().request_repaint();
+        }
+
         for (idx, step) in env_cfg.steps.iter_mut().enumerate() {
-            let card_fill = if step.enabled { CARD_BG } else { SUBTLE_BG };
-            let step_border_color = if !step.enabled {
+            let is_being_dragged = self.dragged_step_idx == Some(idx);
+            let mut card_fill = if step.enabled { CARD_BG } else { SUBTLE_BG };
+            let step_border_color = if is_being_dragged {
+                PRIMARY_BLUE
+            } else if !step.enabled {
                 CARD_BORDER
             } else {
                 match &step.kind {
@@ -5609,14 +5622,53 @@ impl ShiplyApp {
                     StepKind::RemoteCommand { .. } => Color32::from_rgb(153, 246, 228),
                 }
             };
-            egui::Frame::new()
+            if is_being_dragged {
+                card_fill = BLUE_PILL_BG.gamma_multiply(0.4);
+            }
+
+            let frame_resp = egui::Frame::new()
                 .fill(card_fill)
-                .stroke(Stroke::new(1.2_f32, step_border_color))
+                .stroke(Stroke::new(if is_being_dragged { 2.0_f32 } else { 1.2_f32 }, step_border_color))
                 .corner_radius(10.0)
                 .inner_margin(Margin::symmetric(16, 12))
                 .show(ui, |ui| {
-                    // Row 1: Enable Checkbox + Step # + Interactive Type Dropdown + Step Name + Option Checkbox | Up / Down / Delete Buttons
+                    // Row 1: Drag Handle + Enable Checkbox + Step # + Interactive Type Dropdown + Step Name + Option Checkbox | Up / Down / Delete Buttons
                     horizontal_row(ui, 32.0, |ui| {
+                        // Drag Handle: Vertical grip dots
+                        let handle_size = Vec2::new(18.0, 26.0);
+                        let (handle_rect, handle_resp) = ui.allocate_exact_size(handle_size, Sense::drag());
+                        let handle_resp = handle_resp.on_hover_cursor(if is_being_dragged {
+                            egui::CursorIcon::Grabbing
+                        } else {
+                            egui::CursorIcon::Grab
+                        });
+
+                        if handle_resp.hovered() || is_being_dragged {
+                            ui.painter().rect_filled(
+                                handle_rect,
+                                CornerRadius::same(4),
+                                if is_being_dragged {
+                                    BLUE_PILL_BG
+                                } else {
+                                    SUBTLE_BG
+                                },
+                            );
+                        }
+
+                        if handle_resp.drag_started() || handle_resp.dragged() {
+                            self.dragged_step_idx = Some(idx);
+                            ui.ctx().set_cursor_icon(egui::CursorIcon::Grabbing);
+                        }
+
+                        let handle_color = if is_being_dragged || handle_resp.hovered() {
+                            PRIMARY_BLUE
+                        } else {
+                            TEXT_MUTED
+                        };
+                        draw_outline_icon(ui.painter(), handle_rect.center(), OutlineIcon::GripVertical, handle_color);
+                        handle_resp.on_hover_text("Drag to reorder this pipeline step");
+                        ui.add_space(3.0);
+
                         if ui.checkbox(&mut step.enabled, "").changed() {
                             config_changed = true;
                         }
@@ -5900,7 +5952,36 @@ impl ShiplyApp {
                         }
                     });
                 });
+
+            let card_rect = frame_resp.response.rect;
+            if let Some(from_idx) = self.dragged_step_idx {
+                if from_idx != idx {
+                    if let Some(pos) = pointer_pos {
+                        if card_rect.contains(pos) {
+                            // Highlight card as the active drop target
+                            ui.painter().rect_stroke(
+                                card_rect,
+                                CornerRadius::same(10),
+                                Stroke::new(2.5_f32, PRIMARY_BLUE),
+                                StrokeKind::Inside,
+                            );
+                            if is_pointer_released {
+                                drag_reorder = Some((from_idx, idx));
+                            }
+                        }
+                    }
+                }
+            }
+
             ui.add_space(8.0);
+        }
+
+        if let Some((from, to)) = drag_reorder {
+            env_cfg.reorder_step(from, to);
+            self.dragged_step_idx = None;
+            config_changed = true;
+        } else if is_pointer_released {
+            self.dragged_step_idx = None;
         }
 
         if let Some(i) = move_up_idx {
@@ -8114,6 +8195,7 @@ enum OutlineIcon {
     Edit,
     RotateCcw,
     Key,
+    GripVertical,
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -8305,6 +8387,14 @@ fn draw_outline_icon(painter: &egui::Painter, c: Pos2, icon: OutlineIcon, color:
                 [Pos2::new(c.x + 5.4, c.y), Pos2::new(c.x + 5.4, c.y + 2.6)],
                 s,
             );
+        }
+        OutlineIcon::GripVertical => {
+            let r = 1.4;
+            for dx in [-2.2, 2.2] {
+                for dy in [-4.5, 0.0, 4.5] {
+                    painter.circle_filled(Pos2::new(c.x + dx, c.y + dy), r, color);
+                }
+            }
         }
     }
 }
@@ -8685,5 +8775,69 @@ mod tests {
         app.flush_pending_save();
         assert!(!app.dirty_save_pending);
         assert!(app.last_edit_time.is_none());
+    }
+
+    #[test]
+    fn test_draggable_pipeline_step_reorder_ui() {
+        let ctx = egui::Context::default();
+        ShiplyApp::configure_light_workspace_style(&ctx);
+
+        let mut storage = crate::storage::AppStorage::default();
+        let env = EnvironmentConfig {
+            key: "dev".to_string(),
+            name: "Development".to_string(),
+            app_name: "api-dev".to_string(),
+            servers: vec!["10.0.0.1".to_string()],
+            remote_user: "deploy".to_string(),
+            vault_target: "dev_vault".to_string(),
+            remote_dir: "/apps/api".to_string(),
+            env_source: None,
+            http_proxy: None,
+            steps: vec![
+                PipelineStep::new("Build", StepKind::LocalCommand { command: "cargo build".to_string(), allow_failure: false }),
+                PipelineStep::new("Verify", StepKind::VerifyLocalPath { path: "./target".to_string() }),
+                PipelineStep::new("Upload", StepKind::TransferFiles { sources: vec!["./target".to_string()], stage_env_file: true }),
+            ],
+        };
+        let project = Project {
+            id: "p1".to_string(),
+            name: "Test Project".to_string(),
+            description: "Desc".to_string(),
+            local_path: ".".to_string(),
+            environments: vec![env],
+        };
+        storage.projects.push(project);
+
+        let mut app = ShiplyApp::new(storage);
+        app.selected_env_key = "dev".to_string();
+
+        // Render pipeline steps tab initially
+        let _ = ctx.run(Default::default(), |ctx| {
+            egui::CentralPanel::default().show(ctx, |ui| {
+                app.render_pipeline_steps_tab(ui, 0);
+            });
+        });
+
+        assert_eq!(app.storage.projects[0].environments[0].steps[0].name, "Build");
+        assert_eq!(app.storage.projects[0].environments[0].steps[1].name, "Verify");
+        assert_eq!(app.storage.projects[0].environments[0].steps[2].name, "Upload");
+
+        // Simulate dragging step 2 (Upload)
+        app.dragged_step_idx = Some(2);
+        let _ = ctx.run(Default::default(), |ctx| {
+            egui::CentralPanel::default().show(ctx, |ui| {
+                app.render_pipeline_steps_tab(ui, 0);
+            });
+        });
+
+        // Test reorder execution
+        app.storage.projects[0].environments[0].reorder_step(2, 0);
+        app.dragged_step_idx = None;
+        app.mark_config_dirty();
+
+        assert_eq!(app.storage.projects[0].environments[0].steps[0].name, "Upload");
+        assert_eq!(app.storage.projects[0].environments[0].steps[1].name, "Build");
+        assert_eq!(app.storage.projects[0].environments[0].steps[2].name, "Verify");
+        assert!(app.dirty_save_pending);
     }
 }

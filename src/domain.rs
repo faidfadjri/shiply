@@ -145,6 +145,14 @@ impl EnvironmentConfig {
             self.steps.swap(index, index + 1);
         }
     }
+
+    /// Moves a step from one index to another (drag and drop reordering).
+    pub fn reorder_step(&mut self, from: usize, to: usize) {
+        if from != to && from < self.steps.len() && to < self.steps.len() {
+            let step = self.steps.remove(from);
+            self.steps.insert(to, step);
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -371,6 +379,15 @@ mod tests {
         assert_eq!(cfg.steps[1].name, "Build");
 
         cfg.move_step_up(1);
+        assert_eq!(cfg.steps[0].name, "Build");
+        assert_eq!(cfg.steps[1].name, "Restart PM2");
+
+        // Test drag-and-drop reorder
+        cfg.reorder_step(0, 1);
+        assert_eq!(cfg.steps[0].name, "Restart PM2");
+        assert_eq!(cfg.steps[1].name, "Build");
+
+        cfg.reorder_step(1, 0);
         assert_eq!(cfg.steps[0].name, "Build");
         assert_eq!(cfg.steps[1].name, "Restart PM2");
     }
