@@ -38,6 +38,8 @@ pub fn ndm_dq_subscription_project() -> Project {
         description: "Backend REST API service for NDM DQ (Node.js / TypeScript / PM2)".to_string(),
         local_path: r"D:\NTI\Projects\backend\ndm-dq-subscription".to_string(),
         environments,
+        group: Some("Backend".to_string()),
+        sort_order: Some(0),
     }
 }
 
@@ -133,6 +135,8 @@ pub fn indy_subscription_project() -> Project {
         description: "Frontend web application for Indy Subscription (React / Vite)".to_string(),
         local_path: r"D:\NTI\Projects\frontend\indy-subscription".to_string(),
         environments,
+        group: Some("Frontend".to_string()),
+        sort_order: Some(1),
     }
 }
 
@@ -252,6 +256,8 @@ pub fn create_custom_project(name: &str, local_path: &str, description: &str) ->
         description: description.trim().to_string(),
         local_path: local_path.trim().to_string(),
         environments,
+        group: None,
+        sort_order: None,
     }
 }
 

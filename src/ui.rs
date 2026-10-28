@@ -9,7 +9,7 @@ use crate::installer::{
     InstallState, APP_VERSION,
 };
 use crate::ps1_importer::{import_project_from_path, parse_ps1_file};
-use crate::storage::AppStorage;
+use crate::storage::{AppStorage, ProjectSortMode};
 use crate::updater::{
     restart_application, spawn_download_and_apply_update, spawn_update_check, ReleaseInfo,
     UpdaterEvent, GITHUB_RELEASES_PAGE_URL, GITHUB_REPO,
@@ -163,6 +163,11 @@ pub struct ShiplyApp {
     collapsed_step_indices: HashSet<usize>,
     dragged_step_idx: Option<usize>,
 
+    // Project Sorting & Grouping state
+    project_sort_mode: ProjectSortMode,
+    collapsed_project_groups: HashSet<String>,
+    dragged_project_idx: Option<usize>,
+
     // Deployment version, branch & release controls
     deploy_version_input: String,
     selected_git_branch: String,
@@ -194,6 +199,7 @@ pub struct ShiplyApp {
     new_project_name: String,
     new_project_path: String,
     new_project_desc: String,
+    new_project_group: String,
     new_project_imported_envs: Vec<EnvironmentConfig>,
     new_project_import_notice: Option<String>,
 
@@ -203,6 +209,7 @@ pub struct ShiplyApp {
     edit_project_name: String,
     edit_project_path: String,
     edit_project_desc: String,
+    edit_project_group: String,
     edit_project_ps1_path: String,
     edit_project_import_notice: Option<String>,
 
@@ -291,6 +298,9 @@ impl ShiplyApp {
             changes_collapsed: false,
             collapsed_step_indices: HashSet::new(),
             dragged_step_idx: None,
+            project_sort_mode: ProjectSortMode::Custom,
+            collapsed_project_groups: HashSet::new(),
+            dragged_project_idx: None,
             deploy_version_input: "1.0.0".to_string(),
             selected_git_branch: String::new(),
             bump_package_json: true,
@@ -311,6 +321,7 @@ impl ShiplyApp {
             new_project_name: String::new(),
             new_project_path: String::new(),
             new_project_desc: String::new(),
+            new_project_group: String::new(),
             new_project_imported_envs: Vec::new(),
             new_project_import_notice: None,
             show_edit_project_modal: false,
@@ -318,6 +329,7 @@ impl ShiplyApp {
             edit_project_name: String::new(),
             edit_project_path: String::new(),
             edit_project_desc: String::new(),
+            edit_project_group: String::new(),
             edit_project_ps1_path: String::new(),
             edit_project_import_notice: None,
             show_new_env_modal: false,
@@ -1723,7 +1735,7 @@ impl ShiplyApp {
 
                 ui.add_space(16.0);
 
-                // 3. PROJECTS Section Header + "+ ADD" button (Fixed 26px height)
+                // 3. PROJECTS Section Header + Sort Selector + "+ ADD" button
                 let (hdr_rect, _) =
                     ui.allocate_exact_size(Vec2::new(full_w, 26.0), Sense::hover());
                 ui.painter().text(
@@ -1733,9 +1745,13 @@ impl ShiplyApp {
                     FontId::proportional(FONT_XS),
                     SIDEBAR_TEXT_MUTED,
                 );
+
+                let add_w = 48.0;
+                let sort_w = 82.0;
+
                 let add_btn_rect = Rect::from_min_size(
-                    Pos2::new(hdr_rect.right() - 52.0, hdr_rect.center().y - 11.0),
-                    Vec2::new(52.0, 22.0),
+                    Pos2::new(hdr_rect.right() - add_w, hdr_rect.center().y - 11.0),
+                    Vec2::new(add_w, 22.0),
                 );
                 let add_btn_resp = ui
                     .interact(
@@ -1767,8 +1783,73 @@ impl ShiplyApp {
                     Color32::WHITE,
                 );
                 if add_btn_resp.clicked() {
+                    self.new_project_group.clear();
                     self.show_new_project_modal = true;
                 }
+
+                // Sort Dropdown
+                let sort_area_rect = Rect::from_min_size(
+                    Pos2::new(hdr_rect.right() - add_w - 6.0 - sort_w, hdr_rect.center().y - 11.0),
+                    Vec2::new(sort_w, 22.0),
+                );
+                let mut sort_ui = ui.new_child(egui::UiBuilder::new().max_rect(sort_area_rect));
+                sort_ui.spacing_mut().button_padding = Vec2::new(4.0, 2.0);
+                let sort_label = match self.project_sort_mode {
+                    ProjectSortMode::Custom => "⇅ Custom",
+                    ProjectSortMode::NameAsc => "⇅ A-Z",
+                    ProjectSortMode::NameDesc => "⇅ Z-A",
+                    ProjectSortMode::RecentDeploy => "⇅ Recent",
+                };
+                egui::ComboBox::from_id_salt("sidebar_project_sort_selector")
+                    .selected_text(
+                        RichText::new(sort_label)
+                            .size(FONT_XS)
+                            .color(Color32::from_rgb(203, 213, 225)),
+                    )
+                    .width(sort_w)
+                    .show_ui(&mut sort_ui, |ui| {
+                        ui.visuals_mut().override_text_color = Some(TEXT_PRIMARY);
+                        if ui
+                            .selectable_label(
+                                self.project_sort_mode == ProjectSortMode::Custom,
+                                "Custom / Drag",
+                            )
+                            .clicked()
+                        {
+                            self.project_sort_mode = ProjectSortMode::Custom;
+                            self.storage.sort_projects(ProjectSortMode::Custom);
+                        }
+                        if ui
+                            .selectable_label(
+                                self.project_sort_mode == ProjectSortMode::NameAsc,
+                                "Name (A-Z)",
+                            )
+                            .clicked()
+                        {
+                            self.project_sort_mode = ProjectSortMode::NameAsc;
+                            self.storage.sort_projects(ProjectSortMode::NameAsc);
+                        }
+                        if ui
+                            .selectable_label(
+                                self.project_sort_mode == ProjectSortMode::NameDesc,
+                                "Name (Z-A)",
+                            )
+                            .clicked()
+                        {
+                            self.project_sort_mode = ProjectSortMode::NameDesc;
+                            self.storage.sort_projects(ProjectSortMode::NameDesc);
+                        }
+                        if ui
+                            .selectable_label(
+                                self.project_sort_mode == ProjectSortMode::RecentDeploy,
+                                "Recently Deployed",
+                            )
+                            .clicked()
+                        {
+                            self.project_sort_mode = ProjectSortMode::RecentDeploy;
+                            self.storage.sort_projects(ProjectSortMode::RecentDeploy);
+                        }
+                    });
 
                 ui.add_space(8.0);
 
@@ -1790,236 +1871,491 @@ impl ShiplyApp {
                         SIDEBAR_TEXT_MUTED,
                     );
                 } else {
+                    let is_pointer_released = ui.input(|i| i.pointer.any_released());
+                    let pointer_pos = ui.input(|i| i.pointer.hover_pos());
+
+                    if self.dragged_project_idx.is_some() {
+                        ui.ctx().request_repaint();
+                    }
+
+                    let has_groups = self.storage.projects.iter().any(|p| {
+                        p.group
+                            .as_ref()
+                            .is_some_and(|g| !g.trim().is_empty())
+                    });
+
+                    // Build grouped sections: Vec<(Option<String>, Vec<usize>)>
+                    let mut group_sections: Vec<(Option<String>, Vec<usize>)> = Vec::new();
+                    if has_groups {
+                        for (idx, p) in self.storage.projects.iter().enumerate() {
+                            let grp = p
+                                .group
+                                .as_ref()
+                                .map(|g| g.trim().to_string())
+                                .filter(|g| !g.is_empty());
+                            if let Some(pos) = group_sections
+                                .iter()
+                                .position(|(g, _)| g.as_ref() == grp.as_ref())
+                            {
+                                group_sections[pos].1.push(idx);
+                            } else {
+                                group_sections.push((grp, vec![idx]));
+                            }
+                        }
+                        group_sections.sort_by(|(g1, _), (g2, _)| match (g1, g2) {
+                            (Some(a), Some(b)) => a.to_lowercase().cmp(&b.to_lowercase()),
+                            (Some(_), None) => std::cmp::Ordering::Less,
+                            (None, Some(_)) => std::cmp::Ordering::Greater,
+                            (None, None) => std::cmp::Ordering::Equal,
+                        });
+                    } else {
+                        group_sections.push((None, (0..self.storage.projects.len()).collect()));
+                    }
+
                     let mut clicked_project_id = None;
                     let mut action_edit_proj_idx = None;
                     let mut action_duplicate_proj_id = None;
                     let mut action_refresh_proj_id = None;
                     let mut action_delete_proj = None;
+                    let mut action_move_up_idx = None;
+                    let mut action_move_down_idx = None;
+                    let mut action_set_group = None;
+                    let mut drag_reorder = None;
 
-                    for (proj_idx, project) in self.storage.projects.iter().enumerate() {
-                        let is_selected = matches!(
-                            &self.selection,
-                            SidebarSelection::Project(id) if id == &project.id
-                        );
-                        let (p_rect, p_resp) =
-                            ui.allocate_exact_size(Vec2::new(full_w, 66.0), Sense::click());
-                        let p_resp = p_resp.on_hover_cursor(egui::CursorIcon::PointingHand);
+                    for (grp_opt, proj_indices) in group_sections {
+                        if has_groups {
+                            let group_title = grp_opt.as_deref().unwrap_or("General");
+                            let group_key = grp_opt.clone().unwrap_or_else(|| "_general".to_string());
+                            let is_collapsed = self.collapsed_project_groups.contains(&group_key);
 
-                        let fill = if is_selected {
-                            SIDEBAR_CARD_ACTIVE
-                        } else if p_resp.hovered() {
-                            Color32::from_rgb(22, 32, 52)
-                        } else {
-                            Color32::TRANSPARENT
-                        };
-                        ui.painter()
-                            .rect_filled(p_rect, CornerRadius::same(8), fill);
-                        if is_selected {
-                            ui.painter().rect_stroke(
-                                p_rect,
-                                CornerRadius::same(8),
-                                Stroke::new(1.5_f32, SIDEBAR_BORDER_ACTIVE),
-                                StrokeKind::Inside,
+                            let (grp_rect, grp_resp) = ui.allocate_exact_size(
+                                Vec2::new(full_w, 24.0),
+                                Sense::click(),
                             );
-                        }
+                            let grp_resp = grp_resp.on_hover_cursor(egui::CursorIcon::PointingHand);
+                            if grp_resp.hovered() {
+                                ui.painter().rect_filled(
+                                    grp_rect,
+                                    CornerRadius::same(5),
+                                    Color32::from_rgb(26, 38, 62),
+                                );
+                            }
 
-                        // Check if this project is currently running an active deployment process
-                        let is_deploying = self.active_deployment_id.as_ref().is_some_and(|dep_id| {
-                            self.storage
-                                .deployments
-                                .iter()
-                                .any(|d| &d.id == dep_id && d.project_id == project.id)
-                        }) || self
-                            .storage
-                            .deployments
-                            .iter()
-                            .any(|d| d.project_id == project.id && d.status == DeploymentStatus::Running);
-
-                        let is_switching =
-                            self.project_switch_loading_id.as_deref() == Some(&project.id);
-
-                        // Project Title (constrained width so it doesn't collide with spinner)
-                        let title_color = if is_selected {
-                            Color32::from_rgb(96, 165, 250)
-                        } else {
-                            Color32::WHITE
-                        };
-                        let max_title_w = if is_deploying || is_switching {
-                            full_w - 56.0
-                        } else {
-                            full_w - 24.0
-                        };
-                        let title_galley = ui.painter().layout(
-                            project.name.clone(),
-                            FontId::proportional(FONT_MD),
-                            title_color,
-                            max_title_w,
-                        );
-                        ui.painter().galley(
-                            Pos2::new(
-                                p_rect.left() + 12.0,
-                                p_rect.top() + 20.0 - title_galley.size().y / 2.0,
-                            ),
-                            title_galley,
-                            title_color,
-                        );
-
-                        // Circle loading indicator spinner on the right side if running deployment or changing active project
-                        if is_deploying || is_switching {
-                            ui.ctx().request_repaint();
-                            let spinner_center =
-                                Pos2::new(p_rect.right() - 20.0, p_rect.top() + 20.0);
-                            let spinner_color = if is_deploying {
-                                Color32::from_rgb(96, 165, 250) // Bright Blue for active running deployment
-                            } else {
-                                Color32::from_rgb(148, 163, 184) // Muted Slate for project metadata load
-                            };
-                            draw_circle_loading_spinner(
-                                ui.painter(),
-                                spinner_center,
-                                7.0,
-                                spinner_color,
-                                ui.input(|i| i.time),
+                            let arrow = if is_collapsed { "▶" } else { "▼" };
+                            let title_text = format!("{arrow}  {}", group_title.to_uppercase());
+                            ui.painter().text(
+                                Pos2::new(grp_rect.left() + 6.0, grp_rect.center().y),
+                                Align2::LEFT_CENTER,
+                                title_text,
+                                FontId::proportional(FONT_XS),
+                                Color32::from_rgb(148, 163, 184),
                             );
-                        }
 
-                        let p_resp = if is_deploying {
-                            p_resp.on_hover_text("A deployment is currently running for this project")
-                        } else {
-                            p_resp
-                        };
-
-                        // Right-click context popup menu for Project options (Edit, Duplicate, Refresh, Delete)
-                        p_resp.context_menu(|ui| {
-                            ui.set_min_width(175.0);
-                            ui.spacing_mut().item_spacing = Vec2::new(0.0, 3.0);
-                            ui.spacing_mut().button_padding = Vec2::new(10.0, 6.0);
-
-                            if ui
-                                .add(
-                                    egui::Button::new(
-                                        RichText::new("Edit Project")
-                                            .size(FONT_SM)
-                                            .color(TEXT_PRIMARY),
-                                    )
-                                    .fill(CARD_BG),
-                                )
-                                .on_hover_text("Edit project name, local directory path, or description")
-                                .clicked()
-                            {
-                                action_edit_proj_idx = Some(proj_idx);
-                                ui.close_menu();
-                            }
-
-                            if ui
-                                .add(
-                                    egui::Button::new(
-                                        RichText::new("Duplicate Project")
-                                            .size(FONT_SM)
-                                            .color(TEXT_PRIMARY),
-                                    )
-                                    .fill(CARD_BG),
-                                )
-                                .on_hover_text("Duplicate this project and all its environments")
-                                .clicked()
-                            {
-                                action_duplicate_proj_id = Some(project.id.clone());
-                                ui.close_menu();
-                            }
-
-                            if ui
-                                .add(
-                                    egui::Button::new(
-                                        RichText::new("Refresh Metadata")
-                                            .size(FONT_SM)
-                                            .color(TEXT_SECONDARY),
-                                    )
-                                    .fill(CARD_BG),
-                                )
-                                .on_hover_text("Refresh Git branches, commits, and package.json version")
-                                .clicked()
-                            {
-                                action_refresh_proj_id = Some(project.id.clone());
-                                ui.close_menu();
-                            }
-
-                            ui.separator();
-
-                            if ui
-                                .add(
-                                    egui::Button::new(
-                                        RichText::new("Delete Project")
-                                            .size(FONT_SM)
-                                            .color(FAIL_PILL_TEXT),
-                                    )
-                                    .fill(CARD_BG),
-                                )
-                                .on_hover_text("Delete this project")
-                                .clicked()
-                            {
-                                action_delete_proj = Some((project.id.clone(), project.name.clone()));
-                                ui.close_menu();
-                            }
-                        });
-
-                        // Environment version pills row inside project card
-                        let mut pill_x = p_rect.left() + 12.0;
-                        let pill_y = p_rect.top() + 45.0;
-                        if project.environments.is_empty() {
-                            paint_small_sidebar_pill(
+                            paint_pill_right_aligned(
                                 ui.painter(),
-                                Pos2::new(pill_x, pill_y),
-                                "NO ENVIRONMENTS",
+                                Pos2::new(grp_rect.right() - 4.0, grp_rect.center().y),
+                                &format!("{}", proj_indices.len()),
                                 SIDEBAR_PILL_BG,
                                 SIDEBAR_TEXT_MUTED,
                             );
-                        } else {
-                            for env in project.environments.iter().take(3) {
-                                let badge = env.badge_label();
-                                let is_env_running = self.storage.deployments.iter().any(|d| {
-                                    d.project_id == project.id
-                                        && d.environment == env.key
-                                        && (d.status == DeploymentStatus::Running
-                                            || self.active_deployment_id.as_deref() == Some(&d.id))
-                                });
-                                let (label, bg, fg) = if is_env_running {
-                                    (
-                                        format!("{badge} Deploying..."),
-                                        Color32::from_rgb(30, 58, 138),
-                                        Color32::from_rgb(96, 165, 250),
-                                    )
-                                } else if let Some(ok_dep) =
-                                    self.storage.last_succeeded_deployment(&project.id, &env.key)
-                                {
-                                    (
-                                        format!("{badge} v{}", ok_dep.version),
-                                        Color32::from_rgb(23, 37, 84),
-                                        Color32::from_rgb(96, 165, 250),
-                                    )
+
+                            if grp_resp.clicked() {
+                                if is_collapsed {
+                                    self.collapsed_project_groups.remove(&group_key);
                                 } else {
-                                    (
-                                        format!("{badge} —"),
-                                        SIDEBAR_PILL_BG,
-                                        SIDEBAR_TEXT_MUTED,
-                                    )
-                                };
-                                let w = paint_small_sidebar_pill(
-                                    ui.painter(),
-                                    Pos2::new(pill_x, pill_y),
-                                    &label,
-                                    bg,
-                                    fg,
-                                );
-                                pill_x += w + 5.0;
+                                    self.collapsed_project_groups.insert(group_key.clone());
+                                }
+                            }
+
+                            ui.add_space(3.0);
+
+                            if is_collapsed {
+                                continue;
                             }
                         }
 
-                        if p_resp.clicked() {
-                            clicked_project_id = Some(project.id.clone());
+                        for proj_idx in proj_indices {
+                            let project = &self.storage.projects[proj_idx];
+                            let is_selected = matches!(
+                                &self.selection,
+                                SidebarSelection::Project(id) if id == &project.id
+                            );
+                            let is_being_dragged = self.dragged_project_idx == Some(proj_idx);
+
+                            let (p_rect, p_resp) =
+                                ui.allocate_exact_size(Vec2::new(full_w, 66.0), Sense::click());
+                            let p_resp = p_resp.on_hover_cursor(egui::CursorIcon::PointingHand);
+
+                            let fill = if is_selected {
+                                SIDEBAR_CARD_ACTIVE
+                            } else if p_resp.hovered() {
+                                Color32::from_rgb(22, 32, 52)
+                            } else {
+                                Color32::TRANSPARENT
+                            };
+                            ui.painter().rect_filled(p_rect, CornerRadius::same(8), fill);
+
+                            // Left vertical grip handle for dragging & reordering
+                            let grip_rect = Rect::from_min_size(
+                                Pos2::new(p_rect.left() + 2.0, p_rect.top() + 8.0),
+                                Vec2::new(16.0, 50.0),
+                            );
+                            let grip_resp = ui.interact(
+                                grip_rect,
+                                egui::Id::new(("sidebar_proj_grip", &project.id)),
+                                Sense::drag(),
+                            ).on_hover_cursor(egui::CursorIcon::Grab);
+
+                            if grip_resp.drag_started() || grip_resp.dragged() {
+                                self.dragged_project_idx = Some(proj_idx);
+                                ui.ctx().set_cursor_icon(egui::CursorIcon::Grabbing);
+                            }
+
+                            let grip_color = if is_being_dragged || grip_resp.hovered() {
+                                PRIMARY_BLUE
+                            } else {
+                                Color32::from_rgb(71, 85, 105)
+                            };
+                            draw_outline_icon(
+                                ui.painter(),
+                                grip_rect.center(),
+                                OutlineIcon::GripVertical,
+                                grip_color,
+                            );
+
+                            // Check if pointer is hovering this card as drop target
+                            if let Some(from_idx) = self.dragged_project_idx {
+                                if from_idx != proj_idx {
+                                    if let Some(pos) = pointer_pos {
+                                        if p_rect.contains(pos) {
+                                            ui.painter().rect_stroke(
+                                                p_rect,
+                                                CornerRadius::same(8),
+                                                Stroke::new(2.0_f32, PRIMARY_BLUE),
+                                                StrokeKind::Inside,
+                                            );
+                                            if is_pointer_released {
+                                                drag_reorder = Some((from_idx, proj_idx));
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
+                            if is_selected {
+                                ui.painter().rect_stroke(
+                                    p_rect,
+                                    CornerRadius::same(8),
+                                    Stroke::new(1.5_f32, SIDEBAR_BORDER_ACTIVE),
+                                    StrokeKind::Inside,
+                                );
+                            }
+
+                            // Check if this project is currently running an active deployment process
+                            let is_deploying = self.active_deployment_id.as_ref().is_some_and(|dep_id| {
+                                self.storage
+                                    .deployments
+                                    .iter()
+                                    .any(|d| &d.id == dep_id && d.project_id == project.id)
+                            }) || self
+                                .storage
+                                .deployments
+                                .iter()
+                                .any(|d| d.project_id == project.id && d.status == DeploymentStatus::Running);
+
+                            let is_switching =
+                                self.project_switch_loading_id.as_deref() == Some(&project.id);
+
+                            // Project Title (constrained width so it doesn't collide with spinner)
+                            let title_color = if is_selected {
+                                Color32::from_rgb(96, 165, 250)
+                            } else {
+                                Color32::WHITE
+                            };
+                            let max_title_w = if is_deploying || is_switching {
+                                full_w - 64.0
+                            } else {
+                                full_w - 32.0
+                            };
+                            let title_galley = ui.painter().layout(
+                                project.name.clone(),
+                                FontId::proportional(FONT_MD),
+                                title_color,
+                                max_title_w,
+                            );
+                            ui.painter().galley(
+                                Pos2::new(
+                                    p_rect.left() + 20.0,
+                                    p_rect.top() + 20.0 - title_galley.size().y / 2.0,
+                                ),
+                                title_galley,
+                                title_color,
+                            );
+
+                            // Circle loading indicator spinner on the right side if running deployment or changing active project
+                            if is_deploying || is_switching {
+                                ui.ctx().request_repaint();
+                                let spinner_center =
+                                    Pos2::new(p_rect.right() - 20.0, p_rect.top() + 20.0);
+                                let spinner_color = if is_deploying {
+                                    Color32::from_rgb(96, 165, 250) // Bright Blue for active running deployment
+                                } else {
+                                    Color32::from_rgb(148, 163, 184) // Muted Slate for project metadata load
+                                };
+                                draw_circle_loading_spinner(
+                                    ui.painter(),
+                                    spinner_center,
+                                    7.0,
+                                    spinner_color,
+                                    ui.input(|i| i.time),
+                                );
+                            }
+
+                            let p_resp = if is_deploying {
+                                p_resp.on_hover_text("A deployment is currently running for this project")
+                            } else {
+                                p_resp
+                            };
+
+                            // Right-click context popup menu for Project options (Move Up, Move Down, Set Group, Edit, Duplicate, Refresh, Delete)
+                            p_resp.context_menu(|ui| {
+                                ui.set_min_width(185.0);
+                                ui.spacing_mut().item_spacing = Vec2::new(0.0, 3.0);
+                                ui.spacing_mut().button_padding = Vec2::new(10.0, 6.0);
+
+                                if proj_idx > 0
+                                    && ui
+                                        .add(
+                                            egui::Button::new(
+                                                RichText::new("▲ Move Up")
+                                                    .size(FONT_SM)
+                                                    .color(TEXT_PRIMARY),
+                                            )
+                                            .fill(CARD_BG),
+                                        )
+                                        .on_hover_text("Move this project up in the list")
+                                        .clicked()
+                                {
+                                    action_move_up_idx = Some(proj_idx);
+                                    ui.close_menu();
+                                }
+
+                                if proj_idx + 1 < self.storage.projects.len()
+                                    && ui
+                                        .add(
+                                            egui::Button::new(
+                                                RichText::new("▼ Move Down")
+                                                    .size(FONT_SM)
+                                                    .color(TEXT_PRIMARY),
+                                            )
+                                            .fill(CARD_BG),
+                                        )
+                                        .on_hover_text("Move this project down in the list")
+                                        .clicked()
+                                {
+                                    action_move_down_idx = Some(proj_idx);
+                                    ui.close_menu();
+                                }
+
+                                if proj_idx > 0 || proj_idx + 1 < self.storage.projects.len() {
+                                    ui.separator();
+                                }
+
+                                if ui
+                                    .add(
+                                        egui::Button::new(
+                                            RichText::new("Edit Project")
+                                                .size(FONT_SM)
+                                                .color(TEXT_PRIMARY),
+                                        )
+                                        .fill(CARD_BG),
+                                    )
+                                    .on_hover_text("Edit project name, local directory path, group, or description")
+                                    .clicked()
+                                {
+                                    action_edit_proj_idx = Some(proj_idx);
+                                    ui.close_menu();
+                                }
+
+                                ui.menu_button("Set Group...", |ui| {
+                                    ui.set_min_width(160.0);
+                                    let existing_groups = self.storage.existing_project_groups();
+                                    for grp in existing_groups {
+                                        let is_cur = project.group.as_deref() == Some(&grp);
+                                        let label = if is_cur {
+                                            format!("✓ {grp}")
+                                        } else {
+                                            grp.clone()
+                                        };
+                                        if ui
+                                            .add(
+                                                egui::Button::new(
+                                                    RichText::new(label).size(FONT_SM).color(
+                                                        if is_cur {
+                                                            PRIMARY_BLUE
+                                                        } else {
+                                                            TEXT_PRIMARY
+                                                        },
+                                                    ),
+                                                )
+                                                .fill(CARD_BG),
+                                            )
+                                            .clicked()
+                                        {
+                                            action_set_group =
+                                                Some((project.id.clone(), Some(grp)));
+                                            ui.close_menu();
+                                        }
+                                    }
+                                    if project.group.is_some() {
+                                        ui.separator();
+                                        if ui
+                                            .add(
+                                                egui::Button::new(
+                                                    RichText::new("Remove from Group")
+                                                        .size(FONT_SM)
+                                                        .color(TEXT_MUTED),
+                                                )
+                                                .fill(CARD_BG),
+                                            )
+                                            .clicked()
+                                        {
+                                            action_set_group =
+                                                Some((project.id.clone(), None));
+                                            ui.close_menu();
+                                        }
+                                    }
+                                });
+
+                                if ui
+                                    .add(
+                                        egui::Button::new(
+                                            RichText::new("Duplicate Project")
+                                                .size(FONT_SM)
+                                                .color(TEXT_PRIMARY),
+                                        )
+                                        .fill(CARD_BG),
+                                    )
+                                    .on_hover_text("Duplicate this project and all its environments")
+                                    .clicked()
+                                {
+                                    action_duplicate_proj_id = Some(project.id.clone());
+                                    ui.close_menu();
+                                }
+
+                                if ui
+                                    .add(
+                                        egui::Button::new(
+                                            RichText::new("Refresh Metadata")
+                                                .size(FONT_SM)
+                                                .color(TEXT_SECONDARY),
+                                        )
+                                        .fill(CARD_BG),
+                                    )
+                                    .on_hover_text("Refresh Git branches, commits, and package.json version")
+                                    .clicked()
+                                {
+                                    action_refresh_proj_id = Some(project.id.clone());
+                                    ui.close_menu();
+                                }
+
+                                ui.separator();
+
+                                if ui
+                                    .add(
+                                        egui::Button::new(
+                                            RichText::new("Delete Project")
+                                                .size(FONT_SM)
+                                                .color(FAIL_PILL_TEXT),
+                                        )
+                                        .fill(CARD_BG),
+                                    )
+                                    .on_hover_text("Delete this project")
+                                    .clicked()
+                                {
+                                    action_delete_proj = Some((project.id.clone(), project.name.clone()));
+                                    ui.close_menu();
+                                }
+                            });
+
+                            // Environment version pills row inside project card
+                            let mut pill_x = p_rect.left() + 20.0;
+                            let pill_y = p_rect.top() + 45.0;
+                            if project.environments.is_empty() {
+                                paint_small_sidebar_pill(
+                                    ui.painter(),
+                                    Pos2::new(pill_x, pill_y),
+                                    "NO ENVIRONMENTS",
+                                    SIDEBAR_PILL_BG,
+                                    SIDEBAR_TEXT_MUTED,
+                                );
+                            } else {
+                                for env in project.environments.iter().take(3) {
+                                    let badge = env.badge_label();
+                                    let is_env_running = self.storage.deployments.iter().any(|d| {
+                                        d.project_id == project.id
+                                            && d.environment == env.key
+                                            && (d.status == DeploymentStatus::Running
+                                                || self.active_deployment_id.as_deref() == Some(&d.id))
+                                    });
+                                    let (label, bg, fg) = if is_env_running {
+                                        (
+                                            format!("{badge} Deploying..."),
+                                            Color32::from_rgb(30, 58, 138),
+                                            Color32::from_rgb(96, 165, 250),
+                                        )
+                                    } else if let Some(ok_dep) =
+                                        self.storage.last_succeeded_deployment(&project.id, &env.key)
+                                    {
+                                        (
+                                            format!("{badge} v{}", ok_dep.version),
+                                            Color32::from_rgb(23, 37, 84),
+                                            Color32::from_rgb(96, 165, 250),
+                                        )
+                                    } else {
+                                        (
+                                            format!("{badge} —"),
+                                            SIDEBAR_PILL_BG,
+                                            SIDEBAR_TEXT_MUTED,
+                                        )
+                                    };
+                                    let w = paint_small_sidebar_pill(
+                                        ui.painter(),
+                                        Pos2::new(pill_x, pill_y),
+                                        &label,
+                                        bg,
+                                        fg,
+                                    );
+                                    pill_x += w + 5.0;
+                                }
+                            }
+
+                            if p_resp.clicked() {
+                                clicked_project_id = Some(project.id.clone());
+                            }
+                            ui.add_space(4.0);
                         }
-                        ui.add_space(4.0);
                     }
 
+                    if let Some((from, to)) = drag_reorder {
+                        self.storage.reorder_project(from, to);
+                        self.project_sort_mode = ProjectSortMode::Custom;
+                        self.dragged_project_idx = None;
+                    } else if is_pointer_released {
+                        self.dragged_project_idx = None;
+                    }
+
+                    if let Some(idx) = action_move_up_idx {
+                        self.storage.move_project_up(idx);
+                        self.project_sort_mode = ProjectSortMode::Custom;
+                    }
+                    if let Some(idx) = action_move_down_idx {
+                        self.storage.move_project_down(idx);
+                        self.project_sort_mode = ProjectSortMode::Custom;
+                    }
+                    if let Some((pid, grp)) = action_set_group {
+                        self.storage.set_project_group(&pid, grp);
+                    }
                     if let Some(idx) = action_edit_proj_idx {
                         self.open_edit_project_modal(idx);
                     }
@@ -2540,6 +2876,49 @@ impl ShiplyApp {
                     Some("e.g. Backend API service (Node.js / PM2)"),
                 );
 
+                ui.add_space(10.0);
+                ui.label(
+                    RichText::new("Group (Optional)")
+                        .size(FONT_SM)
+                        .strong()
+                        .color(TEXT_SECONDARY),
+                );
+                ui.add_space(3.0);
+                styled_text_edit(
+                    ui,
+                    &mut self.new_project_group,
+                    492.0,
+                    Some("e.g. Backend, Frontend, Microservices..."),
+                );
+                let existing_groups = self.storage.existing_project_groups();
+                if !existing_groups.is_empty() {
+                    ui.add_space(4.0);
+                    horizontal_row(ui, 24.0, |ui| {
+                        ui.label(RichText::new("Quick Select:").size(FONT_XS).color(TEXT_MUTED));
+                        for grp in existing_groups {
+                            let is_sel = self.new_project_group == grp;
+                            if ui
+                                .add(
+                                    egui::Button::new(
+                                        RichText::new(&grp).size(FONT_XS).color(if is_sel {
+                                            Color32::WHITE
+                                        } else {
+                                            TEXT_SECONDARY
+                                        }),
+                                    )
+                                    .fill(if is_sel { PRIMARY_BLUE } else { SUBTLE_BG })
+                                    .stroke(Stroke::new(1.0_f32, CARD_BORDER))
+                                    .corner_radius(4.0),
+                                )
+                                .on_hover_cursor(egui::CursorIcon::PointingHand)
+                                .clicked()
+                            {
+                                self.new_project_group = grp;
+                            }
+                        }
+                    });
+                }
+
                 ui.add_space(18.0);
                 draw_divider(ui, CARD_BORDER);
                 ui.add_space(12.0);
@@ -2585,6 +2964,12 @@ impl ShiplyApp {
                                 },
                                 local_path: self.new_project_path.trim().to_string(),
                                 environments: self.new_project_imported_envs.clone(),
+                                group: if self.new_project_group.trim().is_empty() {
+                                    None
+                                } else {
+                                    Some(self.new_project_group.trim().to_string())
+                                },
+                                sort_order: Some(self.storage.projects.len() as i32),
                             };
                             let id = proj.id.clone();
                             let first_env = proj
@@ -2602,6 +2987,7 @@ impl ShiplyApp {
                             self.new_project_name.clear();
                             self.new_project_path.clear();
                             self.new_project_desc.clear();
+                            self.new_project_group.clear();
                             self.new_project_imported_envs.clear();
                             self.new_project_import_notice = None;
                             self.show_new_project_modal = false;
@@ -2631,6 +3017,7 @@ impl ShiplyApp {
             self.edit_project_name = proj.name.clone();
             self.edit_project_path = proj.local_path.clone();
             self.edit_project_desc = proj.description.clone();
+            self.edit_project_group = proj.group.clone().unwrap_or_default();
             self.edit_project_ps1_path.clear();
             self.edit_project_import_notice = None;
             self.show_edit_project_modal = true;
@@ -2762,6 +3149,49 @@ impl ShiplyApp {
                     Some("e.g. Backend API service (Node.js / PM2)"),
                 );
 
+                ui.add_space(10.0);
+                ui.label(
+                    RichText::new("Group (Optional)")
+                        .size(FONT_SM)
+                        .strong()
+                        .color(TEXT_SECONDARY),
+                );
+                ui.add_space(3.0);
+                styled_text_edit(
+                    ui,
+                    &mut self.edit_project_group,
+                    492.0,
+                    Some("e.g. Backend, Frontend, Microservices..."),
+                );
+                let existing_groups = self.storage.existing_project_groups();
+                if !existing_groups.is_empty() {
+                    ui.add_space(4.0);
+                    horizontal_row(ui, 24.0, |ui| {
+                        ui.label(RichText::new("Quick Select:").size(FONT_XS).color(TEXT_MUTED));
+                        for grp in existing_groups {
+                            let is_sel = self.edit_project_group == grp;
+                            if ui
+                                .add(
+                                    egui::Button::new(
+                                        RichText::new(&grp).size(FONT_XS).color(if is_sel {
+                                            Color32::WHITE
+                                        } else {
+                                            TEXT_SECONDARY
+                                        }),
+                                    )
+                                    .fill(if is_sel { PRIMARY_BLUE } else { SUBTLE_BG })
+                                    .stroke(Stroke::new(1.0_f32, CARD_BORDER))
+                                    .corner_radius(4.0),
+                                )
+                                .on_hover_cursor(egui::CursorIcon::PointingHand)
+                                .clicked()
+                            {
+                                self.edit_project_group = grp;
+                            }
+                        }
+                    });
+                }
+
                 ui.add_space(14.0);
 
                 // Optional: Import/Sync additional .ps1 script into this project
@@ -2878,6 +3308,8 @@ impl ShiplyApp {
                             } else {
                                 self.edit_project_desc.trim().to_string()
                             };
+                            let grp = self.edit_project_group.trim().to_string();
+                            proj.group = if grp.is_empty() { None } else { Some(grp) };
                             let updated_name = proj.name.clone();
                             let _ = self.storage.save();
                             self.refresh_selected_project_metadata(false);
@@ -8846,6 +9278,8 @@ mod tests {
             description: "Backend API".to_string(),
             local_path: ".".to_string(),
             environments: vec![env_be],
+            group: None,
+            sort_order: None,
         };
 
         let env_fe = EnvironmentConfig {
@@ -8866,6 +9300,8 @@ mod tests {
             description: "Web frontend".to_string(),
             local_path: ".".to_string(),
             environments: vec![env_fe],
+            group: None,
+            sort_order: None,
         };
 
         storage.projects = vec![proj_backend, proj_frontend];
@@ -9088,6 +9524,8 @@ mod tests {
             description: "Desc".to_string(),
             local_path: ".".to_string(),
             environments: vec![env],
+            group: None,
+            sort_order: None,
         };
         storage.projects.push(project);
 
@@ -9149,6 +9587,8 @@ mod tests {
             description: "Desc".to_string(),
             local_path: ".".to_string(),
             environments: vec![env],
+            group: None,
+            sort_order: None,
         };
         storage.projects.push(project);
 
@@ -9205,6 +9645,8 @@ mod tests {
                 http_proxy: None,
                 steps: Vec::new(),
             }],
+            group: None,
+            sort_order: None,
         };
         storage.projects.push(project);
         let mut app = ShiplyApp::new(storage);
@@ -9261,6 +9703,8 @@ mod tests {
                 http_proxy: None,
                 steps: Vec::new(),
             }],
+            group: None,
+            sort_order: None,
         };
         let proj2 = Project {
             id: "proj-idle".to_string(),
@@ -9268,6 +9712,8 @@ mod tests {
             description: "Idle".to_string(),
             local_path: ".".to_string(),
             environments: vec![],
+            group: None,
+            sort_order: None,
         };
         storage.projects = vec![proj1, proj2];
 
@@ -9340,6 +9786,8 @@ mod tests {
                     allow_failure: false,
                 })],
             }],
+            group: None,
+            sort_order: None,
         };
         storage.projects.push(proj);
 
@@ -9359,5 +9807,163 @@ mod tests {
         assert_eq!(dup.name, "Backend Service (Copy)");
         assert_eq!(dup.id, "proj-orig-copy");
         assert_eq!(app.storage.projects.len(), 2);
+    }
+
+    #[test]
+    fn test_project_sorting_and_drag_reordering_ui() {
+        let ctx = egui::Context::default();
+        ShiplyApp::configure_light_workspace_style(&ctx);
+
+        let mut storage = crate::storage::AppStorage::default();
+        let p_beta = Project {
+            id: "p-beta".to_string(),
+            name: "Beta API".to_string(),
+            description: "".to_string(),
+            local_path: ".".to_string(),
+            environments: vec![],
+            group: None,
+            sort_order: Some(0),
+        };
+        let p_alpha = Project {
+            id: "p-alpha".to_string(),
+            name: "Alpha Web".to_string(),
+            description: "".to_string(),
+            local_path: ".".to_string(),
+            environments: vec![],
+            group: None,
+            sort_order: Some(1),
+        };
+        let p_gamma = Project {
+            id: "p-gamma".to_string(),
+            name: "Gamma Service".to_string(),
+            description: "".to_string(),
+            local_path: ".".to_string(),
+            environments: vec![],
+            group: None,
+            sort_order: Some(2),
+        };
+        storage.projects = vec![p_beta, p_alpha, p_gamma];
+
+        let mut app = ShiplyApp::new(storage);
+
+        // 1. Render sidebar initial custom order
+        let _ = ctx.run(Default::default(), |ctx| {
+            egui::CentralPanel::default().show(ctx, |ui| {
+                app.render_sidebar(ui.ctx(), 1.0);
+            });
+        });
+        assert_eq!(app.storage.projects[0].name, "Beta API");
+        assert_eq!(app.storage.projects[1].name, "Alpha Web");
+        assert_eq!(app.storage.projects[2].name, "Gamma Service");
+
+        // 2. Sort by NameAsc
+        app.project_sort_mode = ProjectSortMode::NameAsc;
+        app.storage.sort_projects(ProjectSortMode::NameAsc);
+        assert_eq!(app.storage.projects[0].name, "Alpha Web");
+        assert_eq!(app.storage.projects[1].name, "Beta API");
+        assert_eq!(app.storage.projects[2].name, "Gamma Service");
+
+        // 3. Sort by NameDesc
+        app.project_sort_mode = ProjectSortMode::NameDesc;
+        app.storage.sort_projects(ProjectSortMode::NameDesc);
+        assert_eq!(app.storage.projects[0].name, "Gamma Service");
+        assert_eq!(app.storage.projects[1].name, "Beta API");
+        assert_eq!(app.storage.projects[2].name, "Alpha Web");
+
+        // 4. Test reorder simulation (dragging first item to last position)
+        app.dragged_project_idx = Some(0);
+        let _ = ctx.run(Default::default(), |ctx| {
+            egui::CentralPanel::default().show(ctx, |ui| {
+                app.render_sidebar(ui.ctx(), 1.0);
+            });
+        });
+        app.storage.reorder_project(0, 2);
+        app.dragged_project_idx = None;
+        app.project_sort_mode = ProjectSortMode::Custom;
+
+        assert_eq!(app.storage.projects[0].name, "Beta API");
+        assert_eq!(app.storage.projects[1].name, "Alpha Web");
+        assert_eq!(app.storage.projects[2].name, "Gamma Service");
+
+        // 5. Test move down and move up
+        app.storage.move_project_down(0);
+        assert_eq!(app.storage.projects[0].name, "Alpha Web");
+        assert_eq!(app.storage.projects[1].name, "Beta API");
+
+        app.storage.move_project_up(1);
+        assert_eq!(app.storage.projects[0].name, "Beta API");
+        assert_eq!(app.storage.projects[1].name, "Alpha Web");
+    }
+
+    #[test]
+    fn test_project_grouping_and_collapsible_sections_ui() {
+        let ctx = egui::Context::default();
+        ShiplyApp::configure_light_workspace_style(&ctx);
+
+        let mut storage = crate::storage::AppStorage::default();
+        let p_backend = Project {
+            id: "p-backend".to_string(),
+            name: "Backend Service".to_string(),
+            description: "".to_string(),
+            local_path: ".".to_string(),
+            environments: vec![],
+            group: Some("Backend".to_string()),
+            sort_order: Some(0),
+        };
+        let p_frontend = Project {
+            id: "p-frontend".to_string(),
+            name: "Frontend App".to_string(),
+            description: "".to_string(),
+            local_path: ".".to_string(),
+            environments: vec![],
+            group: Some("Frontend".to_string()),
+            sort_order: Some(1),
+        };
+        let p_ungrouped = Project {
+            id: "p-ungrouped".to_string(),
+            name: "Ungrouped Service".to_string(),
+            description: "".to_string(),
+            local_path: ".".to_string(),
+            environments: vec![],
+            group: None,
+            sort_order: Some(2),
+        };
+        storage.projects = vec![p_backend, p_frontend, p_ungrouped];
+
+        let mut app = ShiplyApp::new(storage);
+
+        // Verify existing project groups
+        let groups = app.storage.existing_project_groups();
+        assert_eq!(groups, vec!["Backend", "Frontend"]);
+
+        // Render sidebar with groups expanded
+        let _ = ctx.run(Default::default(), |ctx| {
+            egui::CentralPanel::default().show(ctx, |ui| {
+                app.render_sidebar(ui.ctx(), 1.0);
+            });
+        });
+
+        // Collapse "Backend" group and render again
+        app.collapsed_project_groups.insert("Backend".to_string());
+        let _ = ctx.run(Default::default(), |ctx| {
+            egui::CentralPanel::default().show(ctx, |ui| {
+                app.render_sidebar(ui.ctx(), 1.0);
+            });
+        });
+        assert!(app.collapsed_project_groups.contains("Backend"));
+
+        // Change group of p-ungrouped to Backend
+        assert!(app.storage.set_project_group("p-ungrouped", Some("Backend".to_string())));
+        assert_eq!(
+            app.storage.projects.iter().find(|p| p.id == "p-ungrouped").unwrap().group.as_deref(),
+            Some("Backend")
+        );
+
+        // Remove group from p-frontend
+        assert!(app.storage.set_project_group("p-frontend", None));
+        assert_eq!(
+            app.storage.projects.iter().find(|p| p.id == "p-frontend").unwrap().group,
+            None
+        );
     }
 }

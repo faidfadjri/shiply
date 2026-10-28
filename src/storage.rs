@@ -33,6 +33,15 @@ struct LegacyJsonState {
     deployments: Vec<DeploymentRecord>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub enum ProjectSortMode {
+    #[default]
+    Custom,
+    NameAsc,
+    NameDesc,
+    RecentDeploy,
+}
+
 /// SQLite database initialization and schema creation.
 pub fn init_db(conn: &Connection) -> Result<(), rusqlite::Error> {
     conn.execute_batch(
@@ -49,7 +58,9 @@ pub fn init_db(conn: &Connection) -> Result<(), rusqlite::Error> {
              name TEXT NOT NULL,
              description TEXT NOT NULL,
              local_path TEXT NOT NULL,
-             environments_json TEXT NOT NULL
+             environments_json TEXT NOT NULL,
+             group_name TEXT,
+             sort_order INTEGER
          );
 
          CREATE TABLE IF NOT EXISTS deployments (
@@ -76,12 +87,19 @@ pub fn init_db(conn: &Connection) -> Result<(), rusqlite::Error> {
          CREATE INDEX IF NOT EXISTS idx_deployments_env ON deployments (project_id, environment);
          CREATE INDEX IF NOT EXISTS idx_deployments_started_at ON deployments (started_at DESC);",
     )?;
+
+    // Backwards-compatible migrations for projects table columns if created in older versions
+    let _ = conn.execute("ALTER TABLE projects ADD COLUMN group_name TEXT", []);
+    let _ = conn.execute("ALTER TABLE projects ADD COLUMN sort_order INTEGER", []);
+
     Ok(())
 }
 
 pub fn load_projects_from_db(conn: &Connection) -> Result<Vec<Project>, rusqlite::Error> {
     let mut stmt = conn.prepare(
-        "SELECT id, name, description, local_path, environments_json FROM projects ORDER BY name ASC",
+        "SELECT id, name, description, local_path, environments_json, group_name, sort_order
+         FROM projects
+         ORDER BY COALESCE(sort_order, 999999) ASC, name ASC",
     )?;
     let rows = stmt.query_map([], |row| {
         let id: String = row.get(0)?;
@@ -89,6 +107,8 @@ pub fn load_projects_from_db(conn: &Connection) -> Result<Vec<Project>, rusqlite
         let description: String = row.get(2)?;
         let local_path: String = row.get(3)?;
         let environments_json: String = row.get(4)?;
+        let group: Option<String> = row.get(5)?;
+        let sort_order: Option<i32> = row.get(6)?;
         let environments = serde_json::from_str(&environments_json).unwrap_or_default();
         Ok(Project {
             id,
@@ -96,6 +116,8 @@ pub fn load_projects_from_db(conn: &Connection) -> Result<Vec<Project>, rusqlite
             description,
             local_path,
             environments,
+            group,
+            sort_order,
         })
     })?;
 
@@ -193,16 +215,20 @@ pub fn save_all_to_db(
     tx.execute("DELETE FROM projects", [])?;
     {
         let mut stmt = tx.prepare(
-            "INSERT INTO projects (id, name, description, local_path, environments_json) VALUES (?1, ?2, ?3, ?4, ?5)",
+            "INSERT INTO projects (id, name, description, local_path, environments_json, group_name, sort_order)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
         )?;
-        for proj in projects {
+        for (idx, proj) in projects.iter().enumerate() {
             let envs_json = serde_json::to_string(&proj.environments).unwrap_or_default();
+            let effective_order = proj.sort_order.unwrap_or(idx as i32);
             stmt.execute(params![
                 proj.id,
                 proj.name,
                 proj.description,
                 proj.local_path,
-                envs_json
+                envs_json,
+                proj.group,
+                effective_order,
             ])?;
         }
     }
@@ -701,6 +727,128 @@ impl AppStorage {
         Some(new_project)
     }
 
+    /// Reorders a project from `from_idx` to `to_idx` and updates manual sort order.
+    pub fn reorder_project(&mut self, from_idx: usize, to_idx: usize) -> bool {
+        if from_idx != to_idx && from_idx < self.projects.len() && to_idx < self.projects.len() {
+            let proj = self.projects.remove(from_idx);
+            self.projects.insert(to_idx, proj);
+            for (i, p) in self.projects.iter_mut().enumerate() {
+                p.sort_order = Some(i as i32);
+            }
+            let _ = self.save();
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Moves a project up by 1 position in manual sort order.
+    pub fn move_project_up(&mut self, idx: usize) -> bool {
+        if idx > 0 && idx < self.projects.len() {
+            self.projects.swap(idx - 1, idx);
+            for (i, p) in self.projects.iter_mut().enumerate() {
+                p.sort_order = Some(i as i32);
+            }
+            let _ = self.save();
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Moves a project down by 1 position in manual sort order.
+    pub fn move_project_down(&mut self, idx: usize) -> bool {
+        if idx + 1 < self.projects.len() {
+            self.projects.swap(idx, idx + 1);
+            for (i, p) in self.projects.iter_mut().enumerate() {
+                p.sort_order = Some(i as i32);
+            }
+            let _ = self.save();
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Sets or clears the group for a given project ID.
+    pub fn set_project_group(&mut self, project_id: &str, group: Option<String>) -> bool {
+        if let Some(proj) = self.projects.iter_mut().find(|p| p.id == project_id) {
+            let normalized = group.map(|g| g.trim().to_string()).filter(|g| !g.is_empty());
+            proj.group = normalized;
+            let _ = self.save();
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Returns a deduplicated, sorted list of all existing non-empty project group names.
+    pub fn existing_project_groups(&self) -> Vec<String> {
+        let mut groups = Vec::new();
+        for proj in &self.projects {
+            if let Some(g) = &proj.group {
+                let trimmed = g.trim();
+                if !trimmed.is_empty()
+                    && !groups
+                        .iter()
+                        .any(|existing: &String| existing.eq_ignore_ascii_case(trimmed))
+                {
+                    groups.push(trimmed.to_string());
+                }
+            }
+        }
+        groups.sort();
+        groups
+    }
+
+    /// Sorts projects according to the requested sort mode and persists the order.
+    pub fn sort_projects(&mut self, mode: ProjectSortMode) {
+        match mode {
+            ProjectSortMode::Custom => {
+                // Preserves current custom order
+            }
+            ProjectSortMode::NameAsc => {
+                self.projects
+                    .sort_by_key(|a| a.name.to_lowercase());
+                for (i, p) in self.projects.iter_mut().enumerate() {
+                    p.sort_order = Some(i as i32);
+                }
+                let _ = self.save();
+            }
+            ProjectSortMode::NameDesc => {
+                self.projects
+                    .sort_by_key(|a| std::cmp::Reverse(a.name.to_lowercase()));
+                for (i, p) in self.projects.iter_mut().enumerate() {
+                    p.sort_order = Some(i as i32);
+                }
+                let _ = self.save();
+            }
+            ProjectSortMode::RecentDeploy => {
+                let deployments = &self.deployments;
+                self.projects.sort_by(|a, b| {
+                    let a_latest = deployments
+                        .iter()
+                        .find(|d| d.project_id == a.id)
+                        .map(|d| d.started_at);
+                    let b_latest = deployments
+                        .iter()
+                        .find(|d| d.project_id == b.id)
+                        .map(|d| d.started_at);
+                    match (a_latest, b_latest) {
+                        (Some(ta), Some(tb)) => tb.cmp(&ta),
+                        (Some(_), None) => std::cmp::Ordering::Less,
+                        (None, Some(_)) => std::cmp::Ordering::Greater,
+                        (None, None) => a.name.to_lowercase().cmp(&b.name.to_lowercase()),
+                    }
+                });
+                for (i, p) in self.projects.iter_mut().enumerate() {
+                    p.sort_order = Some(i as i32);
+                }
+                let _ = self.save();
+            }
+        }
+    }
+
     pub fn merge_deployments(&mut self, incoming: Vec<DeploymentRecord>) -> usize {
         let mut count = 0;
         for dep in incoming {
@@ -926,6 +1074,8 @@ mod tests {
             description: "From JSON".to_string(),
             local_path: r"C:\Legacy\Proj".to_string(),
             environments: Vec::new(),
+            group: None,
+            sort_order: None,
         };
         let sample_dep = dummy_record(
             "dep-legacy-1",
@@ -1001,6 +1151,8 @@ mod tests {
             description: "Backend Service".to_string(),
             local_path: r"D:\NTI\Projects\backend\ndm-dq-subscription".to_string(),
             environments: Vec::new(),
+            group: None,
+            sort_order: None,
         };
         fs::write(
             &drop_json,
@@ -1023,6 +1175,8 @@ mod tests {
             description: "API Service".to_string(),
             local_path: r"C:\Projects\web-api".to_string(),
             environments: Vec::new(),
+            group: None,
+            sort_order: None,
         };
         proj.add_environment("Development", None).unwrap();
         proj.add_environment("QA", None).unwrap();
@@ -1075,6 +1229,8 @@ mod tests {
             description: "Main backend".to_string(),
             local_path: r"C:\apps\api".to_string(),
             environments: vec![],
+            group: Some("Services".to_string()),
+            sort_order: Some(1),
         };
         storage.projects.push(proj);
         let _ = storage.save();
@@ -1083,12 +1239,14 @@ mod tests {
         let dup1 = storage.duplicate_project("api-service").expect("duplicate 1");
         assert_eq!(dup1.id, "api-service-copy");
         assert_eq!(dup1.name, "API Service (Copy)");
+        assert_eq!(dup1.group, Some("Services".to_string()));
         assert_eq!(storage.projects.len(), 2);
 
         // 2. Second duplication of original
         let dup2 = storage.duplicate_project("api-service").expect("duplicate 2");
         assert_eq!(dup2.id, "api-service-copy-2");
         assert_eq!(dup2.name, "API Service (Copy 2)");
+        assert_eq!(dup2.group, Some("Services".to_string()));
         assert_eq!(storage.projects.len(), 3);
 
         // 3. Reload from SQLite and verify persistence
@@ -1096,5 +1254,126 @@ mod tests {
         assert_eq!(reloaded.projects.len(), 3);
         assert!(reloaded.projects.iter().any(|p| p.id == "api-service-copy"));
         assert!(reloaded.projects.iter().any(|p| p.id == "api-service-copy-2"));
+    }
+
+    #[test]
+    fn test_storage_project_sort_and_reorder() {
+        let tmp = TempDir::new().expect("tempdir");
+        let db_path = tmp.path().join("shiply_state.db");
+        let mut storage = AppStorage::load_or_default(&db_path);
+
+        let p1 = Project {
+            id: "p1".to_string(),
+            name: "Alpha".to_string(),
+            description: "".to_string(),
+            local_path: "".to_string(),
+            environments: vec![],
+            group: None,
+            sort_order: Some(0),
+        };
+        let p2 = Project {
+            id: "p2".to_string(),
+            name: "Beta".to_string(),
+            description: "".to_string(),
+            local_path: "".to_string(),
+            environments: vec![],
+            group: None,
+            sort_order: Some(1),
+        };
+        let p3 = Project {
+            id: "p3".to_string(),
+            name: "Gamma".to_string(),
+            description: "".to_string(),
+            local_path: "".to_string(),
+            environments: vec![],
+            group: None,
+            sort_order: Some(2),
+        };
+
+        storage.projects = vec![p1, p2, p3];
+        let _ = storage.save();
+
+        // Test move down
+        assert!(storage.move_project_down(0));
+        assert_eq!(storage.projects[0].id, "p2");
+        assert_eq!(storage.projects[1].id, "p1");
+        assert_eq!(storage.projects[0].sort_order, Some(0));
+        assert_eq!(storage.projects[1].sort_order, Some(1));
+
+        // Test move up
+        assert!(storage.move_project_up(2));
+        assert_eq!(storage.projects[1].id, "p3");
+        assert_eq!(storage.projects[2].id, "p1");
+
+        // Test reorder_project
+        assert!(storage.reorder_project(2, 0));
+        assert_eq!(storage.projects[0].id, "p1");
+        assert_eq!(storage.projects[1].id, "p2");
+        assert_eq!(storage.projects[2].id, "p3");
+
+        // Reload from DB and verify sort_order is preserved
+        let reloaded = AppStorage::load_or_default(&db_path);
+        assert_eq!(reloaded.projects[0].id, "p1");
+        assert_eq!(reloaded.projects[1].id, "p2");
+        assert_eq!(reloaded.projects[2].id, "p3");
+
+        // Test sort by NameDesc
+        storage.sort_projects(ProjectSortMode::NameDesc);
+        assert_eq!(storage.projects[0].name, "Gamma");
+        assert_eq!(storage.projects[1].name, "Beta");
+        assert_eq!(storage.projects[2].name, "Alpha");
+    }
+
+    #[test]
+    fn test_storage_project_grouping_and_persistence() {
+        let tmp = TempDir::new().expect("tempdir");
+        let db_path = tmp.path().join("shiply_state.db");
+        let mut storage = AppStorage::load_or_default(&db_path);
+
+        let p1 = Project {
+            id: "p1".to_string(),
+            name: "P1".to_string(),
+            description: "".to_string(),
+            local_path: "".to_string(),
+            environments: vec![],
+            group: Some("Backend".to_string()),
+            sort_order: Some(0),
+        };
+        let p2 = Project {
+            id: "p2".to_string(),
+            name: "P2".to_string(),
+            description: "".to_string(),
+            local_path: "".to_string(),
+            environments: vec![],
+            group: Some("Frontend".to_string()),
+            sort_order: Some(1),
+        };
+        let p3 = Project {
+            id: "p3".to_string(),
+            name: "P3".to_string(),
+            description: "".to_string(),
+            local_path: "".to_string(),
+            environments: vec![],
+            group: None,
+            sort_order: Some(2),
+        };
+        storage.projects = vec![p1, p2, p3];
+        let _ = storage.save();
+
+        let groups = storage.existing_project_groups();
+        assert_eq!(groups, vec!["Backend", "Frontend"]);
+
+        // Change group of p3
+        assert!(storage.set_project_group("p3", Some("Backend".to_string())));
+        assert_eq!(storage.projects[2].group.as_deref(), Some("Backend"));
+
+        // Ungroup p1
+        assert!(storage.set_project_group("p1", None));
+        assert_eq!(storage.projects[0].group, None);
+
+        // Reload and verify
+        let reloaded = AppStorage::load_or_default(&db_path);
+        assert_eq!(reloaded.projects.iter().find(|p| p.id == "p3").unwrap().group.as_deref(), Some("Backend"));
+        assert_eq!(reloaded.projects.iter().find(|p| p.id == "p1").unwrap().group, None);
     }
 }

@@ -121,6 +121,8 @@ pub fn import_project_from_path(
         description: inferred_desc,
         local_path: project_dir.to_string_lossy().to_string(),
         environments,
+        group: None,
+        sort_order: None,
     })
 }
 

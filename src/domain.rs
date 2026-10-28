@@ -162,6 +162,10 @@ pub struct Project {
     pub description: String,
     pub local_path: String,
     pub environments: Vec<EnvironmentConfig>,
+    #[serde(default)]
+    pub group: Option<String>,
+    #[serde(default)]
+    pub sort_order: Option<i32>,
 }
 
 impl Project {
@@ -282,6 +286,8 @@ impl Project {
             description: self.description.clone(),
             local_path: self.local_path.clone(),
             environments: new_environments,
+            group: self.group.clone(),
+            sort_order: None,
         }
     }
 }
@@ -418,6 +424,8 @@ mod tests {
             description: "Backend".to_string(),
             local_path: r"D:\NTI\Projects\backend\ndm-dq-subscription".to_string(),
             environments: vec![sample_env_config()],
+            group: None,
+            sort_order: None,
         };
 
         let uat_key = proj
@@ -453,6 +461,8 @@ mod tests {
             description: "Production API".to_string(),
             local_path: r"C:\apps\api".to_string(),
             environments: vec![sample_env_config()],
+            group: Some("Backend".to_string()),
+            sort_order: Some(1),
         };
 
         let dup = orig.create_duplicate("proj-1-copy".to_string(), "Original Service (Copy)".to_string());
@@ -462,6 +472,8 @@ mod tests {
         assert_eq!(dup.local_path, r"C:\apps\api");
         assert_eq!(dup.environments.len(), 1);
         assert_eq!(dup.environments[0].steps.len(), 2);
+        assert_eq!(dup.group.as_deref(), Some("Backend"));
+        assert_eq!(dup.sort_order, None);
         // Verify pipeline step IDs are refreshed with new distinct UUIDs
         assert_ne!(dup.environments[0].steps[0].id, orig.environments[0].steps[0].id);
         assert_ne!(dup.environments[0].steps[1].id, orig.environments[0].steps[1].id);
