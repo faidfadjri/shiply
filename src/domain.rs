@@ -266,6 +266,24 @@ impl Project {
         self.environments.remove(pos);
         Ok(())
     }
+
+    /// Creates a complete duplicate of this project with a new ID and display name,
+    /// giving every pipeline step a fresh unique UUID.
+    pub fn create_duplicate(&self, new_id: String, new_name: String) -> Self {
+        let mut new_environments = self.environments.clone();
+        for env in &mut new_environments {
+            for step in &mut env.steps {
+                step.id = Uuid::new_v4().to_string();
+            }
+        }
+        Project {
+            id: new_id,
+            name: new_name,
+            description: self.description.clone(),
+            local_path: self.local_path.clone(),
+            environments: new_environments,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -425,5 +443,27 @@ mod tests {
         proj.remove_environment("uat").expect("remove uat");
         proj.remove_environment("dev").expect("remove last env");
         assert!(proj.environments.is_empty());
+    }
+
+    #[test]
+    fn test_project_create_duplicate() {
+        let orig = Project {
+            id: "proj-1".to_string(),
+            name: "Original Service".to_string(),
+            description: "Production API".to_string(),
+            local_path: r"C:\apps\api".to_string(),
+            environments: vec![sample_env_config()],
+        };
+
+        let dup = orig.create_duplicate("proj-1-copy".to_string(), "Original Service (Copy)".to_string());
+        assert_eq!(dup.id, "proj-1-copy");
+        assert_eq!(dup.name, "Original Service (Copy)");
+        assert_eq!(dup.description, "Production API");
+        assert_eq!(dup.local_path, r"C:\apps\api");
+        assert_eq!(dup.environments.len(), 1);
+        assert_eq!(dup.environments[0].steps.len(), 2);
+        // Verify pipeline step IDs are refreshed with new distinct UUIDs
+        assert_ne!(dup.environments[0].steps[0].id, orig.environments[0].steps[0].id);
+        assert_ne!(dup.environments[0].steps[1].id, orig.environments[0].steps[1].id);
     }
 }

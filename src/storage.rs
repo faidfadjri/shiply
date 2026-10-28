@@ -675,6 +675,32 @@ impl AppStorage {
         count
     }
 
+    /// Duplicates an existing project, including its environments and pipeline steps,
+    /// giving the duplicate a unique display name and project ID, and immediately persists to SQLite.
+    pub fn duplicate_project(&mut self, project_id: &str) -> Option<Project> {
+        let orig = self.projects.iter().find(|p| p.id == project_id)?.clone();
+
+        let base_name = &orig.name;
+        let mut new_name = format!("{base_name} (Copy)");
+        let mut counter = 2;
+        while self.projects.iter().any(|p| p.name == new_name) {
+            new_name = format!("{base_name} (Copy {counter})");
+            counter += 1;
+        }
+
+        let mut new_id = format!("{}-copy", orig.id);
+        let mut id_counter = 2;
+        while self.projects.iter().any(|p| p.id == new_id) {
+            new_id = format!("{}-copy-{}", orig.id, id_counter);
+            id_counter += 1;
+        }
+
+        let new_project = orig.create_duplicate(new_id, new_name);
+        self.projects.push(new_project.clone());
+        let _ = self.save();
+        Some(new_project)
+    }
+
     pub fn merge_deployments(&mut self, incoming: Vec<DeploymentRecord>) -> usize {
         let mut count = 0;
         for dep in incoming {
@@ -1035,5 +1061,40 @@ mod tests {
             storage.next_auto_bumped_version("web-api", "development", Some("1.4.2")),
             "1.4.3"
         );
+    }
+
+    #[test]
+    fn test_storage_duplicate_project() {
+        let tmp = TempDir::new().expect("tempdir");
+        let db_path = tmp.path().join("shiply_state.db");
+        let mut storage = AppStorage::load_or_default(&db_path);
+
+        let proj = Project {
+            id: "api-service".to_string(),
+            name: "API Service".to_string(),
+            description: "Main backend".to_string(),
+            local_path: r"C:\apps\api".to_string(),
+            environments: vec![],
+        };
+        storage.projects.push(proj);
+        let _ = storage.save();
+
+        // 1. First duplication
+        let dup1 = storage.duplicate_project("api-service").expect("duplicate 1");
+        assert_eq!(dup1.id, "api-service-copy");
+        assert_eq!(dup1.name, "API Service (Copy)");
+        assert_eq!(storage.projects.len(), 2);
+
+        // 2. Second duplication of original
+        let dup2 = storage.duplicate_project("api-service").expect("duplicate 2");
+        assert_eq!(dup2.id, "api-service-copy-2");
+        assert_eq!(dup2.name, "API Service (Copy 2)");
+        assert_eq!(storage.projects.len(), 3);
+
+        // 3. Reload from SQLite and verify persistence
+        let reloaded = AppStorage::load_or_default(&db_path);
+        assert_eq!(reloaded.projects.len(), 3);
+        assert!(reloaded.projects.iter().any(|p| p.id == "api-service-copy"));
+        assert!(reloaded.projects.iter().any(|p| p.id == "api-service-copy-2"));
     }
 }

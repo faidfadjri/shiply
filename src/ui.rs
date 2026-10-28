@@ -1791,7 +1791,12 @@ impl ShiplyApp {
                     );
                 } else {
                     let mut clicked_project_id = None;
-                    for project in &self.storage.projects {
+                    let mut action_edit_proj_idx = None;
+                    let mut action_duplicate_proj_id = None;
+                    let mut action_refresh_proj_id = None;
+                    let mut action_delete_proj = None;
+
+                    for (proj_idx, project) in self.storage.projects.iter().enumerate() {
                         let is_selected = matches!(
                             &self.selection,
                             SidebarSelection::Project(id) if id == &project.id
@@ -1884,6 +1889,79 @@ impl ShiplyApp {
                             p_resp
                         };
 
+                        // Right-click context popup menu for Project options (Edit, Duplicate, Refresh, Delete)
+                        p_resp.context_menu(|ui| {
+                            ui.set_min_width(175.0);
+                            ui.spacing_mut().item_spacing = Vec2::new(0.0, 3.0);
+                            ui.spacing_mut().button_padding = Vec2::new(10.0, 6.0);
+
+                            if ui
+                                .add(
+                                    egui::Button::new(
+                                        RichText::new("Edit Project")
+                                            .size(FONT_SM)
+                                            .color(TEXT_PRIMARY),
+                                    )
+                                    .fill(CARD_BG),
+                                )
+                                .on_hover_text("Edit project name, local directory path, or description")
+                                .clicked()
+                            {
+                                action_edit_proj_idx = Some(proj_idx);
+                                ui.close_menu();
+                            }
+
+                            if ui
+                                .add(
+                                    egui::Button::new(
+                                        RichText::new("Duplicate Project")
+                                            .size(FONT_SM)
+                                            .color(TEXT_PRIMARY),
+                                    )
+                                    .fill(CARD_BG),
+                                )
+                                .on_hover_text("Duplicate this project and all its environments")
+                                .clicked()
+                            {
+                                action_duplicate_proj_id = Some(project.id.clone());
+                                ui.close_menu();
+                            }
+
+                            if ui
+                                .add(
+                                    egui::Button::new(
+                                        RichText::new("Refresh Metadata")
+                                            .size(FONT_SM)
+                                            .color(TEXT_SECONDARY),
+                                    )
+                                    .fill(CARD_BG),
+                                )
+                                .on_hover_text("Refresh Git branches, commits, and package.json version")
+                                .clicked()
+                            {
+                                action_refresh_proj_id = Some(project.id.clone());
+                                ui.close_menu();
+                            }
+
+                            ui.separator();
+
+                            if ui
+                                .add(
+                                    egui::Button::new(
+                                        RichText::new("Delete Project")
+                                            .size(FONT_SM)
+                                            .color(FAIL_PILL_TEXT),
+                                    )
+                                    .fill(CARD_BG),
+                                )
+                                .on_hover_text("Delete this project")
+                                .clicked()
+                            {
+                                action_delete_proj = Some((project.id.clone(), project.name.clone()));
+                                ui.close_menu();
+                            }
+                        });
+
                         // Environment version pills row inside project card
                         let mut pill_x = p_rect.left() + 12.0;
                         let pill_y = p_rect.top() + 45.0;
@@ -1940,6 +2018,30 @@ impl ShiplyApp {
                             clicked_project_id = Some(project.id.clone());
                         }
                         ui.add_space(4.0);
+                    }
+
+                    if let Some(idx) = action_edit_proj_idx {
+                        self.open_edit_project_modal(idx);
+                    }
+                    if let Some(proj_id) = action_duplicate_proj_id {
+                        if let Some(new_proj) = self.storage.duplicate_project(&proj_id) {
+                            self.selection = SidebarSelection::Project(new_proj.id.clone());
+                            self.refresh_selected_project_metadata(true);
+                            self.status_banner = Some((
+                                format!("Duplicated project successfully as '{}'", new_proj.name),
+                                true,
+                            ));
+                        }
+                    }
+                    if let Some(proj_id) = action_refresh_proj_id {
+                        self.selection = SidebarSelection::Project(proj_id);
+                        self.refresh_selected_project_metadata(true);
+                    }
+                    if let Some((pid, pname)) = action_delete_proj {
+                        self.pending_delete_confirm = Some(ConfirmDeleteAction::Project {
+                            project_id: pid,
+                            project_name: pname,
+                        });
                     }
 
                     if let Some(pid) = clicked_project_id {
@@ -4805,15 +4907,87 @@ impl ShiplyApp {
         // 1. Top Project Header Bar (Fixed 36px height — all right-side controls vertically centered at 32px height)
         let mut delete_project_clicked = false;
         let mut edit_project_clicked = false;
+        let mut duplicate_project_clicked = false;
         let mut selected_branch_changed = None;
 
         horizontal_row(ui, 36.0, |ui| {
-            ui.label(
-                RichText::new(&proj_name)
-                    .size(FONT_XL)
-                    .strong()
-                    .color(TEXT_PRIMARY),
+            let title_resp = ui.add(
+                egui::Label::new(
+                    RichText::new(&proj_name)
+                        .size(FONT_XL)
+                        .strong()
+                        .color(TEXT_PRIMARY),
+                )
+                .sense(Sense::click()),
             );
+            title_resp.context_menu(|ui| {
+                ui.set_min_width(175.0);
+                ui.spacing_mut().item_spacing = Vec2::new(0.0, 3.0);
+                ui.spacing_mut().button_padding = Vec2::new(10.0, 6.0);
+
+                if ui
+                    .add(
+                        egui::Button::new(
+                            RichText::new("Edit Project")
+                                .size(FONT_SM)
+                                .color(TEXT_PRIMARY),
+                        )
+                        .fill(CARD_BG),
+                    )
+                    .clicked()
+                {
+                    edit_project_clicked = true;
+                    ui.close_menu();
+                }
+
+                if ui
+                    .add(
+                        egui::Button::new(
+                            RichText::new("Duplicate Project")
+                                .size(FONT_SM)
+                                .color(TEXT_PRIMARY),
+                        )
+                        .fill(CARD_BG),
+                    )
+                    .clicked()
+                {
+                    duplicate_project_clicked = true;
+                    ui.close_menu();
+                }
+
+                if ui
+                    .add(
+                        egui::Button::new(
+                            RichText::new("Refresh Metadata")
+                                .size(FONT_SM)
+                                .color(TEXT_SECONDARY),
+                        )
+                        .fill(CARD_BG),
+                    )
+                    .clicked()
+                {
+                    self.refresh_selected_project_metadata(true);
+                    ui.close_menu();
+                }
+
+                ui.separator();
+
+                if ui
+                    .add(
+                        egui::Button::new(
+                            RichText::new("Delete Project")
+                                .size(FONT_SM)
+                                .color(FAIL_PILL_TEXT),
+                        )
+                        .fill(CARD_BG),
+                    )
+                    .clicked()
+                {
+                    delete_project_clicked = true;
+                    ui.close_menu();
+                }
+            });
+
             let (r_txt, r_bg, r_fg) = if path_exists {
                 ("READY", SUCCESS_PILL_BG, SUCCESS_PILL_TEXT)
             } else {
@@ -4862,6 +5036,23 @@ impl ShiplyApp {
                     .clicked()
                     {
                         self.refresh_selected_project_metadata(true);
+                    }
+
+                    if outline_icon_button(
+                        ui,
+                        ("hdr_dup_proj", project_id),
+                        OutlineIcon::Copy,
+                        Some("Duplicate"),
+                        TEXT_PRIMARY,
+                        CARD_BG,
+                        SUBTLE_BG,
+                        CARD_BORDER,
+                        true,
+                    )
+                    .on_hover_text("Duplicate this project and all its environments")
+                    .clicked()
+                    {
+                        duplicate_project_clicked = true;
                     }
 
                     if outline_icon_button(
@@ -4923,6 +5114,17 @@ impl ShiplyApp {
 
         if edit_project_clicked {
             self.open_edit_project_modal(proj_idx);
+        }
+
+        if duplicate_project_clicked {
+            if let Some(new_proj) = self.storage.duplicate_project(project_id) {
+                self.selection = SidebarSelection::Project(new_proj.id.clone());
+                self.refresh_selected_project_metadata(true);
+                self.status_banner = Some((
+                    format!("Duplicated project successfully as '{}'", new_proj.name),
+                    true,
+                ));
+            }
         }
 
         if delete_project_clicked {
@@ -8319,6 +8521,7 @@ enum OutlineIcon {
     RotateCcw,
     Key,
     GripVertical,
+    Copy,
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -8518,6 +8721,24 @@ fn draw_outline_icon(painter: &egui::Painter, c: Pos2, icon: OutlineIcon, color:
                     painter.circle_filled(Pos2::new(c.x + dx, c.y + dy), r, color);
                 }
             }
+        }
+        OutlineIcon::Copy => {
+            // Front rectangle
+            painter.rect_stroke(
+                Rect::from_min_size(Pos2::new(c.x - 3.5, c.y - 2.5), Vec2::new(7.5, 8.5)),
+                CornerRadius::same(1),
+                Stroke::new(1.3_f32, color),
+                StrokeKind::Inside,
+            );
+            // Back rectangle top and right lines
+            painter.line_segment(
+                [Pos2::new(c.x - 1.5, c.y - 5.5), Pos2::new(c.x + 5.5, c.y - 5.5)],
+                Stroke::new(1.3_f32, color),
+            );
+            painter.line_segment(
+                [Pos2::new(c.x + 5.5, c.y - 5.5), Pos2::new(c.x + 5.5, c.y + 3.0)],
+                Stroke::new(1.3_f32, color),
+            );
         }
     }
 }
@@ -9091,5 +9312,52 @@ mod tests {
         });
         assert!(is_running_p1);
         assert!(!is_running_p2);
+    }
+
+    #[test]
+    fn test_project_context_menu_and_duplication_ui() {
+        let ctx = egui::Context::default();
+        ShiplyApp::configure_light_workspace_style(&ctx);
+
+        let mut storage = crate::storage::AppStorage::default();
+        let proj = Project {
+            id: "proj-orig".to_string(),
+            name: "Backend Service".to_string(),
+            description: "Production API".to_string(),
+            local_path: ".".to_string(),
+            environments: vec![EnvironmentConfig {
+                key: "prod".to_string(),
+                name: "Production".to_string(),
+                app_name: "backend-prod".to_string(),
+                servers: vec!["10.0.0.1".to_string()],
+                remote_user: "deploy".to_string(),
+                vault_target: "v1".to_string(),
+                remote_dir: "/app".to_string(),
+                env_source: None,
+                http_proxy: None,
+                steps: vec![PipelineStep::new("Build", StepKind::LocalCommand {
+                    command: "cargo build".to_string(),
+                    allow_failure: false,
+                })],
+            }],
+        };
+        storage.projects.push(proj);
+
+        let mut app = ShiplyApp::new(storage);
+        app.selection = SidebarSelection::Project("proj-orig".to_string());
+
+        // Render sidebar and project workspace to verify options and context menus execute without panic
+        let _ = ctx.run(Default::default(), |ctx| {
+            egui::CentralPanel::default().show(ctx, |ui| {
+                app.render_sidebar(ui.ctx(), 1.0);
+                app.render_project_workspace(ui, "proj-orig");
+            });
+        });
+
+        // Test duplication action via storage
+        let dup = app.storage.duplicate_project("proj-orig").expect("duplicate project");
+        assert_eq!(dup.name, "Backend Service (Copy)");
+        assert_eq!(dup.id, "proj-orig-copy");
+        assert_eq!(app.storage.projects.len(), 2);
     }
 }
