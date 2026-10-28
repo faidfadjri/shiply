@@ -1818,34 +1818,71 @@ impl ShiplyApp {
                             );
                         }
 
-                        // Project Title
-                        ui.painter().text(
-                            Pos2::new(p_rect.left() + 12.0, p_rect.top() + 20.0),
-                            Align2::LEFT_CENTER,
-                            &project.name,
-                            FontId::proportional(FONT_MD),
-                            if is_selected {
-                                Color32::from_rgb(96, 165, 250)
-                            } else {
-                                Color32::WHITE
-                            },
-                        );
+                        // Check if this project is currently running an active deployment process
+                        let is_deploying = self.active_deployment_id.as_ref().is_some_and(|dep_id| {
+                            self.storage
+                                .deployments
+                                .iter()
+                                .any(|d| &d.id == dep_id && d.project_id == project.id)
+                        }) || self
+                            .storage
+                            .deployments
+                            .iter()
+                            .any(|d| d.project_id == project.id && d.status == DeploymentStatus::Running);
 
-                        // Loading indicator spinner on the right side if changing active project
                         let is_switching =
                             self.project_switch_loading_id.as_deref() == Some(&project.id);
-                        if is_switching {
+
+                        // Project Title (constrained width so it doesn't collide with spinner)
+                        let title_color = if is_selected {
+                            Color32::from_rgb(96, 165, 250)
+                        } else {
+                            Color32::WHITE
+                        };
+                        let max_title_w = if is_deploying || is_switching {
+                            full_w - 56.0
+                        } else {
+                            full_w - 24.0
+                        };
+                        let title_galley = ui.painter().layout(
+                            project.name.clone(),
+                            FontId::proportional(FONT_MD),
+                            title_color,
+                            max_title_w,
+                        );
+                        ui.painter().galley(
+                            Pos2::new(
+                                p_rect.left() + 12.0,
+                                p_rect.top() + 20.0 - title_galley.size().y / 2.0,
+                            ),
+                            title_galley,
+                            title_color,
+                        );
+
+                        // Circle loading indicator spinner on the right side if running deployment or changing active project
+                        if is_deploying || is_switching {
                             ui.ctx().request_repaint();
                             let spinner_center =
                                 Pos2::new(p_rect.right() - 20.0, p_rect.top() + 20.0);
+                            let spinner_color = if is_deploying {
+                                Color32::from_rgb(96, 165, 250) // Bright Blue for active running deployment
+                            } else {
+                                Color32::from_rgb(148, 163, 184) // Muted Slate for project metadata load
+                            };
                             draw_circle_loading_spinner(
                                 ui.painter(),
                                 spinner_center,
-                                6.5,
-                                Color32::from_rgb(96, 165, 250),
+                                7.0,
+                                spinner_color,
                                 ui.input(|i| i.time),
                             );
                         }
+
+                        let p_resp = if is_deploying {
+                            p_resp.on_hover_text("A deployment is currently running for this project")
+                        } else {
+                            p_resp
+                        };
 
                         // Environment version pills row inside project card
                         let mut pill_x = p_rect.left() + 12.0;
@@ -1861,7 +1898,19 @@ impl ShiplyApp {
                         } else {
                             for env in project.environments.iter().take(3) {
                                 let badge = env.badge_label();
-                                let (label, bg, fg) = if let Some(ok_dep) =
+                                let is_env_running = self.storage.deployments.iter().any(|d| {
+                                    d.project_id == project.id
+                                        && d.environment == env.key
+                                        && (d.status == DeploymentStatus::Running
+                                            || self.active_deployment_id.as_deref() == Some(&d.id))
+                                });
+                                let (label, bg, fg) = if is_env_running {
+                                    (
+                                        format!("{badge} Deploying..."),
+                                        Color32::from_rgb(30, 58, 138),
+                                        Color32::from_rgb(96, 165, 250),
+                                    )
+                                } else if let Some(ok_dep) =
                                     self.storage.last_succeeded_deployment(&project.id, &env.key)
                                 {
                                     (
@@ -8966,5 +9015,81 @@ mod tests {
         assert_eq!(app.selected_git_branch, "feature/instant-switch");
         assert_eq!(app.cached_git_changes, vec!["M src/ui.rs"]);
         assert!(app.project_switch_loading_id.is_none());
+    }
+
+    #[test]
+    fn test_project_menu_sidebar_running_deployment_circle_loading_indicator() {
+        let ctx = egui::Context::default();
+        ShiplyApp::configure_light_workspace_style(&ctx);
+
+        let mut storage = crate::storage::AppStorage::default();
+        let proj1 = Project {
+            id: "proj-running".to_string(),
+            name: "Customer Portal".to_string(),
+            description: "Active".to_string(),
+            local_path: ".".to_string(),
+            environments: vec![EnvironmentConfig {
+                key: "prod".to_string(),
+                name: "Production".to_string(),
+                app_name: "portal-prod".to_string(),
+                servers: vec!["10.0.0.1".to_string()],
+                remote_user: "deploy".to_string(),
+                vault_target: "v1".to_string(),
+                remote_dir: "/apps/portal".to_string(),
+                env_source: None,
+                http_proxy: None,
+                steps: Vec::new(),
+            }],
+        };
+        let proj2 = Project {
+            id: "proj-idle".to_string(),
+            name: "Admin Dashboard".to_string(),
+            description: "Idle".to_string(),
+            local_path: ".".to_string(),
+            environments: vec![],
+        };
+        storage.projects = vec![proj1, proj2];
+
+        // Add a running deployment for proj-running
+        let running_dep = DeploymentRecord {
+            id: "dep-running-1".to_string(),
+            project_id: "proj-running".to_string(),
+            project_name: "Customer Portal".to_string(),
+            environment: "prod".to_string(),
+            app_name: "portal-prod".to_string(),
+            version: "1.0.5".to_string(),
+            git_branch: Some("main".to_string()),
+            git_commit: Some("c0ffee1".to_string()),
+            git_changes: vec![],
+            is_rollback: false,
+            servers: vec!["10.0.0.1".to_string()],
+            status: DeploymentStatus::Running,
+            started_at: chrono::Utc::now(),
+            finished_at: None,
+            duration_ms: None,
+            step_logs: vec![],
+            executed_steps: vec![],
+        };
+        storage.deployments = vec![running_dep];
+
+        let mut app = ShiplyApp::new(storage);
+        app.active_deployment_id = Some("dep-running-1".to_string());
+
+        // Render sidebar with anim_t = 1.0 (fully open)
+        let _ = ctx.run(Default::default(), |ctx| {
+            egui::CentralPanel::default().show(ctx, |ui| {
+                app.render_sidebar(ui.ctx(), 1.0);
+            });
+        });
+
+        // Verify active deployment is registered and belongs to proj-running
+        let is_running_p1 = app.storage.deployments.iter().any(|d| {
+            d.project_id == "proj-running" && d.status == DeploymentStatus::Running
+        });
+        let is_running_p2 = app.storage.deployments.iter().any(|d| {
+            d.project_id == "proj-idle" && d.status == DeploymentStatus::Running
+        });
+        assert!(is_running_p1);
+        assert!(!is_running_p2);
     }
 }
