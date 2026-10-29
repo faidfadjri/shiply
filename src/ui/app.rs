@@ -357,6 +357,7 @@ impl ShiplyApp {
 
     /// Configures system fonts: proportional UI text (`Segoe UI`) and monospace (`Consolas`) on Windows.
     pub(crate) fn install_system_fonts(ctx: &egui::Context) {
+        #[allow(unused_mut)]
         let mut fonts = FontDefinitions::default();
 
         #[cfg(windows)]

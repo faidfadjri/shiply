@@ -201,7 +201,6 @@ pub(crate) fn draw_icon_check(painter: &egui::Painter, c: Pos2, color: Color32) 
     );
 }
 
-#[cfg(windows)]
 /// Draws the official Shiply `logo.ico` texture inside a rounded container (falling back to 'S' if unavailable).
 pub(crate) fn draw_shiply_logo(
     painter: &egui::Painter,
