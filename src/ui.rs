@@ -34,15 +34,15 @@ use std::time::{Duration, Instant};
 use uuid::Uuid;
 
 // =============================================================================
-// DESIGN TOKENS (Single Source of Truth for Sidebar & Modals)
+// DESIGN TOKENS (Webflow-Style Light First System with Optional Dark Theme)
 // =============================================================================
 
-// Typography: ONLY these 5 sizes allowed in sidebar & modals!
-pub const FS_TITLE: f32 = 18.0; // Modal title (18px / 24px, weight 600)
-pub const FS_BRAND: f32 = 16.0; // "Shiply" brand name (16px / 24px, weight 600)
-pub const FS_BASE: f32 = 14.0;  // Nav items, project names, input text, buttons (14px / 20px, weight 500)
-pub const FS_SMALL: f32 = 13.0; // Footer actions, modal description, helper text (13px / 20px, weight 400)
-pub const FS_MICRO: f32 = 11.0; // "PROJECTS" label, env badges, version badge, status text (11px / 16px, weight 600)
+// Typography scale (bold tight headings, small medium-weight UI text, monospace for technical strings)
+pub const FS_TITLE: f32 = 18.0; // Modal & section title (18px, weight 600)
+pub const FS_BRAND: f32 = 16.0; // "Shiply" brand name (16px, weight 600)
+pub const FS_BASE: f32 = 13.0;  // UI / body text (13px, weight 500)
+pub const FS_SMALL: f32 = 12.0; // Secondary metadata, subtitles, helper text (12px, weight 400)
+pub const FS_MICRO: f32 = 11.0; // Badges, mono tags, versions, status (11px, weight 500)
 
 // Spacing scale: ONLY 4, 8, 12, 16, 20, 24 px
 pub const SP_4: f32 = 4.0;
@@ -52,101 +52,227 @@ pub const SP_16: f32 = 16.0;
 pub const SP_20: f32 = 20.0;
 pub const SP_24: f32 = 24.0;
 
-// Radius scale
-pub const R_SM: f32 = 6.0;  // badges, small buttons
-pub const R_MD: f32 = 8.0;  // nav, inputs, buttons, cards
-pub const R_LG: f32 = 12.0; // inner panels
-pub const R_XL: f32 = 16.0; // modal
+// Radius scale: buttons/inputs 6px, cards 10px, badges 4px (crisp, no big pills), modals 14px
+pub const R_SM: f32 = 4.0;  // badges (4px crisp)
+pub const R_MD: f32 = 6.0;  // buttons, inputs, segmented controls (6px)
+pub const R_LG: f32 = 10.0; // feature cards, plain containers (10px)
+pub const R_XL: f32 = 14.0; // modal dialogs (14px)
 
-// Sidebar colors (dark)
-pub const SB_BG: Color32 = Color32::from_rgb(11, 18, 32);                          // #0B1220
-pub const SB_SURFACE: Color32 = Color32::from_rgb(17, 26, 46);                     // #111A2E
-pub const SB_SURFACE_HOVER: Color32 = Color32::from_rgb(22, 33, 58);               // #16213A
-pub const SB_BORDER: Color32 = Color32::from_rgba_premultiplied(15, 15, 15, 15);    // rgba(255,255,255,0.06)
-pub const SB_TEXT: Color32 = Color32::from_rgb(230, 234, 242);                     // #E6EAF2
-pub const SB_TEXT_MUTED: Color32 = Color32::from_rgb(139, 150, 173);               // #8B96AD
-pub const SB_TEXT_FAINT: Color32 = Color32::from_rgb(100, 112, 138);               // #64708A
-pub const ACCENT: Color32 = Color32::from_rgb(59, 130, 246);                       // #3B82F6
-pub const ACCENT_SOFT: Color32 = Color32::from_rgba_premultiplied(8, 18, 35, 36);   // rgba(59,130,246,0.14)
-pub const SUCCESS: Color32 = Color32::from_rgb(34, 197, 94);                       // #22C55E
+// Standard component heights
+pub const BTN_HEIGHT: f32 = 32.0;
+pub const BTN_PRIMARY_HEIGHT: f32 = 36.0;
+pub const INPUT_HEIGHT: f32 = 36.0;
+pub const TABLE_ROW_HEIGHT: f32 = 48.0;
+pub const TAB_HEIGHT: f32 = 40.0;
+pub const ICON_HIT_AREA: f32 = 32.0;
+pub const SIDEBAR_EXPANDED_WIDTH: f32 = 248.0;
+pub const SIDEBAR_COLLAPSED_WIDTH: f32 = 64.0;
 
-pub const BADGE_DEV_BG: Color32 = Color32::from_rgba_premultiplied(9, 21, 40, 41);  // rgba(59,130,246,0.16)
-pub const BADGE_DEV_TEXT: Color32 = Color32::from_rgb(125, 178, 255);              // #7DB2FF
-pub const BADGE_PROD_BG: Color32 = Color32::from_rgba_premultiplied(27, 14, 40, 41); // rgba(168,85,247,0.16)
-pub const BADGE_PROD_TEXT: Color32 = Color32::from_rgb(196, 161, 255);             // #C4A1FF
+// Theme definition struct for central theme control
+#[derive(Debug, Clone)]
+pub struct Theme {
+    pub is_dark: bool,
+    pub bg: Color32,
+    pub bg_gradient_top: Color32,
+    pub bg_gradient_bottom: Color32,
+    pub surface: Color32,
+    pub surface_2: Color32,
+    pub surface_tint_top: Color32,
+    pub surface_tint_bottom: Color32,
+    pub border: Color32,
+    pub border_strong: Color32,
+    pub text: Color32,
+    pub text_muted: Color32,
+    pub text_subtle: Color32,
+    pub primary: Color32,
+    pub primary_hover: Color32,
+    pub primary_active: Color32,
+    pub primary_soft: Color32,
+    pub primary_soft_border: Color32,
+    pub ink: Color32,
+    pub ink_fg: Color32,
+    pub success: Color32,
+    pub success_soft: Color32,
+    pub danger: Color32,
+    pub danger_soft: Color32,
+    pub warning: Color32,
+    pub warning_soft: Color32,
+    pub purple: Color32,
+    pub purple_soft: Color32,
+    pub shadow_sm: Color32,
+    pub shadow_hover: Color32,
+    pub focus_ring: Color32,
+}
 
-pub const DESTRUCTIVE_TEXT: Color32 = Color32::from_rgb(248, 113, 113);             // #F87171 (red-400)
-pub const DESTRUCTIVE_HOVER_BG: Color32 = Color32::from_rgba_premultiplied(29, 8, 8, 31); // rgba(239, 68, 68, 0.12)
-pub const DESTRUCTIVE_ACTIVE_BG: Color32 = Color32::from_rgba_premultiplied(48, 14, 14, 51); // rgba(239, 68, 68, 0.20)
+impl Theme {
+    pub fn light() -> Self {
+        Self {
+            is_dark: false,
+            bg: Color32::from_rgb(255, 255, 255), // #FFFFFF
+            bg_gradient_top: Color32::from_rgb(255, 255, 255),
+            bg_gradient_bottom: Color32::from_rgb(245, 247, 255), // #F5F7FF
+            surface: Color32::from_rgb(255, 255, 255),
+            surface_2: Color32::from_rgb(245, 245, 247), // #F5F5F7
+            surface_tint_top: Color32::from_rgb(247, 248, 255), // #F7F8FF
+            surface_tint_bottom: Color32::from_rgb(240, 243, 253), // #F0F3FD
+            border: Color32::from_rgb(230, 230, 234), // #E6E6EA hairline
+            border_strong: Color32::from_rgb(212, 212, 218), // #D4D4DA
+            text: Color32::from_rgb(8, 8, 8), // #080808
+            text_muted: Color32::from_rgb(90, 90, 90), // #5A5A5A
+            text_subtle: Color32::from_rgb(138, 138, 143), // #8A8A8F
+            primary: Color32::from_rgb(20, 110, 245), // #146EF5
+            primary_hover: Color32::from_rgb(15, 94, 215), // #0F5ED7
+            primary_active: Color32::from_rgb(11, 79, 184), // #0B4FB8
+            primary_soft: Color32::from_rgb(231, 240, 254), // #E7F0FE
+            primary_soft_border: Color32::from_rgb(207, 224, 253), // #CFE0FD
+            ink: Color32::from_rgb(8, 8, 8), // #080808
+            ink_fg: Color32::from_rgb(255, 255, 255),
+            success: Color32::from_rgb(10, 143, 60), // #0A8F3C
+            success_soft: Color32::from_rgb(230, 247, 236), // #E6F7EC
+            danger: Color32::from_rgb(238, 29, 54), // #EE1D36
+            danger_soft: Color32::from_rgb(254, 236, 238), // #FEECEE
+            warning: Color32::from_rgb(194, 106, 0), // #C26A00
+            warning_soft: Color32::from_rgb(255, 243, 223), // #FFF3DF
+            purple: Color32::from_rgb(122, 61, 255), // #7A3DFF
+            purple_soft: Color32::from_rgb(240, 234, 255), // #F0EAFF
+            shadow_sm: Color32::from_rgba_unmultiplied(8, 8, 8, 10),
+            shadow_hover: Color32::from_rgba_unmultiplied(20, 110, 245, 26),
+            focus_ring: Color32::from_rgba_unmultiplied(20, 110, 245, 64),
+        }
+    }
 
-// Modal colors (light)
-pub const MD_OVERLAY: Color32 = Color32::from_rgba_premultiplied(1, 3, 13, 140);    // rgba(2,6,23,0.55)
-pub const MD_BG: Color32 = Color32::WHITE;                                         // #FFFFFF
-pub const MD_BORDER: Color32 = Color32::from_rgb(226, 232, 240);                   // #E2E8F0
-pub const MD_TEXT: Color32 = Color32::from_rgb(15, 23, 42);                       // #0F172A
-pub const MD_TEXT_MUTED: Color32 = Color32::from_rgb(100, 116, 139);               // #64748B
-pub const MD_INPUT_BG: Color32 = Color32::from_rgb(248, 250, 252);                 // #F8FAFC
-pub const MD_PANEL_BG: Color32 = Color32::from_rgb(241, 245, 249);                 // #F1F5F9
-pub const MD_FOCUS_RING_COLOR: Color32 = Color32::from_rgba_premultiplied(18, 39, 73, 76); // rgba(59,130,246,0.30)
+    pub fn dark() -> Self {
+        Self {
+            is_dark: true,
+            bg: Color32::from_rgb(8, 8, 8), // #080808
+            bg_gradient_top: Color32::from_rgb(8, 8, 8),
+            bg_gradient_bottom: Color32::from_rgb(14, 17, 25),
+            surface: Color32::from_rgb(16, 16, 18), // #101012
+            surface_2: Color32::from_rgb(24, 24, 27), // #18181B
+            surface_tint_top: Color32::from_rgb(18, 21, 31), // #12151F
+            surface_tint_bottom: Color32::from_rgb(14, 17, 25), // #0E1119
+            border: Color32::from_rgb(38, 38, 43), // #26262B
+            border_strong: Color32::from_rgb(52, 52, 58), // #34343A
+            text: Color32::from_rgb(245, 245, 245), // #F5F5F5
+            text_muted: Color32::from_rgb(160, 160, 168), // #A0A0A8
+            text_subtle: Color32::from_rgb(112, 112, 122), // #70707A
+            primary: Color32::from_rgb(59, 130, 246), // #3B82F6
+            primary_hover: Color32::from_rgb(96, 165, 250),
+            primary_active: Color32::from_rgb(37, 99, 235),
+            primary_soft: Color32::from_rgb(18, 32, 63), // #12203F
+            primary_soft_border: Color32::from_rgb(30, 58, 114),
+            ink: Color32::from_rgb(245, 245, 245), // #F5F5F5
+            ink_fg: Color32::from_rgb(8, 8, 8),
+            success: Color32::from_rgb(34, 197, 94),
+            success_soft: Color32::from_rgb(14, 44, 28),
+            danger: Color32::from_rgb(239, 68, 68),
+            danger_soft: Color32::from_rgb(50, 18, 22),
+            warning: Color32::from_rgb(245, 158, 11),
+            warning_soft: Color32::from_rgb(48, 30, 12),
+            purple: Color32::from_rgb(168, 85, 247),
+            purple_soft: Color32::from_rgb(40, 20, 60),
+            shadow_sm: Color32::from_rgba_unmultiplied(0, 0, 0, 40),
+            shadow_hover: Color32::from_rgba_unmultiplied(59, 130, 246, 35),
+            focus_ring: Color32::from_rgba_unmultiplied(59, 130, 246, 75),
+        }
+    }
+}
 
-// =============================================================================
-// Structured Typography Scale (Preserved for Main Content Area)
-// =============================================================================
-const FONT_XL: f32 = 20.0; // Page & Project Headers
-const FONT_LG: f32 = 15.0; // Card Primary Values
-const FONT_MD: f32 = 13.0; // Standard UI Text, Inputs, Buttons, Table Values
-const FONT_SM: f32 = 11.5; // Secondary Metadata, Subtitles, Compact Buttons
-const FONT_XS: f32 = 10.5; // Section Labels, Table Headers, Pill Badges
-const POPUP_FONT_SIZE: f32 = 13.0; // Options popup menu typography (FS_SMALL)
+// Light theme color constants (Single source of truth)
+pub const CANVAS_BG: Color32 = Color32::from_rgb(255, 255, 255); // #FFFFFF
+pub const CANVAS_GRADIENT_BOTTOM: Color32 = Color32::from_rgb(245, 247, 255); // #F5F7FF
+pub const CARD_BG: Color32 = Color32::from_rgb(255, 255, 255); // #FFFFFF
+pub const CARD_BORDER: Color32 = Color32::from_rgb(230, 230, 234); // #E6E6EA hairline
+pub const SUBTLE_BG: Color32 = Color32::from_rgb(245, 245, 247); // #F5F5F7
+pub const CARD_TINT_TOP: Color32 = Color32::from_rgb(247, 248, 255); // #F7F8FF
+pub const CARD_TINT_BOTTOM: Color32 = Color32::from_rgb(240, 243, 253); // #F0F3FD
+pub const PILL_CONTAINER_BG: Color32 = Color32::from_rgb(245, 245, 247); // #F5F5F7
 
-// =============================================================================
-// High-Contrast Professional SaaS Color Palette
-// =============================================================================
-const SIDEBAR_TEXT_MUTED: Color32 = Color32::from_rgb(148, 163, 184); // #94a3b8
+pub const INPUT_BG: Color32 = Color32::from_rgb(255, 255, 255); // #FFFFFF
+pub const INPUT_BG_HOVER: Color32 = Color32::from_rgb(245, 245, 247); // #F5F5F7
+pub const INPUT_BORDER: Color32 = Color32::from_rgb(212, 212, 218); // #D4D4DA
+pub const INPUT_BORDER_HOVER: Color32 = Color32::from_rgb(170, 170, 180);
 
-const CANVAS_BG: Color32 = Color32::from_rgb(241, 245, 249); // #f1f5f9
-const CARD_BG: Color32 = Color32::from_rgb(255, 255, 255); // #ffffff
-const CARD_BORDER: Color32 = Color32::from_rgb(203, 213, 225); // #cbd5e1
-const SUBTLE_BG: Color32 = Color32::from_rgb(248, 250, 252); // #f8fafc
-const PILL_CONTAINER_BG: Color32 = Color32::from_rgb(226, 232, 240); // #e2e8f0
+pub const TEXT_PRIMARY: Color32 = Color32::from_rgb(8, 8, 8); // #080808
+pub const TEXT_SECONDARY: Color32 = Color32::from_rgb(90, 90, 90); // #5A5A5A
+pub const TEXT_MUTED: Color32 = Color32::from_rgb(138, 138, 143); // #8A8A8F
+pub const TEXT_PLACEHOLDER: Color32 = Color32::from_rgb(138, 138, 143);
 
-// Grey input field fill so inputs clearly contrast against white (#FFFFFF) cards
-const INPUT_BG: Color32 = Color32::from_rgb(241, 245, 249); // #f1f5f9
-const INPUT_BG_HOVER: Color32 = Color32::from_rgb(235, 240, 247); // #ebf0f7
-const INPUT_BORDER: Color32 = Color32::from_rgb(186, 198, 214); // #bac6d6
-const INPUT_BORDER_HOVER: Color32 = Color32::from_rgb(148, 163, 184); // #94a3b8
+pub const PRIMARY_BLUE: Color32 = Color32::from_rgb(20, 110, 245); // #146EF5
+pub const PRIMARY_BLUE_HOVER: Color32 = Color32::from_rgb(15, 94, 215); // #0F5ED7
+pub const PRIMARY_BLUE_ACTIVE: Color32 = Color32::from_rgb(11, 79, 184); // #0B4FB8
+pub const BLUE_PILL_BG: Color32 = Color32::from_rgb(231, 240, 254); // #E7F0FE
+pub const BLUE_PILL_TEXT: Color32 = Color32::from_rgb(20, 110, 245); // #146EF5
+pub const BLUE_PILL_BORDER: Color32 = Color32::from_rgb(207, 224, 253); // #CFE0FD
+pub const INK: Color32 = Color32::from_rgb(8, 8, 8);
 
-const TEXT_PRIMARY: Color32 = Color32::from_rgb(15, 23, 42); // #0f172a
-const TEXT_SECONDARY: Color32 = Color32::from_rgb(51, 65, 85); // #334155
-const TEXT_MUTED: Color32 = Color32::from_rgb(100, 116, 139); // #64748b
-// Distinct medium-grey placeholder text
-const TEXT_PLACEHOLDER: Color32 = Color32::from_rgb(142, 155, 175); // #8e9baf
+pub const SUCCESS: Color32 = Color32::from_rgb(10, 143, 60); // #0A8F3C
+pub const SUCCESS_PILL_BG: Color32 = Color32::from_rgb(230, 247, 236); // #E6F7EC
+pub const SUCCESS_PILL_TEXT: Color32 = Color32::from_rgb(10, 143, 60);
 
-const PRIMARY_BLUE: Color32 = Color32::from_rgb(37, 99, 235); // #2563eb
-const PRIMARY_BLUE_HOVER: Color32 = Color32::from_rgb(29, 78, 216); // #1d4ed8
-const BLUE_PILL_BG: Color32 = Color32::from_rgb(219, 234, 254); // #dbeafe
-const BLUE_PILL_TEXT: Color32 = Color32::from_rgb(29, 78, 216); // #1d4ed8
+pub const FAIL_PILL_BG: Color32 = Color32::from_rgb(254, 236, 238); // #FEECEE
+pub const FAIL_PILL_TEXT: Color32 = Color32::from_rgb(238, 29, 54); // #EE1D36
 
-const SUCCESS_PILL_BG: Color32 = Color32::from_rgb(220, 252, 231); // #dcfce7
-const SUCCESS_PILL_TEXT: Color32 = Color32::from_rgb(21, 128, 61); // #15803d
+pub const WARN_PILL_BG: Color32 = Color32::from_rgb(255, 243, 223); // #FFF3DF
+pub const WARN_PILL_TEXT: Color32 = Color32::from_rgb(194, 106, 0); // #C26A00
 
-const WARN_PILL_BG: Color32 = Color32::from_rgb(254, 243, 199); // #fef3c7
-const WARN_PILL_TEXT: Color32 = Color32::from_rgb(180, 83, 9); // #b45309
+pub const PURPLE_PILL_BG: Color32 = Color32::from_rgb(240, 234, 255); // #F0EAFF
+pub const PURPLE_PILL_TEXT: Color32 = Color32::from_rgb(122, 61, 255); // #7A3DFF
 
-const FAIL_PILL_BG: Color32 = Color32::from_rgb(254, 226, 226); // #fee2e2
-const FAIL_PILL_TEXT: Color32 = Color32::from_rgb(185, 28, 28); // #b91c1c
+pub const TEAL_PILL_BG: Color32 = Color32::from_rgb(204, 251, 241);
+pub const TEAL_PILL_TEXT: Color32 = Color32::from_rgb(20, 184, 166); // #14B8A6
 
-const PURPLE_PILL_BG: Color32 = Color32::from_rgb(243, 232, 255); // #f3e8ff
-const PURPLE_PILL_TEXT: Color32 = Color32::from_rgb(126, 34, 206); // #7e22ce
+// Step-type 3px left accent bar colors
+pub const STEP_LOCAL_ACCENT: Color32 = Color32::from_rgb(20, 110, 245); // #146EF5
+pub const STEP_VERIFY_ACCENT: Color32 = Color32::from_rgb(245, 158, 11); // #F59E0B
+pub const STEP_SCP_ACCENT: Color32 = Color32::from_rgb(122, 61, 255); // #7A3DFF
+pub const STEP_SSH_ACCENT: Color32 = Color32::from_rgb(20, 184, 166); // #14B8A6
 
-const TEAL_PILL_BG: Color32 = Color32::from_rgb(204, 251, 241); // #ccfbf1
-const TEAL_PILL_TEXT: Color32 = Color32::from_rgb(15, 118, 110); // #0f766e
+// Sidebar Light Theme Colors
+pub const SB_BG: Color32 = Color32::from_rgb(255, 255, 255); // #FFFFFF
+pub const SB_SURFACE: Color32 = Color32::from_rgb(245, 245, 247); // #F5F5F7
+pub const SB_SURFACE_HOVER: Color32 = Color32::from_rgb(238, 240, 246);
+pub const SB_BORDER: Color32 = Color32::from_rgb(230, 230, 234); // #E6E6EA
+pub const SB_TEXT: Color32 = Color32::from_rgb(8, 8, 8); // #080808
+pub const SB_TEXT_MUTED: Color32 = Color32::from_rgb(90, 90, 90); // #5A5A5A
+pub const SB_TEXT_FAINT: Color32 = Color32::from_rgb(138, 138, 143); // #8A8A8F
+pub const ACCENT: Color32 = Color32::from_rgb(20, 110, 245); // #146EF5
+pub const ACCENT_SOFT: Color32 = Color32::from_rgb(231, 240, 254); // #E7F0FE
 
-const TERM_HEADER_BG: Color32 = Color32::from_rgb(22, 31, 48); // #161f30
-const TERM_BODY_BG: Color32 = Color32::from_rgb(11, 15, 25); // #0b0f19
-const TERM_GREEN: Color32 = Color32::from_rgb(16, 185, 129); // #10b981
-const TERM_RED: Color32 = Color32::from_rgb(239, 68, 68); // #ef4444
-const TERM_YELLOW: Color32 = Color32::from_rgb(245, 158, 11); // #f59e0b
+pub const BADGE_DEV_BG: Color32 = Color32::from_rgb(231, 240, 254); // #E7F0FE
+pub const BADGE_DEV_TEXT: Color32 = Color32::from_rgb(20, 110, 245); // #146EF5
+pub const BADGE_PROD_BG: Color32 = Color32::from_rgb(240, 234, 255); // #F0EAFF
+pub const BADGE_PROD_TEXT: Color32 = Color32::from_rgb(122, 61, 255); // #7A3DFF
+
+pub const DESTRUCTIVE_TEXT: Color32 = Color32::from_rgb(238, 29, 54); // #EE1D36
+pub const DESTRUCTIVE_HOVER_BG: Color32 = Color32::from_rgba_premultiplied(18, 2, 4, 20);
+pub const DESTRUCTIVE_ACTIVE_BG: Color32 = Color32::from_rgba_premultiplied(35, 4, 8, 38);
+
+// Modal Colors
+pub const MD_OVERLAY: Color32 = Color32::from_rgba_premultiplied(3, 3, 3, 102); // rgba(8,8,8,0.40)
+pub const MD_BG: Color32 = Color32::WHITE;
+pub const MD_BORDER: Color32 = Color32::from_rgb(230, 230, 234);
+pub const MD_TEXT: Color32 = Color32::from_rgb(8, 8, 8);
+pub const MD_TEXT_MUTED: Color32 = Color32::from_rgb(90, 90, 90);
+pub const MD_INPUT_BG: Color32 = Color32::WHITE;
+pub const MD_PANEL_BG: Color32 = Color32::from_rgb(247, 248, 255);
+pub const MD_FOCUS_RING_COLOR: Color32 = Color32::from_rgba_premultiplied(5, 27, 61, 64);
+
+// Terminal & Log Console (dark high-contrast anchor)
+pub const TERM_HEADER_BG: Color32 = Color32::from_rgb(18, 18, 24);
+pub const TERM_BODY_BG: Color32 = Color32::from_rgb(11, 11, 15); // #0B0B0F
+pub const TERM_GREEN: Color32 = Color32::from_rgb(10, 143, 60);
+pub const TERM_RED: Color32 = Color32::from_rgb(238, 29, 54);
+pub const TERM_YELLOW: Color32 = Color32::from_rgb(194, 106, 0);
+
+// Preserved font size definitions
+const FONT_XL: f32 = 20.0;
+const FONT_LG: f32 = 15.0;
+const FONT_MD: f32 = 13.0;
+const FONT_SM: f32 = 11.5;
+const FONT_XS: f32 = 10.5;
+const POPUP_FONT_SIZE: f32 = 13.0;
+const SIDEBAR_TEXT_MUTED: Color32 = Color32::from_rgb(138, 138, 143);
 
 const ENV_CARD_HEIGHT: f32 = 96.0;
 
@@ -234,6 +360,7 @@ pub struct ShiplyApp {
     collapsed_project_groups: HashSet<String>,
     dragged_project_idx: Option<usize>,
     sidebar_sort_dropdown_open: bool,
+    pub project_search_query: String,
     sidebar_context_menu: Option<SidebarContextMenuState>,
     sync_version_dropdown_open: bool,
 
@@ -331,6 +458,12 @@ pub struct ShiplyApp {
     project_switch_loading_id: Option<String>,
     project_switch_loading_start: Option<Instant>,
     sidebar_refreshing_until: Option<Instant>,
+    dark_mode: bool,
+    sidebar_drawer_open: bool,
+    is_version_input_focused: bool,
+    step_scp_sources_buffer: Option<(String, String)>,
+    server_env_source_buffer: Option<(String, String)>,
+    server_http_proxy_buffer: Option<(String, String)>,
 }
 
 impl ShiplyApp {
@@ -374,6 +507,7 @@ impl ShiplyApp {
             collapsed_project_groups: HashSet::new(),
             dragged_project_idx: None,
             sidebar_sort_dropdown_open: false,
+            project_search_query: String::new(),
             sidebar_context_menu: None,
             sync_version_dropdown_open: false,
             deploy_version_input: "1.0.0".to_string(),
@@ -451,6 +585,12 @@ impl ShiplyApp {
             project_switch_loading_id: None,
             project_switch_loading_start: None,
             sidebar_refreshing_until: None,
+            dark_mode: false,
+            sidebar_drawer_open: false,
+            is_version_input_focused: false,
+            step_scp_sources_buffer: None,
+            server_env_source_buffer: None,
+            server_http_proxy_buffer: None,
             git_inspect_tx,
             git_inspect_rx,
         };
@@ -459,6 +599,14 @@ impl ShiplyApp {
         }
         app.refresh_selected_project_metadata(true);
         app
+    }
+
+    pub fn theme(&self) -> Theme {
+        if self.dark_mode {
+            Theme::dark()
+        } else {
+            Theme::light()
+        }
     }
 
     pub fn set_status_banner(&mut self, message: String, is_success: bool) {
@@ -541,7 +689,7 @@ impl ShiplyApp {
                 .any(|d| d.status == DeploymentStatus::Running)
     }
 
-    /// Configures a single unified font family (`Segoe UI` on Windows) so all text shares a consistent structure.
+    /// Configures system fonts: proportional UI text (`Segoe UI`) and monospace (`Consolas`) on Windows.
     fn install_system_fonts(ctx: &egui::Context) {
         let mut fonts = FontDefinitions::default();
 
@@ -557,8 +705,14 @@ impl ShiplyApp {
                     if let Some(prop) = fonts.families.get_mut(&FontFamily::Proportional) {
                         prop.insert(0, "segoeui".to_owned());
                     }
+                }
+                if let Ok(bytes) = fs::read(fonts_dir.join("consola.ttf")) {
+                    fonts.font_data.insert(
+                        "consola".to_owned(),
+                        Arc::new(FontData::from_owned(bytes)),
+                    );
                     if let Some(mono) = fonts.families.get_mut(&FontFamily::Monospace) {
-                        mono.insert(0, "segoeui".to_owned());
+                        mono.insert(0, "consola".to_owned());
                     }
                 }
             }
@@ -1251,7 +1405,8 @@ impl ShiplyApp {
         }
     }
 
-    fn configure_light_workspace_style(ctx: &egui::Context) {
+    pub fn configure_workspace_theme(ctx: &egui::Context, dark: bool) {
+        let theme = if dark { Theme::dark() } else { Theme::light() };
         let mut style = (*ctx.style()).clone();
         style.spacing.item_spacing = Vec2::new(10.0, 8.0);
         style.spacing.button_padding = Vec2::new(12.0, 6.0);
@@ -1260,72 +1415,76 @@ impl ShiplyApp {
         style.spacing.scroll.bar_inner_margin = 4.0;
         style.spacing.scroll.bar_width = 8.0;
 
-        // Structured Typography Hierarchy — all using the same Proportional font family
+        // Structured Typography Hierarchy
         let mut text_styles = BTreeMap::new();
         text_styles.insert(
             TextStyle::Heading,
-            FontId::new(FONT_XL, FontFamily::Proportional),
+            FontId::new(FS_TITLE, FontFamily::Proportional),
         );
         text_styles.insert(
             TextStyle::Body,
-            FontId::new(FONT_MD, FontFamily::Proportional),
+            FontId::new(FS_BASE, FontFamily::Proportional),
         );
         text_styles.insert(
             TextStyle::Button,
-            FontId::new(FONT_MD, FontFamily::Proportional),
+            FontId::new(FS_BASE, FontFamily::Proportional),
         );
         text_styles.insert(
             TextStyle::Small,
-            FontId::new(FONT_SM, FontFamily::Proportional),
+            FontId::new(FS_SMALL, FontFamily::Proportional),
         );
         text_styles.insert(
             TextStyle::Monospace,
-            FontId::new(FONT_MD, FontFamily::Proportional),
+            FontId::new(FS_BASE, FontFamily::Monospace),
         );
         style.text_styles = text_styles;
 
-        let mut visuals = egui::Visuals::light();
-        visuals.panel_fill = CANVAS_BG;
-        visuals.window_fill = CARD_BG;
-        visuals.faint_bg_color = SUBTLE_BG;
-        // Grey field fill (#F1F5F9) so input boxes stand out clearly on white (#FFFFFF) cards
-        visuals.extreme_bg_color = INPUT_BG;
-        visuals.override_text_color = Some(TEXT_PRIMARY);
+        let mut visuals = if dark {
+            egui::Visuals::dark()
+        } else {
+            egui::Visuals::light()
+        };
+        visuals.panel_fill = theme.bg;
+        visuals.window_fill = theme.surface;
+        visuals.faint_bg_color = theme.surface_2;
+        visuals.extreme_bg_color = theme.surface;
+        visuals.override_text_color = Some(theme.text);
 
-        // Focused input border & text selection highlight:
-        // In egui, TextEdit draws its focused border using `visuals.selection.stroke`!
-        visuals.selection.bg_fill = Color32::from_rgba_unmultiplied(37, 99, 235, 45);
-        visuals.selection.stroke = Stroke::new(1.5_f32, PRIMARY_BLUE);
+        visuals.selection.bg_fill = theme.primary_soft;
+        visuals.selection.stroke = Stroke::new(1.5_f32, theme.primary);
 
-        visuals.widgets.noninteractive.bg_fill = CARD_BG;
-        visuals.widgets.noninteractive.bg_stroke = Stroke::new(1.0_f32, CARD_BORDER);
-        visuals.widgets.noninteractive.fg_stroke = Stroke::new(1.0_f32, TEXT_SECONDARY);
+        visuals.widgets.noninteractive.bg_fill = theme.surface;
+        visuals.widgets.noninteractive.bg_stroke = Stroke::new(1.0_f32, theme.border);
+        visuals.widgets.noninteractive.fg_stroke = Stroke::new(1.0_f32, theme.text_muted);
 
-        visuals.widgets.inactive.bg_fill = INPUT_BG;
-        visuals.widgets.inactive.bg_stroke = Stroke::new(1.0_f32, INPUT_BORDER);
-        visuals.widgets.inactive.fg_stroke = Stroke::new(1.0_f32, TEXT_PRIMARY);
-        visuals.widgets.inactive.corner_radius = 6.0.into();
+        visuals.widgets.inactive.bg_fill = theme.surface;
+        visuals.widgets.inactive.bg_stroke = Stroke::new(1.0_f32, theme.border_strong);
+        visuals.widgets.inactive.fg_stroke = Stroke::new(1.0_f32, theme.text);
+        visuals.widgets.inactive.corner_radius = R_MD.into();
 
-        visuals.widgets.hovered.bg_fill = INPUT_BG_HOVER;
-        visuals.widgets.hovered.bg_stroke = Stroke::new(1.5_f32, INPUT_BORDER_HOVER);
-        visuals.widgets.hovered.fg_stroke = Stroke::new(1.0_f32, TEXT_PRIMARY);
-        visuals.widgets.hovered.corner_radius = 6.0.into();
+        visuals.widgets.hovered.bg_fill = theme.surface_2;
+        visuals.widgets.hovered.bg_stroke = Stroke::new(1.0_f32, theme.primary);
+        visuals.widgets.hovered.fg_stroke = Stroke::new(1.0_f32, theme.text);
+        visuals.widgets.hovered.corner_radius = R_MD.into();
 
-        visuals.widgets.active.bg_fill = INPUT_BG;
-        visuals.widgets.active.bg_stroke = Stroke::new(1.5_f32, PRIMARY_BLUE);
-        visuals.widgets.active.fg_stroke = Stroke::new(1.0_f32, PRIMARY_BLUE);
-        visuals.widgets.active.corner_radius = 6.0.into();
+        visuals.widgets.active.bg_fill = theme.surface_2;
+        visuals.widgets.active.bg_stroke = Stroke::new(1.5_f32, theme.primary_active);
+        visuals.widgets.active.fg_stroke = Stroke::new(1.0_f32, theme.primary_active);
+        visuals.widgets.active.corner_radius = R_MD.into();
 
-        visuals.widgets.open.bg_fill = INPUT_BG;
-        visuals.widgets.open.bg_stroke = Stroke::new(1.5_f32, PRIMARY_BLUE);
-        visuals.widgets.open.fg_stroke = Stroke::new(1.0_f32, TEXT_PRIMARY);
-        visuals.widgets.open.corner_radius = 6.0.into();
+        visuals.widgets.open.bg_fill = theme.surface;
+        visuals.widgets.open.bg_stroke = Stroke::new(1.5_f32, theme.primary);
+        visuals.widgets.open.fg_stroke = Stroke::new(1.0_f32, theme.text);
+        visuals.widgets.open.corner_radius = R_MD.into();
 
-        // Change cursor to pointer (PointingHand) whenever hovering clickable / interactive elements
         visuals.interact_cursor = Some(egui::CursorIcon::PointingHand);
 
         style.visuals = visuals;
         ctx.set_style(style);
+    }
+
+    pub fn configure_light_workspace_style(ctx: &egui::Context) {
+        Self::configure_workspace_theme(ctx, false);
     }
 }
 
@@ -1350,11 +1509,26 @@ impl eframe::App for ShiplyApp {
         }
 
         self.render_termius_topbar(ctx);
-        let sidebar_anim_t =
-            ctx.animate_bool(egui::Id::new("sidebar_smooth_anim"), !self.sidebar_collapsed);
-        if sidebar_anim_t > 0.001 {
-            self.render_sidebar(ctx, sidebar_anim_t);
+        let screen_width = ctx.screen_rect().width();
+        let is_narrow = screen_width < 900.0;
+        let is_rail_breakpoint = (900.0..1200.0).contains(&screen_width);
+
+        if !is_narrow {
+            self.sidebar_drawer_open = false;
+            let sidebar_anim_t =
+                ctx.animate_bool(egui::Id::new("sidebar_smooth_anim"), !self.sidebar_collapsed && !is_rail_breakpoint);
+            self.render_sidebar(
+                ctx,
+                if is_rail_breakpoint || self.sidebar_collapsed {
+                    0.25
+                } else {
+                    sidebar_anim_t.max(0.25)
+                },
+            );
+        } else if self.sidebar_drawer_open {
+            self.render_sidebar_drawer(ctx);
         }
+
         self.render_new_project_modal(ctx);
         self.render_edit_project_modal(ctx);
         self.render_new_environment_modal(ctx);
@@ -1363,23 +1537,56 @@ impl eframe::App for ShiplyApp {
         self.render_delete_confirmation_modal(ctx);
         self.render_window_resize_handles(ctx);
 
+        let theme = self.theme();
         egui::CentralPanel::default()
             .frame(
                 egui::Frame::new()
-                    .fill(CANVAS_BG)
+                    .fill(theme.bg)
                     .inner_margin(Margin::ZERO),
             )
             .show(ctx, |ui| {
+                // Background linear gradient: linear-gradient(180deg, #FFFFFF 0%, #F5F7FF 100%)
+                let c_rect = ui.max_rect();
+                let mut mesh = egui::Mesh::default();
+                mesh.vertices.push(egui::epaint::Vertex {
+                    pos: c_rect.left_top(),
+                    uv: Pos2::ZERO,
+                    color: theme.bg_gradient_top,
+                });
+                mesh.vertices.push(egui::epaint::Vertex {
+                    pos: c_rect.right_top(),
+                    uv: Pos2::ZERO,
+                    color: theme.bg_gradient_top,
+                });
+                mesh.vertices.push(egui::epaint::Vertex {
+                    pos: c_rect.right_bottom(),
+                    uv: Pos2::ZERO,
+                    color: theme.bg_gradient_bottom,
+                });
+                mesh.vertices.push(egui::epaint::Vertex {
+                    pos: c_rect.left_bottom(),
+                    uv: Pos2::ZERO,
+                    color: theme.bg_gradient_bottom,
+                });
+                mesh.indices.extend_from_slice(&[0, 1, 2, 0, 2, 3]);
+                ui.painter().add(egui::Shape::mesh(mesh));
+
                 ScrollArea::vertical()
                     .id_salt("main_workspace_vertical_scroll")
                     .auto_shrink([false, false])
                     .show(ui, |ui| {
+                        let avail_w = ui.available_width();
+                        let page_pad = (avail_w * 0.03).clamp(16.0, 32.0);
+                        let content_w = avail_w.min(1200.0) - (page_pad * 2.0);
+                        let margin_x = ((avail_w - content_w) / 2.0).max(page_pad) as i8;
+                        let pad_i = page_pad as i8;
+
                         egui::Frame::new()
                             .inner_margin(Margin {
-                                left: 28,
-                                right: 20,
-                                top: 22,
-                                bottom: 22,
+                                left: margin_x,
+                                right: margin_x,
+                                top: pad_i,
+                                bottom: pad_i,
                             })
                             .show(ui, |ui| {
                                 if let Some((msg, is_ok)) = &self.status_banner.clone() {
@@ -1506,12 +1713,14 @@ impl eframe::App for ShiplyApp {
 }
 
 impl ShiplyApp {
-    /// Renders the custom frameless Termius-style topbar with left navigation pills,
-    /// draggable window region, notification bell, and Minimize / Maximize / Close actions.
+    /// Renders the custom frameless Webflow-style topbar with left navigation pills,
+    /// 3px brand primary accent strip, theme toggle, draggable window region, notification bell, and window controls.
     fn render_termius_topbar(&mut self, ctx: &egui::Context) {
-        let topbar_bg = Color32::from_rgb(13, 17, 30); // #0d111e (Termius deep midnight bar)
-        let pill_bg = Color32::from_rgb(31, 38, 55); // #1f2637 (Termius pill fill)
-        let icon_muted = Color32::from_rgb(148, 163, 184);
+        let theme = self.theme();
+        let topbar_bg = theme.surface;
+        let pill_bg = theme.surface_2;
+        let icon_muted = theme.text_muted;
+        let border_stroke = Stroke::new(1.0_f32, theme.border);
 
         if let Some(maximized) = ctx.input(|i| i.viewport().maximized) {
             self.window_maximized = maximized;
@@ -1523,15 +1732,26 @@ impl ShiplyApp {
                 egui::Frame::new()
                     .fill(topbar_bg)
                     .inner_margin(Margin::symmetric(10, 0))
-                    .stroke(Stroke::new(1.0_f32, Color32::from_rgb(26, 34, 52))),
+                    .stroke(border_stroke),
             )
             .show(ctx, |ui| {
                 let bar_rect = ui.max_rect();
-                let cy = bar_rect.center().y;
+
+                // Signature detail: a 3px solid --primary strip at the very top edge of the window
+                ui.painter().rect_filled(
+                    Rect::from_min_max(
+                        Pos2::new(bar_rect.left(), bar_rect.top()),
+                        Pos2::new(bar_rect.right(), bar_rect.top() + 3.0),
+                    ),
+                    CornerRadius::ZERO,
+                    theme.primary,
+                );
+
+                let cy = bar_rect.top() + 3.0 + (bar_rect.height() - 3.0) * 0.5;
                 let pill_h = 28.0;
                 let mut x = bar_rect.left() + 2.0;
 
-                // 1. Left Hamburger Menu Button (≡) — toggles sidebar visibility
+                // 1. Left Hamburger Menu Button (≡) — toggles sidebar visibility or off-canvas drawer
                 let menu_rect =
                     Rect::from_center_size(Pos2::new(x + 14.0, cy), Vec2::new(28.0, pill_h));
                 let menu_resp = ui.interact(
@@ -1545,7 +1765,7 @@ impl ShiplyApp {
                         .rect_filled(menu_rect, CornerRadius::same(6), pill_bg);
                 }
                 let menu_fg = if menu_resp.hovered() {
-                    Color32::WHITE
+                    theme.text
                 } else {
                     icon_muted
                 };
@@ -1556,8 +1776,13 @@ impl ShiplyApp {
                         Stroke::new(1.5_f32, menu_fg),
                     );
                 }
-                if menu_resp.on_hover_text("Toggle Sidebar").clicked() {
-                    self.sidebar_collapsed = !self.sidebar_collapsed;
+                if menu_resp.on_hover_text("Toggle Navigation").clicked() {
+                    let screen_w = ctx.screen_rect().width();
+                    if screen_w < 900.0 {
+                        self.sidebar_drawer_open = !self.sidebar_drawer_open;
+                    } else {
+                        self.sidebar_collapsed = !self.sidebar_collapsed;
+                    }
                 }
                 x = menu_rect.right() + 10.0;
 
@@ -1578,12 +1803,12 @@ impl ShiplyApp {
                     Align2::LEFT_CENTER,
                     format!("Shiply v{APP_VERSION}"),
                     FontId::proportional(FONT_MD),
-                    Color32::from_rgb(226, 232, 240),
+                    theme.text,
                 );
                 let left_controls_end = x + 100.0;
 
                 // =========================================================================
-                // Right-Side Window Actions (Bell, Minimize ─, Maximize/Restore ❐, Close ×)
+                // Right-Side Window Actions (Theme Toggle, Bell, Minimize ─, Maximize/Restore ❐, Close ×)
                 // =========================================================================
                 let btn_w = 34.0;
                 let btn_gap = 4.0;
@@ -1605,10 +1830,14 @@ impl ShiplyApp {
                     Pos2::new(min_rect.left() - 8.0 - btn_w * 0.5, cy),
                     Vec2::new(btn_w, pill_h),
                 );
+                let theme_rect = Rect::from_center_size(
+                    Pos2::new(bell_rect.left() - btn_gap - btn_w * 0.5, cy),
+                    Vec2::new(btn_w, pill_h),
+                );
 
                 // Interactive Drag Region in the middle empty space of the topbar
                 let drag_left = left_controls_end;
-                let drag_right = (bell_rect.left() - 6.0).max(drag_left + 10.0);
+                let drag_right = (theme_rect.left() - 6.0).max(drag_left + 10.0);
                 let drag_rect = Rect::from_min_max(
                     Pos2::new(drag_left, bar_rect.top()),
                     Pos2::new(drag_right, bar_rect.bottom()),
@@ -1625,6 +1854,36 @@ impl ShiplyApp {
                     ctx.send_viewport_cmd(egui::ViewportCommand::StartDrag);
                 }
 
+                // Theme Toggle Button (☀️ / 🌙)
+                let theme_resp = ui.interact(
+                    theme_rect,
+                    egui::Id::new("topbar_theme_toggle_btn"),
+                    Sense::click(),
+                )
+                .on_hover_cursor(egui::CursorIcon::PointingHand);
+                if theme_resp.hovered() {
+                    ui.painter()
+                        .rect_filled(theme_rect, CornerRadius::same(6), pill_bg);
+                }
+                let theme_icon_str = if self.dark_mode { "☀️" } else { "🌙" };
+                ui.painter().text(
+                    theme_rect.center(),
+                    Align2::CENTER_CENTER,
+                    theme_icon_str,
+                    FontId::proportional(13.0),
+                    if theme_resp.hovered() { theme.text } else { icon_muted },
+                );
+                if theme_resp
+                    .on_hover_text(if self.dark_mode {
+                        "Switch to Light Theme"
+                    } else {
+                        "Switch to Dark Theme"
+                    })
+                    .clicked()
+                {
+                    self.dark_mode = !self.dark_mode;
+                }
+
                 // A. Notification Bell Button (🔔) — acts as Update Information
                 let bell_resp = ui.interact(
                     bell_rect,
@@ -1637,19 +1896,18 @@ impl ShiplyApp {
                         .rect_filled(bell_rect, CornerRadius::same(6), pill_bg);
                 }
                 let bell_fg = if self.available_update.is_some() {
-                    TERM_YELLOW
+                    theme.warning
                 } else if bell_resp.hovered() {
-                    Color32::WHITE
+                    theme.text
                 } else {
                     icon_muted
                 };
                 draw_icon_bell(ui.painter(), bell_rect.center(), bell_fg);
                 if self.available_update.is_some() {
-                    // Yellow circle dot on top right of notification icon
                     ui.painter().circle_filled(
                         Pos2::new(bell_rect.center().x + 4.5, bell_rect.center().y - 4.5),
                         3.2,
-                        Color32::from_rgb(250, 204, 21),
+                        theme.warning,
                     );
                 }
                 if bell_resp
@@ -1678,7 +1936,7 @@ impl ShiplyApp {
                         .rect_filled(min_rect, CornerRadius::same(6), pill_bg);
                 }
                 let min_fg = if min_resp.hovered() {
-                    Color32::WHITE
+                    theme.text
                 } else {
                     icon_muted
                 };
@@ -1691,7 +1949,7 @@ impl ShiplyApp {
                     ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(true));
                 }
 
-                // C. Maximize / Restore Button (Single box □ when normal, double overlapping squares ❐ when maximized)
+                // C. Maximize / Restore Button
                 let max_resp = ui.interact(
                     max_rect,
                     egui::Id::new("topbar_window_maximize_btn"),
@@ -1703,7 +1961,7 @@ impl ShiplyApp {
                         .rect_filled(max_rect, CornerRadius::same(6), pill_bg);
                 }
                 let max_fg = if max_resp.hovered() {
-                    Color32::WHITE
+                    theme.text
                 } else {
                     icon_muted
                 };
@@ -1736,7 +1994,7 @@ impl ShiplyApp {
                     ui.painter().rect_filled(
                         close_rect,
                         CornerRadius::same(6),
-                        Color32::from_rgb(220, 38, 38),
+                        theme.danger,
                     );
                 }
                 let close_fg = if close_resp.hovered() {
@@ -1856,803 +2114,1358 @@ impl ShiplyApp {
             });
     }
 
+    fn render_sidebar_drawer(&mut self, ctx: &egui::Context) {
+        let screen_rect = ctx.screen_rect();
+        let theme = self.theme();
+
+        egui::Area::new(egui::Id::new("sidebar_drawer_overlay"))
+            .fixed_pos(screen_rect.min)
+            .order(egui::Order::Foreground)
+            .show(ctx, |ui| {
+                let (backdrop_rect, backdrop_resp) =
+                    ui.allocate_exact_size(screen_rect.size(), Sense::click());
+                ui.painter()
+                    .rect_filled(backdrop_rect, CornerRadius::ZERO, MD_OVERLAY);
+                if backdrop_resp.clicked() {
+                    self.sidebar_drawer_open = false;
+                }
+
+                let drawer_rect = Rect::from_min_size(
+                    screen_rect.min,
+                    Vec2::new(SIDEBAR_EXPANDED_WIDTH, screen_rect.height()),
+                );
+                let mut drawer_ui = ui.new_child(egui::UiBuilder::new().max_rect(drawer_rect));
+                drawer_ui
+                    .painter()
+                    .rect_filled(drawer_rect, CornerRadius::ZERO, theme.surface);
+                drawer_ui.painter().line_segment(
+                    [
+                        Pos2::new(drawer_rect.right(), drawer_rect.top()),
+                        Pos2::new(drawer_rect.right(), drawer_rect.bottom()),
+                    ],
+                    Stroke::new(1.0_f32, theme.border),
+                );
+
+                let mut inner_ui = drawer_ui.new_child(
+                    egui::UiBuilder::new().max_rect(drawer_rect.shrink2(Vec2::new(10.0, 0.0))),
+                );
+                inner_ui.visuals_mut().override_text_color = Some(theme.text);
+                let mut sort_trigger_rect_out = None;
+                self.render_sidebar_content(&mut inner_ui, false, ctx, &mut sort_trigger_rect_out);
+                if let Some(r) = sort_trigger_rect_out {
+                    self.render_sidebar_sort_dropdown(ctx, r);
+                }
+                self.render_sidebar_custom_context_menu(ctx);
+            });
+    }
+
     fn render_sidebar(&mut self, ctx: &egui::Context, anim_t: f32) {
-        let width = 288.0 * anim_t;
-        let pad_x = ((16.0 * anim_t).round() as i8).max(0);
+        let is_rail = anim_t < 0.35;
+        let width = if is_rail {
+            SIDEBAR_COLLAPSED_WIDTH
+        } else {
+            SIDEBAR_COLLAPSED_WIDTH
+                + (SIDEBAR_EXPANDED_WIDTH - SIDEBAR_COLLAPSED_WIDTH)
+                    * ((anim_t - 0.35) / 0.65).clamp(0.0, 1.0)
+        };
+        let theme = self.theme();
+        let pad_x = if is_rail { 4.0 } else { 10.0 };
         let mut sort_trigger_rect_out = None;
+
         egui::SidePanel::left("shiply_sidebar")
             .resizable(false)
             .exact_width(width)
             .frame(
                 egui::Frame::new()
-                    .fill(SB_BG)
-                    .inner_margin(Margin::symmetric(pad_x, 0))
-                    .stroke(Stroke::new(1.0_f32, SB_BORDER)),
+                    .fill(theme.surface)
+                    .inner_margin(Margin::symmetric(pad_x as i8, 0))
+                    .stroke(Stroke::new(1.0_f32, theme.border)),
             )
             .show(ctx, |ui| {
-                if anim_t < 0.25 {
-                    return;
-                }
-                ui.visuals_mut().override_text_color = Some(SB_TEXT);
-                let inner_rect = ui.available_rect_before_wrap();
-                let full_w = inner_rect.width();
-
-                // 1. Brand Header (Pinned top, height 64px, bottom border 1px SB_BORDER)
-                let brand_rect = Rect::from_min_size(inner_rect.min, Vec2::new(full_w, 64.0));
-                let brand_ui = ui.new_child(egui::UiBuilder::new().max_rect(brand_rect));
-                {
-                    let logo_rect = Rect::from_min_size(
-                        Pos2::new(brand_rect.left(), brand_rect.center().y - 14.0),
-                        Vec2::new(28.0, 28.0),
-                    );
-                    draw_shiply_logo(
-                        brand_ui.painter(),
-                        logo_rect,
-                        6,
-                        FS_TITLE,
-                        self.logo_texture.as_ref(),
-                    );
-                    brand_ui.painter().text(
-                        Pos2::new(logo_rect.right() + 10.0, brand_rect.center().y),
-                        Align2::LEFT_CENTER,
-                        "Shiply",
-                        FontId::proportional(FS_BRAND),
-                        SB_TEXT,
-                    );
-
-                    // Version badge (--fs-micro, bg --sb-surface, radius --r-sm, padding 2px 8px, color --sb-text-muted), aligned right
-                    let ver_text = format!("v{APP_VERSION}");
-                    let ver_galley = brand_ui.painter().layout_no_wrap(
-                        ver_text,
-                        FontId::proportional(FS_MICRO),
-                        SB_TEXT_MUTED,
-                    );
-                    let badge_pad_x = 8.0_f32;
-                    let badge_h = 20.0_f32;
-                    let badge_w = ver_galley.size().x + badge_pad_x * 2.0;
-                    let badge_rect = Rect::from_min_size(
-                        Pos2::new(brand_rect.right() - badge_w, brand_rect.center().y - badge_h / 2.0),
-                        Vec2::new(badge_w, badge_h),
-                    );
-                    brand_ui.painter().rect_filled(badge_rect, CornerRadius::same(R_SM as u8), SB_SURFACE);
-                    brand_ui.painter().galley(
-                        Pos2::new(badge_rect.left() + badge_pad_x, badge_rect.center().y - ver_galley.size().y / 2.0),
-                        ver_galley,
-                        SB_TEXT_MUTED,
-                    );
-
-                    // Bottom border 1px SB_BORDER
-                    brand_ui.painter().line_segment(
-                        [
-                            Pos2::new(brand_rect.left() - 16.0, brand_rect.bottom()),
-                            Pos2::new(brand_rect.right() + 16.0, brand_rect.bottom()),
-                        ],
-                        Stroke::new(1.0_f32, SB_BORDER),
-                    );
-                }
-
-                // 2. Footer (Pinned bottom, top border 1px SB_BORDER, padding-top 12px)
-                let footer_bottom_clearance = 8.0_f32;
-                let footer_h = 172.0_f32;
-                let footer_rect = Rect::from_min_size(
-                    Pos2::new(inner_rect.left(), inner_rect.bottom() - footer_bottom_clearance - footer_h),
-                    Vec2::new(full_w, footer_h),
-                );
-                let mut footer_ui = ui.new_child(egui::UiBuilder::new().max_rect(footer_rect));
-                {
-                    // Top border 1px SB_BORDER
-                    footer_ui.painter().line_segment(
-                        [
-                            Pos2::new(footer_rect.left() - 16.0, footer_rect.top()),
-                            Pos2::new(footer_rect.right() + 16.0, footer_rect.top()),
-                        ],
-                        Stroke::new(1.0_f32, SB_BORDER),
-                    );
-
-                    footer_ui.add_space(SP_12);
-
-                    // Actions: Sync, Open App Folder, Check for Updates
-                    // Action 1: Sync App Directory Files
-                    let (sync_rect, sync_resp) = footer_ui.allocate_exact_size(Vec2::new(full_w, 32.0), Sense::click());
-                    let sync_resp = sync_resp.on_hover_cursor(egui::CursorIcon::PointingHand);
-                    let sync_bg = if sync_resp.hovered() { SB_SURFACE } else { Color32::TRANSPARENT };
-                    let sync_fg = if sync_resp.hovered() { SB_TEXT } else { SB_TEXT_MUTED };
-                    footer_ui.painter().rect_filled(sync_rect, CornerRadius::same(R_MD as u8), sync_bg);
-                    draw_icon_refresh(footer_ui.painter(), Pos2::new(sync_rect.left() + 16.0, sync_rect.center().y), sync_fg);
-                    footer_ui.painter().text(
-                        Pos2::new(sync_rect.left() + 32.0, sync_rect.center().y),
-                        Align2::LEFT_CENTER,
-                        "Sync App Directory Files",
-                        FontId::proportional(FS_SMALL),
-                        sync_fg,
-                    );
-                    if sync_resp.clicked() {
-                        self.sidebar_refreshing_until = Some(Instant::now() + Duration::from_millis(400));
-                        self.storage.reset_sync_cache();
-                        if let Some(msg) = self.storage.sync_from_app_directory() {
-                            self.refresh_selected_project_metadata(true);
-                            self.status_banner = Some((msg, true));
-                        } else {
-                            self.status_banner = Some((
-                                format!("Synced app directory ({})", self.storage.app_data_dir().display()),
-                                true,
-                            ));
-                        }
-                    }
-
-                    footer_ui.add_space(SP_4);
-
-                    // Action 2: Open App Folder (JSON / .ps1)
-                    let (dir_rect, dir_resp) = footer_ui.allocate_exact_size(Vec2::new(full_w, 32.0), Sense::click());
-                    let dir_resp = dir_resp.on_hover_cursor(egui::CursorIcon::PointingHand);
-                    let dir_bg = if dir_resp.hovered() { SB_SURFACE } else { Color32::TRANSPARENT };
-                    let dir_fg = if dir_resp.hovered() { SB_TEXT } else { SB_TEXT_MUTED };
-                    footer_ui.painter().rect_filled(dir_rect, CornerRadius::same(R_MD as u8), dir_bg);
-                    draw_icon_folder(footer_ui.painter(), Pos2::new(dir_rect.left() + 16.0, dir_rect.center().y), dir_fg);
-                    footer_ui.painter().text(
-                        Pos2::new(dir_rect.left() + 32.0, dir_rect.center().y),
-                        Align2::LEFT_CENTER,
-                        "Open App Folder (JSON / .ps1)",
-                        FontId::proportional(FS_SMALL),
-                        dir_fg,
-                    );
-                    if dir_resp.on_hover_text("Open the app folder where you can paste shiply_state.json or deploy-*.ps1 files").clicked() {
-                        let dir = self.storage.app_data_dir();
-                        let _ = fs::create_dir_all(&dir);
-                        open_directory_in_os(&dir);
-                    }
-
-                    footer_ui.add_space(SP_4);
-
-                    // Action 3: Check for Updates
-                    let (upd_rect, upd_resp) = footer_ui.allocate_exact_size(Vec2::new(full_w, 32.0), Sense::click());
-                    let upd_resp = upd_resp.on_hover_cursor(egui::CursorIcon::PointingHand);
-                    let (upd_label, upd_fg) = if let Some(rel) = &self.available_update {
-                        (format!("Update Available: {}!", rel.tag_name), Color32::from_rgb(250, 204, 21))
-                    } else if self.update_checking {
-                        ("Checking GitHub Releases...".to_string(), ACCENT)
-                    } else if upd_resp.hovered() {
-                        ("Check for Updates (GitHub)".to_string(), SB_TEXT)
-                    } else {
-                        ("Check for Updates (GitHub)".to_string(), SB_TEXT_MUTED)
-                    };
-                    let upd_bg = if upd_resp.hovered() { SB_SURFACE } else { Color32::TRANSPARENT };
-                    footer_ui.painter().rect_filled(upd_rect, CornerRadius::same(R_MD as u8), upd_bg);
-                    draw_icon_refresh(footer_ui.painter(), Pos2::new(upd_rect.left() + 16.0, upd_rect.center().y), upd_fg);
-                    footer_ui.painter().text(
-                        Pos2::new(upd_rect.left() + 32.0, upd_rect.center().y),
-                        Align2::LEFT_CENTER,
-                        upd_label,
-                        FontId::proportional(FS_SMALL),
-                        upd_fg,
-                    );
-                    if upd_resp.on_hover_text(format!("Check GitHub Releases ({GITHUB_REPO}) for a newer version of Shiply")).clicked() {
-                        if self.available_update.is_some() {
-                            self.show_update_modal = true;
-                        } else if !self.update_checking {
-                            spawn_update_check(self.updater_tx.clone(), true);
-                        }
-                    }
-
-                    footer_ui.add_space(SP_12);
-
-                    // Installed status row: dot 8px --success + "Installed v0.10.4" (--fs-micro, --sb-text-muted) + "Reinstall" as a small text link (--sb-text-faint, hover --accent). Keep it on one line.
-                    let (stat_rect, _) = footer_ui.allocate_exact_size(Vec2::new(full_w, 24.0), Sense::hover());
-                    let install_state = check_install_state(&default_install_dir(), APP_VERSION);
-                    let (dot_color, status_text, action_text) = match &install_state {
-                        InstallState::NotInstalled => (ACCENT, "Not installed".to_string(), "Install (.exe)"),
-                        InstallState::InstalledCurrent { version, .. } => (SUCCESS, format!("Installed v{version}"), "Reinstall"),
-                        InstallState::UpdateReady { running_version, .. } => (Color32::from_rgb(250, 204, 21), format!("Update to v{running_version}"), "Apply"),
-                    };
-
-                    // Dot 8px
-                    footer_ui.painter().circle_filled(
-                        Pos2::new(stat_rect.left() + 12.0, stat_rect.center().y),
-                        4.0,
-                        dot_color,
-                    );
-
-                    // Status text
-                    let st_galley = footer_ui.painter().layout_no_wrap(
-                        status_text,
-                        FontId::proportional(FS_MICRO),
-                        SB_TEXT_MUTED,
-                    );
-                    footer_ui.painter().galley(
-                        Pos2::new(stat_rect.left() + 22.0, stat_rect.center().y - st_galley.size().y / 2.0),
-                        st_galley.clone(),
-                        SB_TEXT_MUTED,
-                    );
-
-                    // Action link on the same line
-                    let link_x = stat_rect.left() + 22.0 + st_galley.size().x + 8.0;
-                    let link_galley = footer_ui.painter().layout_no_wrap(
-                        action_text.to_string(),
-                        FontId::proportional(FS_MICRO),
-                        SB_TEXT_FAINT,
-                    );
-                    let link_rect = Rect::from_min_size(
-                        Pos2::new(link_x, stat_rect.center().y - link_galley.size().y / 2.0),
-                        link_galley.size(),
-                    );
-                    let link_resp = footer_ui.interact(link_rect, egui::Id::new("sidebar_reinstall_link"), Sense::click())
-                        .on_hover_cursor(egui::CursorIcon::PointingHand);
-                    let link_color = if link_resp.hovered() { ACCENT } else { SB_TEXT_FAINT };
-                    footer_ui.painter().galley(link_rect.min, link_galley, link_color);
-
-                    if link_resp.clicked() {
-                        match install_or_update_self() {
-                            Ok(msg) => self.status_banner = Some((msg, true)),
-                            Err(err) => self.status_banner = Some((err, false)),
-                        }
-                    }
-
-                    footer_ui.add_space(SP_16);
-                }
-
-                // 3. Middle Section: Scrollable (nav items + projects header + projects list)
-                let middle_rect = Rect::from_min_max(
-                    Pos2::new(inner_rect.left(), brand_rect.bottom() + SP_16),
-                    Pos2::new(inner_rect.right(), footer_rect.top() - SP_8),
-                );
-                let mut middle_ui = ui.new_child(egui::UiBuilder::new().max_rect(middle_rect));
-                middle_ui.spacing_mut().scroll.bar_width = 6.0;
-                middle_ui.spacing_mut().scroll.bar_inner_margin = 2.0;
-
-                ScrollArea::vertical()
-                    .id_salt("sidebar_scrollable_middle")
-                    .auto_shrink([false, false])
-                    .show(&mut middle_ui, |ui| {
-                        let full_w = ui.available_width();
-
-                        // Nav items: All Deployments (height 40px, padding 0 12px, icon 18px, gap 12px, --fs-base, radius --r-md)
-                        let is_overview = matches!(self.selection, SidebarSelection::AllDeployments);
-                        let (nav_rect, nav_resp) = ui.allocate_exact_size(Vec2::new(full_w, 40.0), Sense::click());
-                        let nav_resp = nav_resp.on_hover_cursor(egui::CursorIcon::PointingHand);
-                        let nav_bg = if is_overview {
-                            ACCENT_SOFT
-                        } else if nav_resp.hovered() {
-                            SB_SURFACE_HOVER
-                        } else {
-                            Color32::TRANSPARENT
-                        };
-                        let nav_fg = if is_overview || nav_resp.hovered() {
-                            SB_TEXT
-                        } else {
-                            SB_TEXT_MUTED
-                        };
-                        ui.painter().rect_filled(nav_rect, CornerRadius::same(R_MD as u8), nav_bg);
-                        if is_overview {
-                            ui.painter().rect_filled(
-                                Rect::from_min_max(
-                                    Pos2::new(nav_rect.left(), nav_rect.top() + 8.0),
-                                    Pos2::new(nav_rect.left() + 3.0, nav_rect.bottom() - 8.0),
-                                ),
-                                CornerRadius { nw: 0, ne: 3, se: 3, sw: 0 },
-                                ACCENT,
-                            );
-                        }
-                        draw_icon_layers(
-                            ui.painter(),
-                            Pos2::new(nav_rect.left() + 18.0, nav_rect.center().y),
-                            if is_overview { ACCENT } else { nav_fg },
-                        );
-                        ui.painter().text(
-                            Pos2::new(nav_rect.left() + 38.0, nav_rect.center().y),
-                            Align2::LEFT_CENTER,
-                            "All Deployments",
-                            FontId::proportional(FS_BASE),
-                            nav_fg,
-                        );
-                        if nav_resp.clicked() {
-                            self.selection = SidebarSelection::AllDeployments;
-                        }
-
-                        // Bulk Deploy button (if projects exist)
-                        if !self.storage.projects.is_empty() {
-                            ui.add_space(SP_4);
-                            let is_bulk_active = self.show_bulk_deploy_modal;
-                            let (bulk_rect, bulk_resp) = ui.allocate_exact_size(Vec2::new(full_w, 40.0), Sense::click());
-                            let bulk_resp = bulk_resp.on_hover_cursor(egui::CursorIcon::PointingHand);
-                            let bulk_bg = if is_bulk_active {
-                                ACCENT_SOFT
-                            } else if bulk_resp.hovered() {
-                                SB_SURFACE_HOVER
-                            } else {
-                                Color32::TRANSPARENT
-                            };
-                            let bulk_fg = if is_bulk_active || bulk_resp.hovered() {
-                                SB_TEXT
-                            } else {
-                                SB_TEXT_MUTED
-                            };
-                            ui.painter().rect_filled(bulk_rect, CornerRadius::same(R_MD as u8), bulk_bg);
-                            if is_bulk_active {
-                                ui.painter().rect_filled(
-                                    Rect::from_min_max(
-                                        Pos2::new(bulk_rect.left(), bulk_rect.top() + 8.0),
-                                        Pos2::new(bulk_rect.left() + 3.0, bulk_rect.bottom() - 8.0),
-                                    ),
-                                    CornerRadius { nw: 0, ne: 3, se: 3, sw: 0 },
-                                    ACCENT,
-                                );
-                            }
-                            draw_icon_send(
-                                ui.painter(),
-                                Pos2::new(bulk_rect.left() + 18.0, bulk_rect.center().y),
-                                if is_bulk_active { ACCENT } else { bulk_fg },
-                            );
-                            ui.painter().text(
-                                Pos2::new(bulk_rect.left() + 38.0, bulk_rect.center().y),
-                                Align2::LEFT_CENTER,
-                                "Bulk Deploy...",
-                                FontId::proportional(FS_BASE),
-                                bulk_fg,
-                            );
-                            if bulk_resp.on_hover_text("Select multiple projects to deploy sequentially").clicked() {
-                                self.open_bulk_deploy_modal();
-                            }
-                        }
-
-                        ui.add_space(SP_16);
-
-                        // Projects header row: row height 32px, gap 8px
-                        let (hdr_rect, _) = ui.allocate_exact_size(Vec2::new(full_w, 32.0), Sense::hover());
-                        ui.painter().text(
-                            Pos2::new(hdr_rect.left() + 4.0, hdr_rect.center().y),
-                            Align2::LEFT_CENTER,
-                            "PROJECTS",
-                            FontId::proportional(FS_MICRO),
-                            SB_TEXT_FAINT,
-                        );
-
-                        let add_w = 54.0_f32;
-                        let sort_w = 96.0_f32;
-
-                        // "+ ADD" button: height 28px, padding 0 10px, --fs-micro, bg --sb-surface, border 1px --sb-border, radius --r-sm, hover bg --sb-surface-hover
-                        let add_btn_rect = Rect::from_min_size(
-                            Pos2::new(hdr_rect.right() - add_w, hdr_rect.center().y - 14.0),
-                            Vec2::new(add_w, 28.0),
-                        );
-                        let add_btn_resp = ui.interact(add_btn_rect, egui::Id::new("sidebar_add_proj_btn"), Sense::click())
-                            .on_hover_cursor(egui::CursorIcon::PointingHand);
-                        let add_bg = if add_btn_resp.hovered() { SB_SURFACE_HOVER } else { SB_SURFACE };
-                        ui.painter().rect_filled(add_btn_rect, CornerRadius::same(R_SM as u8), add_bg);
-                        ui.painter().rect_stroke(add_btn_rect, CornerRadius::same(R_SM as u8), Stroke::new(1.0_f32, SB_BORDER), StrokeKind::Inside);
-                        ui.painter().text(
-                            add_btn_rect.center(),
-                            Align2::CENTER_CENTER,
-                            "+ ADD",
-                            FontId::proportional(FS_MICRO),
-                            SB_TEXT,
-                        );
-                        if add_btn_resp.clicked() {
-                            self.new_project_group.clear();
-                            self.show_new_project_modal = true;
-                        }
-
-                        // Sort control: height 28px, --fs-micro style but weight 500, bg --sb-surface, border 1px --sb-border, radius --r-sm, text color --sb-text
-                        let sort_area_rect = Rect::from_min_size(
-                            Pos2::new(hdr_rect.right() - add_w - 8.0 - sort_w, hdr_rect.center().y - 14.0),
-                            Vec2::new(sort_w, 28.0),
-                        );
-                        sort_trigger_rect_out = Some(sort_area_rect);
-
-                        let sort_btn_resp = ui.interact(sort_area_rect, egui::Id::new("sidebar_project_sort_trigger"), Sense::click())
-                            .on_hover_cursor(egui::CursorIcon::PointingHand);
-                        if sort_btn_resp.clicked() {
-                            self.sidebar_sort_dropdown_open = !self.sidebar_sort_dropdown_open;
-                        }
-
-                        let is_sort_open = self.sidebar_sort_dropdown_open;
-                        let sort_bg = if is_sort_open || sort_btn_resp.hovered() { SB_SURFACE_HOVER } else { SB_SURFACE };
-                        let sort_stroke = if is_sort_open {
-                            Stroke::new(1.5_f32, ACCENT)
-                        } else {
-                            Stroke::new(1.0_f32, SB_BORDER)
-                        };
-
-                        ui.painter().rect_filled(sort_area_rect, CornerRadius::same(R_SM as u8), sort_bg);
-                        ui.painter().rect_stroke(sort_area_rect, CornerRadius::same(R_SM as u8), sort_stroke, StrokeKind::Inside);
-
-                        let sort_label = match self.project_sort_mode {
-                            ProjectSortMode::Custom => "Custom",
-                            ProjectSortMode::NameAsc => "A-Z",
-                            ProjectSortMode::NameDesc => "Z-A",
-                            ProjectSortMode::RecentDeploy => "Recent",
-                        };
-
-                        ui.painter().text(
-                            Pos2::new(sort_area_rect.left() + 10.0, sort_area_rect.center().y),
-                            Align2::LEFT_CENTER,
-                            sort_label,
-                            FontId::proportional(FS_MICRO),
-                            SB_TEXT,
-                        );
-
-                        draw_outline_icon(
-                            ui.painter(),
-                            Pos2::new(sort_area_rect.right() - 12.0, sort_area_rect.center().y),
-                            if is_sort_open { OutlineIcon::ChevronUp } else { OutlineIcon::ChevronDown },
-                            SB_TEXT,
-                        );
-
-                        ui.add_space(SP_8);
-
-                        // Skeleton loading on initial load or refresh:
-                        let is_refreshing = self.sidebar_refreshing_until.as_ref().is_some_and(|t| Instant::now() < *t);
-                        if is_refreshing && self.storage.projects.is_empty() {
-                            ui.ctx().request_repaint();
-                            let time = ui.input(|i| i.time);
-                            for _ in 0..3 {
-                                let (skel_rect, _) = ui.allocate_exact_size(Vec2::new(full_w, 64.0), Sense::hover());
-                                ui.painter().rect_filled(skel_rect, CornerRadius::same(R_MD as u8), SB_SURFACE);
-                                ui.painter().rect_stroke(skel_rect, CornerRadius::same(R_MD as u8), Stroke::new(1.0_f32, SB_BORDER), StrokeKind::Inside);
-
-                                // Name bar: height 14px, width 60%, radius 4px
-                                let name_w = (skel_rect.width() - 34.0) * 0.6;
-                                let name_rect = Rect::from_min_size(Pos2::new(skel_rect.left() + 22.0, skel_rect.top() + 14.0), Vec2::new(name_w, 14.0));
-                                paint_shimmer_rect(ui.painter(), name_rect, 4.0, time);
-
-                                // Two badge pills: 44px x 20px and 52px x 20px, radius --r-sm, gap 6px
-                                let pill1 = Rect::from_min_size(Pos2::new(skel_rect.left() + 22.0, skel_rect.top() + 36.0), Vec2::new(44.0, 20.0));
-                                paint_shimmer_rect(ui.painter(), pill1, R_SM, time);
-                                let pill2 = Rect::from_min_size(Pos2::new(skel_rect.left() + 22.0 + 44.0 + 6.0, skel_rect.top() + 36.0), Vec2::new(52.0, 20.0));
-                                paint_shimmer_rect(ui.painter(), pill2, R_SM, time);
-
-                                ui.add_space(SP_8);
-                            }
-                        } else if self.storage.projects.is_empty() {
-                            let (empty_rect, _) = ui.allocate_exact_size(Vec2::new(full_w, 64.0), Sense::hover());
-                            ui.painter().rect_stroke(
-                                empty_rect,
-                                CornerRadius::same(R_MD as u8),
-                                Stroke::new(1.0_f32, SB_BORDER),
-                                StrokeKind::Inside,
-                            );
-                            ui.painter().text(
-                                empty_rect.center(),
-                                Align2::CENTER_CENTER,
-                                "No projects yet.\nClick '+ ADD' or import .ps1",
-                                FontId::proportional(FS_SMALL),
-                                SB_TEXT_MUTED,
-                            );
-                        } else {
-                            let is_pointer_released = ui.input(|i| i.pointer.any_released());
-                            let pointer_pos = ui.input(|i| i.pointer.hover_pos());
-
-                            if self.dragged_project_idx.is_some() {
-                                ui.ctx().request_repaint();
-                            }
-
-                            let has_groups = self.storage.projects.iter().any(|p| {
-                                p.group.as_ref().is_some_and(|g| !g.trim().is_empty())
-                            });
-
-                            let mut group_sections: Vec<(Option<String>, Vec<usize>)> = Vec::new();
-                            if has_groups {
-                                for (idx, p) in self.storage.projects.iter().enumerate() {
-                                    let grp = p.group.as_ref().map(|g| g.trim().to_string()).filter(|g| !g.is_empty());
-                                    if let Some(pos) = group_sections.iter().position(|(g, _)| g.as_ref() == grp.as_ref()) {
-                                        group_sections[pos].1.push(idx);
-                                    } else {
-                                        group_sections.push((grp, vec![idx]));
-                                    }
-                                }
-                                group_sections.sort_by(|(g1, _), (g2, _)| match (g1, g2) {
-                                    (Some(a), Some(b)) => a.to_lowercase().cmp(&b.to_lowercase()),
-                                    (Some(_), None) => std::cmp::Ordering::Less,
-                                    (None, Some(_)) => std::cmp::Ordering::Greater,
-                                    (None, None) => std::cmp::Ordering::Equal,
-                                });
-                            } else {
-                                group_sections.push((None, (0..self.storage.projects.len()).collect()));
-                            }
-
-                            let mut clicked_project_id = None;
-                            let mut drag_reorder = None;
-
-                            for (grp_opt, proj_indices) in group_sections {
-                                if has_groups {
-                                    let group_title = grp_opt.as_deref().unwrap_or("General");
-                                    let group_key = grp_opt.clone().unwrap_or_else(|| "_general".to_string());
-                                    let is_collapsed = self.collapsed_project_groups.contains(&group_key);
-
-                                    let (grp_rect, grp_resp) = ui.allocate_exact_size(Vec2::new(full_w, 28.0), Sense::click());
-                                    let grp_resp = grp_resp.on_hover_cursor(egui::CursorIcon::PointingHand);
-                                    if grp_resp.hovered() {
-                                        ui.painter().rect_filled(grp_rect, CornerRadius::same(R_SM as u8), SB_SURFACE);
-                                    }
-
-                                    let chev = if is_collapsed {
-                                        OutlineIcon::ChevronRight
-                                    } else {
-                                        OutlineIcon::ChevronDown
-                                    };
-                                    draw_outline_icon(
-                                        ui.painter(),
-                                        Pos2::new(grp_rect.left() + 10.0, grp_rect.center().y),
-                                        chev,
-                                        SB_TEXT_FAINT,
-                                    );
-                                    ui.painter().text(
-                                        Pos2::new(grp_rect.left() + 22.0, grp_rect.center().y),
-                                        Align2::LEFT_CENTER,
-                                        group_title.to_uppercase(),
-                                        FontId::proportional(FS_MICRO),
-                                        SB_TEXT_FAINT,
-                                    );
-
-                                    paint_pill_right_aligned(
-                                        ui.painter(),
-                                        Pos2::new(grp_rect.right() - 4.0, grp_rect.center().y),
-                                        &format!("{}", proj_indices.len()),
-                                        SB_SURFACE,
-                                        SB_TEXT_MUTED,
-                                    );
-
-                                    if grp_resp.clicked() {
-                                        if is_collapsed {
-                                            self.collapsed_project_groups.remove(&group_key);
-                                        } else {
-                                            self.collapsed_project_groups.insert(group_key.clone());
-                                        }
-                                    }
-
-                                    ui.add_space(SP_4);
-
-                                    if is_collapsed {
-                                        continue;
-                                    }
-                                }
-
-                                for proj_idx in proj_indices {
-                                    let project = &self.storage.projects[proj_idx];
-                                    let is_selected = matches!(&self.selection, SidebarSelection::Project(id) if id == &project.id);
-                                    let is_being_dragged = self.dragged_project_idx == Some(proj_idx);
-                                    let is_switching = self.project_switch_loading_id.as_deref() == Some(&project.id);
-
-                                    // Project Card: min-height 64px, padding 12px 12px 12px 8px, radius --r-md, bg transparent, border 1px transparent. Gap between cards: 8px.
-                                    let (p_rect, p_resp) = ui.allocate_exact_size(Vec2::new(full_w, 64.0), Sense::click());
-                                    let p_resp = p_resp.on_hover_cursor(egui::CursorIcon::PointingHand);
-
-                                    let fill = if is_selected || is_switching {
-                                        ACCENT_SOFT
-                                    } else if p_resp.hovered() {
-                                        SB_SURFACE
-                                    } else {
-                                        Color32::TRANSPARENT
-                                    };
-                                    ui.painter().rect_filled(p_rect, CornerRadius::same(R_MD as u8), fill);
-
-                                    // Left vertical grip handle for dragging & reordering (16px slot always reserved)
-                                    let grip_rect = Rect::from_min_size(
-                                        Pos2::new(p_rect.left() + 2.0, p_rect.top() + 7.0),
-                                        Vec2::new(16.0, 50.0),
-                                    );
-                                    let grip_resp = ui.interact(
-                                        grip_rect,
-                                        egui::Id::new(("sidebar_proj_grip", &project.id)),
-                                        Sense::drag(),
-                                    ).on_hover_cursor(egui::CursorIcon::Grab);
-
-                                    if grip_resp.drag_started() || grip_resp.dragged() {
-                                        self.dragged_project_idx = Some(proj_idx);
-                                        ui.ctx().set_cursor_icon(egui::CursorIcon::Grabbing);
-                                    }
-
-                                    // Drag handle opacity: 0 by default, 0.5 on card hover, 1 on handle hover
-                                    let grip_color = if is_being_dragged || grip_resp.hovered() {
-                                        ACCENT
-                                    } else if p_resp.hovered() {
-                                        Color32::from_rgba_premultiplied(45, 50, 65, 128)
-                                    } else {
-                                        Color32::TRANSPARENT
-                                    };
-                                    draw_outline_icon(
-                                        ui.painter(),
-                                        grip_rect.center(),
-                                        OutlineIcon::GripVertical,
-                                        grip_color,
-                                    );
-
-                                    // Drop target hover highlight
-                                    if let Some(from_idx) = self.dragged_project_idx {
-                                        if from_idx != proj_idx {
-                                            if let Some(pos) = pointer_pos {
-                                                if p_rect.contains(pos) {
-                                                    ui.painter().rect_stroke(
-                                                        p_rect,
-                                                        CornerRadius::same(R_MD as u8),
-                                                        Stroke::new(2.0_f32, ACCENT),
-                                                        StrokeKind::Inside,
-                                                    );
-                                                    if is_pointer_released {
-                                                        drag_reorder = Some((from_idx, proj_idx));
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    }
-
-                                    // Active (selected): bg --accent-soft, border 1px rgba(59,130,246,0.35), plus a 3px accent bar on the left (radius 0 3px 3px 0, vertically inset 12px)
-                                    if is_selected || is_switching {
-                                        let border_color = Color32::from_rgba_premultiplied(20, 45, 86, 89);
-                                        ui.painter().rect_stroke(
-                                            p_rect,
-                                            CornerRadius::same(R_MD as u8),
-                                            Stroke::new(1.0_f32, border_color),
-                                            StrokeKind::Inside,
-                                        );
-                                        let bar_rect = Rect::from_min_max(
-                                            Pos2::new(p_rect.left(), p_rect.top() + 12.0),
-                                            Pos2::new(p_rect.left() + 3.0, p_rect.bottom() - 12.0),
-                                        );
-                                        ui.painter().rect_filled(
-                                            bar_rect,
-                                            CornerRadius { nw: 0, ne: 3, se: 3, sw: 0 },
-                                            ACCENT,
-                                        );
-                                    }
-
-                                    // Content layout: [drag handle 16px wide] [content]. Content = row 1: project name, row 2: env badges. Gap between rows: 6px.
-                                    let content_x = p_rect.left() + 22.0;
-
-                                    // Check if this project is currently running an active deployment process
-                                    let is_deploying = self.is_project_deploying(&project.id);
-
-                                    // Row 1: Project Name (--fs-base, color --sb-text, SINGLE LINE ONLY, never wraps)
-                                    let name_color = if is_selected || is_switching {
-                                        Color32::WHITE
-                                    } else {
-                                        SB_TEXT
-                                    };
-                                    let avail_name_w = (p_rect.right() - 28.0 - content_x).max(20.0);
-                                    let mut job = egui::text::LayoutJob::simple_singleline(
-                                        project.name.clone(),
-                                        FontId::proportional(FS_BASE),
-                                        name_color,
-                                    );
-                                    job.wrap.max_width = avail_name_w;
-                                    job.wrap.max_rows = 1;
-                                    job.wrap.break_anywhere = false;
-                                    let name_galley = ui.painter().layout_job(job);
-                                    ui.painter().galley(
-                                        Pos2::new(content_x, p_rect.top() + 12.0),
-                                        name_galley,
-                                        name_color,
-                                    );
-
-                                    // Spinner slot absolutely positioned (right 12px, vertically centered, 16px) taking zero layout space
-                                    if is_deploying || is_switching {
-                                        ui.ctx().request_repaint();
-                                        let spinner_center = Pos2::new(p_rect.right() - 18.0, p_rect.center().y);
-                                        let spinner_color = if is_deploying {
-                                            ACCENT
-                                        } else {
-                                            Color32::from_rgb(148, 163, 184)
-                                        };
-                                        draw_circle_loading_spinner(
-                                            ui.painter(),
-                                            spinner_center,
-                                            7.0,
-                                            spinner_color,
-                                            ui.input(|i| i.time),
-                                        );
-                                    }
-
-                                    let p_resp = if is_deploying {
-                                        p_resp.on_hover_text(format!("{}\n(A deployment is currently running)", project.name))
-                                    } else {
-                                        p_resp.on_hover_text(&project.name)
-                                    };
-
-                                    // Right-click context popup menu for Project options (custom cohesive dark menu)
-                                    if p_resp.secondary_clicked() {
-                                        if let Some(pos) = ui.input(|i| i.pointer.latest_pos()) {
-                                            self.sidebar_context_menu = Some(SidebarContextMenuState {
-                                                project_id: project.id.clone(),
-                                                click_pos: pos,
-                                                submenu_open: false,
-                                            });
-                                        }
-                                    }
-
-                                    // Row 2: Env Badges (height 20px, padding 0 8px, --fs-micro, radius --r-sm, gap 6px)
-                                    let row2_y = p_rect.top() + 36.0;
-
-                                    if is_switching {
-                                        // While switching: the env badge row of that card shows shimmer skeleton pills
-                                        ui.ctx().request_repaint();
-                                        let time = ui.input(|i| i.time);
-                                        let pill1 = Rect::from_min_size(Pos2::new(content_x, row2_y), Vec2::new(44.0, 20.0));
-                                        paint_shimmer_rect(ui.painter(), pill1, R_SM, time);
-                                        let pill2 = Rect::from_min_size(Pos2::new(content_x + 50.0, row2_y), Vec2::new(52.0, 20.0));
-                                        paint_shimmer_rect(ui.painter(), pill2, R_SM, time);
-                                    } else if project.environments.is_empty() {
-                                        paint_sidebar_env_badge(
-                                            ui.painter(),
-                                            Pos2::new(content_x, row2_y),
-                                            "NO ENVS",
-                                            SB_SURFACE,
-                                            SB_TEXT_FAINT,
-                                        );
-                                    } else {
-                                        let mut pill_x = content_x;
-                                        for env in project.environments.iter().take(3) {
-                                            let badge = env.badge_label();
-                                            let is_env_running = self.is_env_deploying(&project.id, &env.key)
-                                                || self.storage.deployments.iter().any(|d| {
-                                                    d.project_id == project.id
-                                                        && d.environment == env.key
-                                                        && (d.status == DeploymentStatus::Running
-                                                            || self.is_deployment_active(&d.id))
-                                                });
-                                            let key_lower = env.key.to_lowercase();
-                                            let is_prod = key_lower.contains("prod");
-
-                                            let (bg, fg) = if is_prod {
-                                                (BADGE_PROD_BG, BADGE_PROD_TEXT)
-                                            } else {
-                                                (BADGE_DEV_BG, BADGE_DEV_TEXT)
-                                            };
-
-                                            let label = if is_env_running {
-                                                format!("{badge} Deploying...")
-                                            } else if let Some(ok_dep) = self.storage.last_succeeded_deployment(&project.id, &env.key) {
-                                                format!("{badge} v{}", ok_dep.version)
-                                            } else {
-                                                format!("{badge} —")
-                                            };
-
-                                            let w = paint_sidebar_env_badge(
-                                                ui.painter(),
-                                                Pos2::new(pill_x, row2_y),
-                                                &label,
-                                                bg,
-                                                fg,
-                                            );
-                                            pill_x += w + 6.0;
-                                        }
-                                    }
-
-                                    if p_resp.clicked() {
-                                        clicked_project_id = Some(project.id.clone());
-                                    }
-
-                                    ui.add_space(SP_8);
-                                }
-                            }
-
-                            if let Some((from, to)) = drag_reorder {
-                                self.storage.reorder_project(from, to);
-                                self.project_sort_mode = ProjectSortMode::Custom;
-                                self.dragged_project_idx = None;
-                            } else if is_pointer_released {
-                                self.dragged_project_idx = None;
-                            }
-
-                            if let Some(pid) = clicked_project_id {
-                                self.sidebar_context_menu = None;
-                                let was_different = match &self.selection {
-                                    SidebarSelection::Project(cur) => cur != &pid,
-                                    SidebarSelection::AllDeployments => true,
-                                };
-                                self.selection = SidebarSelection::Project(pid.clone());
-                                if was_different {
-                                    self.project_switch_loading_id = Some(pid);
-                                    self.project_switch_loading_start = Some(Instant::now());
-                                }
-                                self.refresh_selected_project_metadata(true);
-                            }
-                        }
-                    });
+                ui.visuals_mut().override_text_color = Some(theme.text);
+                self.render_sidebar_content(ui, is_rail, ctx, &mut sort_trigger_rect_out);
             });
 
         if let Some(r) = sort_trigger_rect_out {
             self.render_sidebar_sort_dropdown(ctx, r);
         }
         self.render_sidebar_custom_context_menu(ctx);
+    }
+
+    fn render_sidebar_content(
+        &mut self,
+        ui: &mut egui::Ui,
+        is_rail: bool,
+        _ctx: &egui::Context,
+        sort_trigger_rect_out: &mut Option<Rect>,
+    ) {
+        let inner_rect = ui.available_rect_before_wrap();
+        let full_w = inner_rect.width();
+        let theme = self.theme();
+
+        if is_rail {
+            // ==================== COLLAPSED RAIL MODE (64px) ====================
+            // 1. Pinned Brand Top Bar (52px)
+            let brand_rect = Rect::from_min_size(inner_rect.min, Vec2::new(full_w, 52.0));
+            let brand_ui = ui.new_child(egui::UiBuilder::new().max_rect(brand_rect));
+            let logo_rect = Rect::from_center_size(brand_rect.center(), Vec2::new(26.0, 26.0));
+            draw_shiply_logo(
+                brand_ui.painter(),
+                logo_rect,
+                6,
+                FS_TITLE,
+                self.logo_texture.as_ref(),
+            );
+            brand_ui.painter().line_segment(
+                [
+                    Pos2::new(brand_rect.left(), brand_rect.bottom()),
+                    Pos2::new(brand_rect.right(), brand_rect.bottom()),
+                ],
+                Stroke::new(1.0_f32, theme.border),
+            );
+
+            // 2. Pinned Footer (128px)
+            let footer_h = 128.0_f32;
+            let footer_rect = Rect::from_min_size(
+                Pos2::new(inner_rect.left(), inner_rect.bottom() - footer_h),
+                Vec2::new(full_w, footer_h),
+            );
+            let mut footer_ui = ui.new_child(egui::UiBuilder::new().max_rect(footer_rect));
+            footer_ui.painter().line_segment(
+                [
+                    Pos2::new(footer_rect.left(), footer_rect.top()),
+                    Pos2::new(footer_rect.right(), footer_rect.top()),
+                ],
+                Stroke::new(1.0_f32, theme.border),
+            );
+            footer_ui.add_space(8.0);
+
+            let btn_size = Vec2::new(32.0, 32.0);
+            let center_x = footer_rect.center().x;
+
+            // Sync Button
+            let sync_rect = Rect::from_center_size(Pos2::new(center_x, footer_rect.top() + 20.0), btn_size);
+            let sync_resp = footer_ui
+                .interact(sync_rect, egui::Id::new("rail_sync_btn"), Sense::click())
+                .on_hover_cursor(egui::CursorIcon::PointingHand)
+                .on_hover_text("Sync App Directory Files");
+            if sync_resp.hovered() {
+                footer_ui
+                    .painter()
+                    .rect_filled(sync_rect, CornerRadius::same(R_MD as u8), theme.surface_2);
+            }
+            draw_icon_refresh(
+                footer_ui.painter(),
+                sync_rect.center(),
+                if sync_resp.hovered() { theme.text } else { theme.text_muted },
+            );
+            if sync_resp.clicked() {
+                self.sidebar_refreshing_until = Some(Instant::now() + Duration::from_millis(400));
+                self.storage.reset_sync_cache();
+                if let Some(msg) = self.storage.sync_from_app_directory() {
+                    self.refresh_selected_project_metadata(true);
+                    self.status_banner = Some((msg, true));
+                } else {
+                    self.status_banner = Some((
+                        format!(
+                            "Synced app directory ({})",
+                            self.storage.app_data_dir().display()
+                        ),
+                        true,
+                    ));
+                }
+            }
+
+            // Folder Button
+            let dir_rect = Rect::from_center_size(Pos2::new(center_x, footer_rect.top() + 54.0), btn_size);
+            let dir_resp = footer_ui
+                .interact(dir_rect, egui::Id::new("rail_folder_btn"), Sense::click())
+                .on_hover_cursor(egui::CursorIcon::PointingHand)
+                .on_hover_text("Open App Folder (JSON / .ps1)");
+            if dir_resp.hovered() {
+                footer_ui
+                    .painter()
+                    .rect_filled(dir_rect, CornerRadius::same(R_MD as u8), theme.surface_2);
+            }
+            draw_icon_folder(
+                footer_ui.painter(),
+                dir_rect.center(),
+                if dir_resp.hovered() { theme.text } else { theme.text_muted },
+            );
+            if dir_resp.clicked() {
+                let dir = self.storage.app_data_dir();
+                let _ = fs::create_dir_all(&dir);
+                open_directory_in_os(&dir);
+            }
+
+            // Updates Button
+            let upd_rect = Rect::from_center_size(Pos2::new(center_x, footer_rect.top() + 88.0), btn_size);
+            let upd_resp = footer_ui
+                .interact(upd_rect, egui::Id::new("rail_upd_btn"), Sense::click())
+                .on_hover_cursor(egui::CursorIcon::PointingHand)
+                .on_hover_text(if self.available_update.is_some() {
+                    "Update Available! Click to view"
+                } else {
+                    "Check for Updates"
+                });
+            if upd_resp.hovered() {
+                footer_ui
+                    .painter()
+                    .rect_filled(upd_rect, CornerRadius::same(R_MD as u8), theme.surface_2);
+            }
+            let upd_color = if self.available_update.is_some() {
+                theme.warning
+            } else if upd_resp.hovered() {
+                theme.text
+            } else {
+                theme.text_muted
+            };
+            draw_icon_refresh(footer_ui.painter(), upd_rect.center(), upd_color);
+            if upd_resp.clicked() {
+                if self.available_update.is_some() {
+                    self.show_update_modal = true;
+                } else if !self.update_checking {
+                    spawn_update_check(self.updater_tx.clone(), true);
+                }
+            }
+
+            // Status Green Dot
+            let dot_pos = Pos2::new(center_x, footer_rect.bottom() - 10.0);
+            let dot_color = if self.available_update.is_some() {
+                theme.warning
+            } else {
+                theme.success
+            };
+            let status_msg = if let Some(rel) = &self.available_update {
+                format!("Update Available: {}", rel.tag_name)
+            } else {
+                format!("Up to date (v{APP_VERSION})")
+            };
+            let dot_rect = Rect::from_center_size(dot_pos, Vec2::new(14.0, 14.0));
+            footer_ui
+                .interact(dot_rect, egui::Id::new("rail_status_dot"), Sense::hover())
+                .on_hover_text(status_msg);
+            footer_ui.painter().circle_filled(dot_pos, 3.5, dot_color);
+
+            // 3. Middle Scrollable Rail Content
+            let middle_rect = Rect::from_min_max(
+                Pos2::new(inner_rect.left(), brand_rect.bottom() + 8.0),
+                Pos2::new(inner_rect.right(), footer_rect.top() - 6.0),
+            );
+            let mut middle_ui = ui.new_child(egui::UiBuilder::new().max_rect(middle_rect));
+            ScrollArea::vertical()
+                .id_salt("sidebar_rail_middle")
+                .auto_shrink([false, false])
+                .show(&mut middle_ui, |ui| {
+                    let full_w = ui.available_width();
+                    let center_x = full_w / 2.0;
+
+                    // Nav item 1: All Deployments
+                    let is_overview = matches!(self.selection, SidebarSelection::AllDeployments);
+                    let all_rect = Rect::from_center_size(Pos2::new(center_x, ui.cursor().min.y + 18.0), btn_size);
+                    let all_resp = ui
+                        .interact(all_rect, egui::Id::new("rail_all_deploy_btn"), Sense::click())
+                        .on_hover_cursor(egui::CursorIcon::PointingHand)
+                        .on_hover_text("All Deployments");
+                    let all_bg = if is_overview {
+                        theme.primary_soft
+                    } else if all_resp.hovered() {
+                        theme.surface_2
+                    } else {
+                        Color32::TRANSPARENT
+                    };
+                    let all_fg = if is_overview {
+                        theme.primary
+                    } else if all_resp.hovered() {
+                        theme.text
+                    } else {
+                        theme.text_muted
+                    };
+                    ui.painter().rect_filled(all_rect, CornerRadius::same(R_MD as u8), all_bg);
+                    draw_icon_layers(ui.painter(), all_rect.center(), all_fg);
+                    if all_resp.clicked() {
+                        self.selection = SidebarSelection::AllDeployments;
+                    }
+                    ui.add_space(40.0);
+
+                    // Nav item 2: Bulk Deploy
+                    if !self.storage.projects.is_empty() {
+                        let is_bulk = self.show_bulk_deploy_modal;
+                        let bulk_rect = Rect::from_center_size(Pos2::new(center_x, ui.cursor().min.y + 18.0), btn_size);
+                        let bulk_resp = ui
+                            .interact(bulk_rect, egui::Id::new("rail_bulk_deploy_btn"), Sense::click())
+                            .on_hover_cursor(egui::CursorIcon::PointingHand)
+                            .on_hover_text("Bulk Deploy...");
+                        let bulk_bg = if is_bulk {
+                            theme.primary_soft
+                        } else if bulk_resp.hovered() {
+                            theme.surface_2
+                        } else {
+                            Color32::TRANSPARENT
+                        };
+                        let bulk_fg = if is_bulk {
+                            theme.primary
+                        } else if bulk_resp.hovered() {
+                            theme.text
+                        } else {
+                            theme.text_muted
+                        };
+                        ui.painter().rect_filled(bulk_rect, CornerRadius::same(R_MD as u8), bulk_bg);
+                        draw_icon_send(ui.painter(), bulk_rect.center(), bulk_fg);
+                        if bulk_resp.clicked() {
+                            self.open_bulk_deploy_modal();
+                        }
+                        ui.add_space(40.0);
+                    }
+
+                    // Separator
+                    let sep_y = ui.cursor().min.y + 4.0;
+                    ui.painter().line_segment(
+                        [Pos2::new(center_x - 14.0, sep_y), Pos2::new(center_x + 14.0, sep_y)],
+                        Stroke::new(1.0_f32, theme.border),
+                    );
+                    ui.add_space(12.0);
+
+                    // Add Project Button (+)
+                    let add_rect = Rect::from_center_size(Pos2::new(center_x, ui.cursor().min.y + 16.0), btn_size);
+                    let add_resp = ui
+                        .interact(add_rect, egui::Id::new("rail_add_proj_btn"), Sense::click())
+                        .on_hover_cursor(egui::CursorIcon::PointingHand)
+                        .on_hover_text("Add Project");
+                    let add_bg = if add_resp.hovered() { theme.surface_2 } else { Color32::TRANSPARENT };
+                    ui.painter().rect_filled(add_rect, CornerRadius::same(R_MD as u8), add_bg);
+                    draw_icon_plus(ui.painter(), add_rect.center(), theme.text_muted);
+                    if add_resp.clicked() {
+                        self.new_project_group.clear();
+                        self.show_new_project_modal = true;
+                    }
+                    ui.add_space(36.0);
+
+                    // Project Avatars
+                    let mut clicked_project_id = None;
+                    for project in &self.storage.projects {
+                        let is_selected = matches!(&self.selection, SidebarSelection::Project(id) if id == &project.id);
+                        let p_avatar_rect = Rect::from_center_size(Pos2::new(center_x, ui.cursor().min.y + 18.0), Vec2::new(32.0, 32.0));
+                        let p_resp = ui
+                            .interact(p_avatar_rect, egui::Id::new(("rail_proj", &project.id)), Sense::click())
+                            .on_hover_cursor(egui::CursorIcon::PointingHand);
+
+                        let bg_fill = if is_selected {
+                            theme.primary_soft
+                        } else if p_resp.hovered() {
+                            theme.surface_2
+                        } else {
+                            theme.surface_tint_top
+                        };
+                        let stroke = if is_selected {
+                            Stroke::new(2.0_f32, theme.primary)
+                        } else {
+                            Stroke::new(1.0_f32, theme.border)
+                        };
+
+                        ui.painter().rect_filled(p_avatar_rect, CornerRadius::same(8), bg_fill);
+                        ui.painter().rect_stroke(p_avatar_rect, CornerRadius::same(8), stroke, StrokeKind::Inside);
+
+                        let initial = project.name.chars().next().unwrap_or('P').to_uppercase().to_string();
+                        let fg_color = if is_selected { theme.primary } else { theme.text };
+                        ui.painter().text(
+                            p_avatar_rect.center(),
+                            Align2::CENTER_CENTER,
+                            initial,
+                            FontId::proportional(FS_BASE),
+                            fg_color,
+                        );
+
+                        let mut env_summary = String::new();
+                        for env in &project.environments {
+                            if let Some(dep) = self.storage.last_succeeded_deployment(&project.id, &env.key) {
+                                env_summary.push_str(&format!("\n• {}: v{}", env.name, dep.version));
+                            } else {
+                                env_summary.push_str(&format!("\n• {}: —", env.name));
+                            }
+                        }
+                        let tooltip = format!("{}{}", project.name, env_summary);
+                        let p_resp = p_resp.on_hover_text(tooltip);
+
+                        if p_resp.secondary_clicked() {
+                            if let Some(pos) = ui.input(|i| i.pointer.latest_pos()) {
+                                self.sidebar_context_menu = Some(SidebarContextMenuState {
+                                    project_id: project.id.clone(),
+                                    click_pos: pos,
+                                    submenu_open: false,
+                                });
+                            }
+                        }
+
+                        if p_resp.clicked() {
+                            clicked_project_id = Some(project.id.clone());
+                        }
+
+                        ui.add_space(38.0);
+                    }
+
+                    if let Some(pid) = clicked_project_id {
+                        self.sidebar_context_menu = None;
+                        let was_different = match &self.selection {
+                            SidebarSelection::Project(cur) => cur != &pid,
+                            SidebarSelection::AllDeployments => true,
+                        };
+                        self.selection = SidebarSelection::Project(pid.clone());
+                        if was_different {
+                            self.project_switch_loading_id = Some(pid);
+                            self.project_switch_loading_start = Some(Instant::now());
+                        }
+                        self.refresh_selected_project_metadata(true);
+                    }
+                });
+        } else {
+            // ==================== EXPANDED SIDEBAR MODE (248px) ====================
+            // 1. Pinned Brand Top Bar (52px)
+            let brand_rect = Rect::from_min_size(inner_rect.min, Vec2::new(full_w, 52.0));
+            let brand_ui = ui.new_child(egui::UiBuilder::new().max_rect(brand_rect));
+            {
+                let logo_rect = Rect::from_min_size(
+                    Pos2::new(brand_rect.left() + 2.0, brand_rect.center().y - 13.0),
+                    Vec2::new(26.0, 26.0),
+                );
+                draw_shiply_logo(
+                    brand_ui.painter(),
+                    logo_rect,
+                    6,
+                    FS_TITLE,
+                    self.logo_texture.as_ref(),
+                );
+                brand_ui.painter().text(
+                    Pos2::new(logo_rect.right() + 8.0, brand_rect.center().y),
+                    Align2::LEFT_CENTER,
+                    "Shiply",
+                    FontId::proportional(FS_BRAND),
+                    theme.text,
+                );
+
+                // Version badge: mono 11px, bg --surface-2, text --text-muted, radius 4px
+                let ver_text = format!("v{APP_VERSION}");
+                let ver_galley = brand_ui.painter().layout_no_wrap(
+                    ver_text,
+                    FontId::monospace(FS_MICRO),
+                    theme.text_muted,
+                );
+                let badge_pad_x = 6.0_f32;
+                let badge_h = 20.0_f32;
+                let badge_w = ver_galley.size().x + badge_pad_x * 2.0;
+                let badge_rect = Rect::from_min_size(
+                    Pos2::new(
+                        brand_rect.right() - badge_w - 2.0,
+                        brand_rect.center().y - badge_h / 2.0,
+                    ),
+                    Vec2::new(badge_w, badge_h),
+                );
+                brand_ui
+                    .painter()
+                    .rect_filled(badge_rect, CornerRadius::same(R_SM as u8), theme.surface_2);
+                brand_ui.painter().galley(
+                    Pos2::new(
+                        badge_rect.left() + badge_pad_x,
+                        badge_rect.center().y - ver_galley.size().y / 2.0,
+                    ),
+                    ver_galley,
+                    theme.text_muted,
+                );
+
+                // Hairline bottom border
+                brand_ui.painter().line_segment(
+                    [
+                        Pos2::new(brand_rect.left() - 10.0, brand_rect.bottom()),
+                        Pos2::new(brand_rect.right() + 10.0, brand_rect.bottom()),
+                    ],
+                    Stroke::new(1.0_f32, theme.border),
+                );
+            }
+
+            // 2. Pinned Footer (144px)
+            let footer_h = 144.0_f32;
+            let footer_rect = Rect::from_min_size(
+                Pos2::new(inner_rect.left(), inner_rect.bottom() - footer_h),
+                Vec2::new(full_w, footer_h),
+            );
+            let mut footer_ui = ui.new_child(egui::UiBuilder::new().max_rect(footer_rect));
+            {
+                footer_ui.painter().line_segment(
+                    [
+                        Pos2::new(footer_rect.left() - 10.0, footer_rect.top()),
+                        Pos2::new(footer_rect.right() + 10.0, footer_rect.top()),
+                    ],
+                    Stroke::new(1.0_f32, theme.border),
+                );
+
+                footer_ui.add_space(8.0);
+
+                // 3 Ghost Buttons (32px high, radius 6px)
+                // Action 1: Sync App Directory Files
+                let (sync_rect, sync_resp) =
+                    footer_ui.allocate_exact_size(Vec2::new(full_w, 32.0), Sense::click());
+                let sync_resp = sync_resp.on_hover_cursor(egui::CursorIcon::PointingHand);
+                let sync_bg = if sync_resp.hovered() {
+                    theme.surface_2
+                } else {
+                    Color32::TRANSPARENT
+                };
+                let sync_fg = if sync_resp.hovered() {
+                    theme.text
+                } else {
+                    theme.text_muted
+                };
+                footer_ui
+                    .painter()
+                    .rect_filled(sync_rect, CornerRadius::same(R_MD as u8), sync_bg);
+                draw_icon_refresh(
+                    footer_ui.painter(),
+                    Pos2::new(sync_rect.left() + 14.0, sync_rect.center().y),
+                    sync_fg,
+                );
+                footer_ui.painter().text(
+                    Pos2::new(sync_rect.left() + 30.0, sync_rect.center().y),
+                    Align2::LEFT_CENTER,
+                    "Sync App Files",
+                    FontId::proportional(FS_BASE),
+                    sync_fg,
+                );
+                if sync_resp.clicked() {
+                    self.sidebar_refreshing_until =
+                        Some(Instant::now() + Duration::from_millis(400));
+                    self.storage.reset_sync_cache();
+                    if let Some(msg) = self.storage.sync_from_app_directory() {
+                        self.refresh_selected_project_metadata(true);
+                        self.status_banner = Some((msg, true));
+                    } else {
+                        self.status_banner = Some((
+                            format!(
+                                "Synced app directory ({})",
+                                self.storage.app_data_dir().display()
+                            ),
+                            true,
+                        ));
+                    }
+                }
+
+                footer_ui.add_space(2.0);
+
+                // Action 2: Open App Folder
+                let (dir_rect, dir_resp) =
+                    footer_ui.allocate_exact_size(Vec2::new(full_w, 32.0), Sense::click());
+                let dir_resp = dir_resp.on_hover_cursor(egui::CursorIcon::PointingHand);
+                let dir_bg = if dir_resp.hovered() {
+                    theme.surface_2
+                } else {
+                    Color32::TRANSPARENT
+                };
+                let dir_fg = if dir_resp.hovered() {
+                    theme.text
+                } else {
+                    theme.text_muted
+                };
+                footer_ui
+                    .painter()
+                    .rect_filled(dir_rect, CornerRadius::same(R_MD as u8), dir_bg);
+                draw_icon_folder(
+                    footer_ui.painter(),
+                    Pos2::new(dir_rect.left() + 14.0, dir_rect.center().y),
+                    dir_fg,
+                );
+                footer_ui.painter().text(
+                    Pos2::new(dir_rect.left() + 30.0, dir_rect.center().y),
+                    Align2::LEFT_CENTER,
+                    "Open App Folder",
+                    FontId::proportional(FS_BASE),
+                    dir_fg,
+                );
+                if dir_resp
+                    .on_hover_text(
+                        "Open the app folder where you can paste shiply_state.json or deploy-*.ps1 files",
+                    )
+                    .clicked()
+                {
+                    let dir = self.storage.app_data_dir();
+                    let _ = fs::create_dir_all(&dir);
+                    open_directory_in_os(&dir);
+                }
+
+                footer_ui.add_space(2.0);
+
+                // Action 3: Check for Updates
+                let (upd_rect, upd_resp) =
+                    footer_ui.allocate_exact_size(Vec2::new(full_w, 32.0), Sense::click());
+                let upd_resp = upd_resp.on_hover_cursor(egui::CursorIcon::PointingHand);
+                let (upd_label, upd_fg) = if let Some(rel) = &self.available_update {
+                    (
+                        format!("Update: {}!", rel.tag_name),
+                        theme.warning,
+                    )
+                } else if self.update_checking {
+                    ("Checking Releases...".to_string(), theme.primary)
+                } else if upd_resp.hovered() {
+                    ("Check for Updates".to_string(), theme.text)
+                } else {
+                    ("Check for Updates".to_string(), theme.text_muted)
+                };
+                let upd_bg = if upd_resp.hovered() {
+                    theme.surface_2
+                } else {
+                    Color32::TRANSPARENT
+                };
+                footer_ui
+                    .painter()
+                    .rect_filled(upd_rect, CornerRadius::same(R_MD as u8), upd_bg);
+                draw_icon_refresh(
+                    footer_ui.painter(),
+                    Pos2::new(upd_rect.left() + 14.0, upd_rect.center().y),
+                    upd_fg,
+                );
+                footer_ui.painter().text(
+                    Pos2::new(upd_rect.left() + 30.0, upd_rect.center().y),
+                    Align2::LEFT_CENTER,
+                    upd_label,
+                    FontId::proportional(FS_BASE),
+                    upd_fg,
+                );
+                if upd_resp
+                    .on_hover_text(format!(
+                        "Check GitHub Releases ({GITHUB_REPO}) for updates"
+                    ))
+                    .clicked()
+                {
+                    if self.available_update.is_some() {
+                        self.show_update_modal = true;
+                    } else if !self.update_checking {
+                        spawn_update_check(self.updater_tx.clone(), true);
+                    }
+                }
+
+                footer_ui.add_space(6.0);
+
+                // Status Row: 6px green circle + "Up to date" / "Installed v..." + action link
+                let (stat_rect, _) =
+                    footer_ui.allocate_exact_size(Vec2::new(full_w, 22.0), Sense::hover());
+                let install_state = check_install_state(&default_install_dir(), APP_VERSION);
+                let (dot_color, status_text, action_text) = match &install_state {
+                    InstallState::NotInstalled => {
+                        (theme.primary, "Not installed".to_string(), "Install (.exe)")
+                    }
+                    InstallState::InstalledCurrent { version, .. } => {
+                        (theme.success, format!("Installed v{version}"), "Reinstall")
+                    }
+                    InstallState::UpdateReady { running_version, .. } => (
+                        theme.warning,
+                        format!("Update to v{running_version}"),
+                        "Apply",
+                    ),
+                };
+
+                footer_ui.painter().circle_filled(
+                    Pos2::new(stat_rect.left() + 10.0, stat_rect.center().y),
+                    3.5,
+                    dot_color,
+                );
+
+                let st_galley = footer_ui.painter().layout_no_wrap(
+                    status_text,
+                    FontId::monospace(FS_MICRO),
+                    theme.text_muted,
+                );
+                footer_ui.painter().galley(
+                    Pos2::new(
+                        stat_rect.left() + 20.0,
+                        stat_rect.center().y - st_galley.size().y / 2.0,
+                    ),
+                    st_galley.clone(),
+                    theme.text_muted,
+                );
+
+                let link_x = stat_rect.left() + 20.0 + st_galley.size().x + 8.0;
+                let link_galley = footer_ui.painter().layout_no_wrap(
+                    action_text.to_string(),
+                    FontId::proportional(FS_MICRO),
+                    theme.text_subtle,
+                );
+                let link_rect = Rect::from_min_size(
+                    Pos2::new(link_x, stat_rect.center().y - link_galley.size().y / 2.0),
+                    link_galley.size(),
+                );
+                let link_resp = footer_ui
+                    .interact(
+                        link_rect,
+                        egui::Id::new("sidebar_reinstall_link"),
+                        Sense::click(),
+                    )
+                    .on_hover_cursor(egui::CursorIcon::PointingHand);
+                let link_color = if link_resp.hovered() {
+                    theme.primary
+                } else {
+                    theme.text_subtle
+                };
+                footer_ui
+                    .painter()
+                    .galley(link_rect.min, link_galley, link_color);
+
+                if link_resp.clicked() {
+                    match install_or_update_self() {
+                        Ok(msg) => self.status_banner = Some((msg, true)),
+                        Err(err) => self.status_banner = Some((err, false)),
+                    }
+                }
+            }
+
+            // 3. Middle Scrollable Content (Nav items + Projects header + Search + Projects list)
+            let middle_rect = Rect::from_min_max(
+                Pos2::new(inner_rect.left(), brand_rect.bottom() + 10.0),
+                Pos2::new(inner_rect.right(), footer_rect.top() - 6.0),
+            );
+            let mut middle_ui = ui.new_child(egui::UiBuilder::new().max_rect(middle_rect));
+            middle_ui.spacing_mut().scroll.bar_width = 4.0;
+            middle_ui.spacing_mut().scroll.bar_inner_margin = 1.0;
+
+            ScrollArea::vertical()
+                .id_salt("sidebar_scrollable_middle")
+                .auto_shrink([false, false])
+                .show(&mut middle_ui, |ui| {
+                    let full_w = ui.available_width();
+
+                    // Nav Item 1: All Deployments (36px high, radius 6px, icon 16px, label 13px/500)
+                    let is_overview = matches!(self.selection, SidebarSelection::AllDeployments);
+                    let (nav_rect, nav_resp) =
+                        ui.allocate_exact_size(Vec2::new(full_w, 36.0), Sense::click());
+                    let nav_resp = nav_resp.on_hover_cursor(egui::CursorIcon::PointingHand);
+                    let nav_bg = if is_overview {
+                        theme.primary_soft
+                    } else if nav_resp.hovered() {
+                        theme.surface_2
+                    } else {
+                        Color32::TRANSPARENT
+                    };
+                    let nav_fg = if is_overview {
+                        theme.primary
+                    } else if nav_resp.hovered() {
+                        theme.text
+                    } else {
+                        theme.text_muted
+                    };
+                    ui.painter()
+                        .rect_filled(nav_rect, CornerRadius::same(R_MD as u8), nav_bg);
+                    draw_icon_layers(
+                        ui.painter(),
+                        Pos2::new(nav_rect.left() + 16.0, nav_rect.center().y),
+                        nav_fg,
+                    );
+                    ui.painter().text(
+                        Pos2::new(nav_rect.left() + 34.0, nav_rect.center().y),
+                        Align2::LEFT_CENTER,
+                        "All Deployments",
+                        FontId::proportional(FS_BASE),
+                        nav_fg,
+                    );
+                    if nav_resp.clicked() {
+                        self.selection = SidebarSelection::AllDeployments;
+                    }
+
+                    // Nav Item 2: Bulk Deploy (36px high)
+                    if !self.storage.projects.is_empty() {
+                        ui.add_space(3.0);
+                        let is_bulk_active = self.show_bulk_deploy_modal;
+                        let (bulk_rect, bulk_resp) =
+                            ui.allocate_exact_size(Vec2::new(full_w, 36.0), Sense::click());
+                        let bulk_resp = bulk_resp.on_hover_cursor(egui::CursorIcon::PointingHand);
+                        let bulk_bg = if is_bulk_active {
+                            theme.primary_soft
+                        } else if bulk_resp.hovered() {
+                            theme.surface_2
+                        } else {
+                            Color32::TRANSPARENT
+                        };
+                        let bulk_fg = if is_bulk_active {
+                            theme.primary
+                        } else if bulk_resp.hovered() {
+                            theme.text
+                        } else {
+                            theme.text_muted
+                        };
+                        ui.painter()
+                            .rect_filled(bulk_rect, CornerRadius::same(R_MD as u8), bulk_bg);
+                        draw_icon_send(
+                            ui.painter(),
+                            Pos2::new(bulk_rect.left() + 16.0, bulk_rect.center().y),
+                            bulk_fg,
+                        );
+                        ui.painter().text(
+                            Pos2::new(bulk_rect.left() + 34.0, bulk_rect.center().y),
+                            Align2::LEFT_CENTER,
+                            "Bulk Deploy...",
+                            FontId::proportional(FS_BASE),
+                            bulk_fg,
+                        );
+                        if bulk_resp
+                            .on_hover_text("Select multiple projects to deploy sequentially")
+                            .clicked()
+                        {
+                            self.open_bulk_deploy_modal();
+                        }
+                    }
+
+                    ui.add_space(14.0);
+
+                    // Projects Header Row (28px)
+                    let (hdr_rect, _) =
+                        ui.allocate_exact_size(Vec2::new(full_w, 28.0), Sense::hover());
+                    ui.painter().text(
+                        Pos2::new(hdr_rect.left() + 2.0, hdr_rect.center().y),
+                        Align2::LEFT_CENTER,
+                        "PROJECTS",
+                        FontId::proportional(FS_SMALL),
+                        theme.text_subtle,
+                    );
+
+                    let add_w = 46.0_f32;
+                    let sort_w = 78.0_f32;
+
+                    // "+ ADD" Button
+                    let add_btn_rect = Rect::from_min_size(
+                        Pos2::new(hdr_rect.right() - add_w, hdr_rect.center().y - 12.0),
+                        Vec2::new(add_w, 24.0),
+                    );
+                    let add_btn_resp = ui
+                        .interact(
+                            add_btn_rect,
+                            egui::Id::new("sidebar_add_proj_btn"),
+                            Sense::click(),
+                        )
+                        .on_hover_cursor(egui::CursorIcon::PointingHand);
+                    let add_bg = if add_btn_resp.hovered() {
+                        theme.surface_2
+                    } else {
+                        theme.surface
+                    };
+                    ui.painter()
+                        .rect_filled(add_btn_rect, CornerRadius::same(R_SM as u8), add_bg);
+                    ui.painter().rect_stroke(
+                        add_btn_rect,
+                        CornerRadius::same(R_SM as u8),
+                        Stroke::new(1.0_f32, theme.border),
+                        StrokeKind::Inside,
+                    );
+                    ui.painter().text(
+                        add_btn_rect.center(),
+                        Align2::CENTER_CENTER,
+                        "+ ADD",
+                        FontId::proportional(FS_MICRO),
+                        theme.text,
+                    );
+                    if add_btn_resp.clicked() {
+                        self.new_project_group.clear();
+                        self.show_new_project_modal = true;
+                    }
+
+                    // Sort Control
+                    let sort_area_rect = Rect::from_min_size(
+                        Pos2::new(
+                            hdr_rect.right() - add_w - 6.0 - sort_w,
+                            hdr_rect.center().y - 12.0,
+                        ),
+                        Vec2::new(sort_w, 24.0),
+                    );
+                    *sort_trigger_rect_out = Some(sort_area_rect);
+
+                    let sort_btn_resp = ui
+                        .interact(
+                            sort_area_rect,
+                            egui::Id::new("sidebar_project_sort_trigger"),
+                            Sense::click(),
+                        )
+                        .on_hover_cursor(egui::CursorIcon::PointingHand);
+                    if sort_btn_resp.clicked() {
+                        self.sidebar_sort_dropdown_open = !self.sidebar_sort_dropdown_open;
+                    }
+
+                    let is_sort_open = self.sidebar_sort_dropdown_open;
+                    let sort_bg = if is_sort_open || sort_btn_resp.hovered() {
+                        theme.surface_2
+                    } else {
+                        theme.surface
+                    };
+                    let sort_stroke = if is_sort_open {
+                        Stroke::new(1.5_f32, theme.primary)
+                    } else {
+                        Stroke::new(1.0_f32, theme.border)
+                    };
+                    ui.painter()
+                        .rect_filled(sort_area_rect, CornerRadius::same(R_SM as u8), sort_bg);
+                    ui.painter().rect_stroke(
+                        sort_area_rect,
+                        CornerRadius::same(R_SM as u8),
+                        sort_stroke,
+                        StrokeKind::Inside,
+                    );
+
+                    let sort_label = match self.project_sort_mode {
+                        ProjectSortMode::Custom => "Custom",
+                        ProjectSortMode::NameAsc => "A-Z",
+                        ProjectSortMode::NameDesc => "Z-A",
+                        ProjectSortMode::RecentDeploy => "Recent",
+                    };
+                    ui.painter().text(
+                        Pos2::new(sort_area_rect.left() + 8.0, sort_area_rect.center().y),
+                        Align2::LEFT_CENTER,
+                        sort_label,
+                        FontId::proportional(FS_MICRO),
+                        theme.text,
+                    );
+                    draw_outline_icon(
+                        ui.painter(),
+                        Pos2::new(sort_area_rect.right() - 10.0, sort_area_rect.center().y),
+                        if is_sort_open {
+                            OutlineIcon::ChevronUp
+                        } else {
+                            OutlineIcon::ChevronDown
+                        },
+                        theme.text_muted,
+                    );
+
+                    ui.add_space(8.0);
+
+                    // Search input
+                    styled_text_edit(
+                        ui,
+                        "sidebar_project_search_box",
+                        &mut self.project_search_query,
+                        full_w,
+                        Some("Search projects..."),
+                    );
+
+                    ui.add_space(8.0);
+
+                    // Skeleton loading on initial load or refresh:
+                    let is_refreshing = self
+                        .sidebar_refreshing_until
+                        .as_ref()
+                        .is_some_and(|t| Instant::now() < *t);
+                    if is_refreshing && self.storage.projects.is_empty() {
+                        ui.ctx().request_repaint();
+                        let time = ui.input(|i| i.time);
+                        for _ in 0..3 {
+                            let (skel_rect, _) =
+                                ui.allocate_exact_size(Vec2::new(full_w, 56.0), Sense::hover());
+                            ui.painter().rect_filled(
+                                skel_rect,
+                                CornerRadius::same(R_MD as u8),
+                                theme.surface_2,
+                            );
+                            ui.painter().rect_stroke(
+                                skel_rect,
+                                CornerRadius::same(R_MD as u8),
+                                Stroke::new(1.0_f32, theme.border),
+                                StrokeKind::Inside,
+                            );
+
+                            let name_w = (skel_rect.width() - 34.0) * 0.6;
+                            let name_rect = Rect::from_min_size(
+                                Pos2::new(skel_rect.left() + 20.0, skel_rect.top() + 10.0),
+                                Vec2::new(name_w, 14.0),
+                            );
+                            paint_shimmer_rect(ui.painter(), name_rect, 4.0, time);
+
+                            let pill1 = Rect::from_min_size(
+                                Pos2::new(skel_rect.left() + 20.0, skel_rect.top() + 30.0),
+                                Vec2::new(44.0, 18.0),
+                            );
+                            paint_shimmer_rect(ui.painter(), pill1, R_SM, time);
+                            let pill2 = Rect::from_min_size(
+                                Pos2::new(skel_rect.left() + 20.0 + 50.0, skel_rect.top() + 30.0),
+                                Vec2::new(52.0, 18.0),
+                            );
+                            paint_shimmer_rect(ui.painter(), pill2, R_SM, time);
+
+                            ui.add_space(6.0);
+                        }
+                    } else if self.storage.projects.is_empty() {
+                        let (empty_rect, _) =
+                            ui.allocate_exact_size(Vec2::new(full_w, 56.0), Sense::hover());
+                        ui.painter().rect_stroke(
+                            empty_rect,
+                            CornerRadius::same(R_MD as u8),
+                            Stroke::new(1.0_f32, theme.border),
+                            StrokeKind::Inside,
+                        );
+                        ui.painter().text(
+                            empty_rect.center(),
+                            Align2::CENTER_CENTER,
+                            "No projects yet.\nClick '+ ADD' or import .ps1",
+                            FontId::proportional(FS_SMALL),
+                            theme.text_muted,
+                        );
+                    } else {
+                        let is_pointer_released = ui.input(|i| i.pointer.any_released());
+                        let pointer_pos = ui.input(|i| i.pointer.hover_pos());
+
+                        if self.dragged_project_idx.is_some() {
+                            ui.ctx().request_repaint();
+                        }
+
+                        let query = self.project_search_query.trim().to_lowercase();
+                        let has_groups = self.storage.projects.iter().any(|p| {
+                            p.group.as_ref().is_some_and(|g| !g.trim().is_empty())
+                        });
+
+                        let mut group_sections: Vec<(Option<String>, Vec<usize>)> = Vec::new();
+                        if has_groups {
+                            for (idx, p) in self.storage.projects.iter().enumerate() {
+                                if !query.is_empty() && !p.name.to_lowercase().contains(&query) {
+                                    continue;
+                                }
+                                let grp = p
+                                    .group
+                                    .as_ref()
+                                    .map(|g| g.trim().to_string())
+                                    .filter(|g| !g.is_empty());
+                                if let Some(pos) =
+                                    group_sections.iter().position(|(g, _)| g.as_ref() == grp.as_ref())
+                                {
+                                    group_sections[pos].1.push(idx);
+                                } else {
+                                    group_sections.push((grp, vec![idx]));
+                                }
+                            }
+                            group_sections.sort_by(|(g1, _), (g2, _)| match (g1, g2) {
+                                (Some(a), Some(b)) => a.to_lowercase().cmp(&b.to_lowercase()),
+                                (Some(_), None) => std::cmp::Ordering::Less,
+                                (None, Some(_)) => std::cmp::Ordering::Greater,
+                                (None, None) => std::cmp::Ordering::Equal,
+                            });
+                        } else {
+                            let indices: Vec<usize> = self
+                                .storage
+                                .projects
+                                .iter()
+                                .enumerate()
+                                .filter(|(_, p)| query.is_empty() || p.name.to_lowercase().contains(&query))
+                                .map(|(idx, _)| idx)
+                                .collect();
+                            group_sections.push((None, indices));
+                        }
+
+                        let mut clicked_project_id = None;
+                        let mut drag_reorder = None;
+
+                        for (grp_opt, proj_indices) in group_sections {
+                            if proj_indices.is_empty() {
+                                continue;
+                            }
+                            if has_groups {
+                                let group_title = grp_opt.as_deref().unwrap_or("General");
+                                let group_key =
+                                    grp_opt.clone().unwrap_or_else(|| "_general".to_string());
+                                let is_collapsed =
+                                    self.collapsed_project_groups.contains(&group_key);
+
+                                let (grp_rect, grp_resp) =
+                                    ui.allocate_exact_size(Vec2::new(full_w, 26.0), Sense::click());
+                                let grp_resp = grp_resp.on_hover_cursor(egui::CursorIcon::PointingHand);
+                                if grp_resp.hovered() {
+                                    ui.painter().rect_filled(
+                                        grp_rect,
+                                        CornerRadius::same(R_SM as u8),
+                                        theme.surface_2,
+                                    );
+                                }
+
+                                let chev = if is_collapsed {
+                                    OutlineIcon::ChevronRight
+                                } else {
+                                    OutlineIcon::ChevronDown
+                                };
+                                draw_outline_icon(
+                                    ui.painter(),
+                                    Pos2::new(grp_rect.left() + 8.0, grp_rect.center().y),
+                                    chev,
+                                    theme.text_subtle,
+                                );
+                                ui.painter().text(
+                                    Pos2::new(grp_rect.left() + 20.0, grp_rect.center().y),
+                                    Align2::LEFT_CENTER,
+                                    group_title.to_uppercase(),
+                                    FontId::proportional(FS_MICRO),
+                                    theme.text_subtle,
+                                );
+
+                                paint_pill_right_aligned(
+                                    ui.painter(),
+                                    Pos2::new(grp_rect.right() - 4.0, grp_rect.center().y),
+                                    &format!("{}", proj_indices.len()),
+                                    theme.surface_2,
+                                    theme.text_muted,
+                                );
+
+                                if grp_resp.clicked() {
+                                    if is_collapsed {
+                                        self.collapsed_project_groups.remove(&group_key);
+                                    } else {
+                                        self.collapsed_project_groups.insert(group_key.clone());
+                                    }
+                                }
+
+                                ui.add_space(3.0);
+
+                                if is_collapsed {
+                                    continue;
+                                }
+                            }
+
+                            for proj_idx in proj_indices {
+                                let project = &self.storage.projects[proj_idx];
+                                let is_selected = matches!(&self.selection, SidebarSelection::Project(id) if id == &project.id);
+                                let is_being_dragged = self.dragged_project_idx == Some(proj_idx);
+                                let is_switching = self.project_switch_loading_id.as_deref()
+                                    == Some(&project.id);
+
+                                // Project Card: 56px high, radius 8px
+                                let (p_rect, p_resp) =
+                                    ui.allocate_exact_size(Vec2::new(full_w, 56.0), Sense::click());
+                                let p_resp =
+                                    p_resp.on_hover_cursor(egui::CursorIcon::PointingHand);
+
+                                let fill = if is_selected || is_switching {
+                                    theme.surface_tint_top
+                                } else if p_resp.hovered() {
+                                    theme.surface_2
+                                } else {
+                                    Color32::TRANSPARENT
+                                };
+                                ui.painter()
+                                    .rect_filled(p_rect, CornerRadius::same(8), fill);
+
+                                // Drag handle on left
+                                let grip_rect = Rect::from_min_size(
+                                    Pos2::new(p_rect.left() + 2.0, p_rect.top() + 6.0),
+                                    Vec2::new(14.0, 44.0),
+                                );
+                                let grip_resp = ui
+                                    .interact(
+                                        grip_rect,
+                                        egui::Id::new(("sidebar_proj_grip", &project.id)),
+                                        Sense::drag(),
+                                    )
+                                    .on_hover_cursor(egui::CursorIcon::Grab);
+
+                                if grip_resp.drag_started() || grip_resp.dragged() {
+                                    self.dragged_project_idx = Some(proj_idx);
+                                    ui.ctx().set_cursor_icon(egui::CursorIcon::Grabbing);
+                                }
+
+                                let grip_color = if is_being_dragged || grip_resp.hovered() {
+                                    theme.primary
+                                } else if p_resp.hovered() {
+                                    theme.text_subtle
+                                } else {
+                                    Color32::TRANSPARENT
+                                };
+                                draw_outline_icon(
+                                    ui.painter(),
+                                    grip_rect.center(),
+                                    OutlineIcon::GripVertical,
+                                    grip_color,
+                                );
+
+                                // Reordering drop preview
+                                if let Some(from_idx) = self.dragged_project_idx {
+                                    if from_idx != proj_idx {
+                                        if let Some(pos) = pointer_pos {
+                                            if p_rect.contains(pos) {
+                                                ui.painter().rect_stroke(
+                                                    p_rect,
+                                                    CornerRadius::same(8),
+                                                    Stroke::new(2.0_f32, theme.primary),
+                                                    StrokeKind::Inside,
+                                                );
+                                                if is_pointer_released {
+                                                    drag_reorder = Some((from_idx, proj_idx));
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+
+                                // Active project: 1px --primary-soft-border, 2px --primary left bar
+                                if is_selected || is_switching {
+                                    ui.painter().rect_stroke(
+                                        p_rect,
+                                        CornerRadius::same(8),
+                                        Stroke::new(1.0_f32, theme.primary_soft_border),
+                                        StrokeKind::Inside,
+                                    );
+                                    let bar_rect = Rect::from_min_max(
+                                        Pos2::new(p_rect.left(), p_rect.top() + 8.0),
+                                        Pos2::new(p_rect.left() + 2.0, p_rect.bottom() - 8.0),
+                                    );
+                                    ui.painter().rect_filled(
+                                        bar_rect,
+                                        CornerRadius { nw: 0, ne: 2, se: 2, sw: 0 },
+                                        theme.primary,
+                                    );
+                                }
+
+                                let content_x = p_rect.left() + 20.0;
+                                let is_deploying = self.is_project_deploying(&project.id);
+
+                                // Row 1: Project Name (13px, weight 500, --text)
+                                let name_color = theme.text;
+                                let avail_name_w = (p_rect.right() - 26.0 - content_x).max(20.0);
+                                let mut job = egui::text::LayoutJob::simple_singleline(
+                                    project.name.clone(),
+                                    FontId::proportional(FS_BASE),
+                                    name_color,
+                                );
+                                job.wrap.max_width = avail_name_w;
+                                job.wrap.max_rows = 1;
+                                job.wrap.break_anywhere = false;
+                                let name_galley = ui.painter().layout_job(job);
+                                ui.painter().galley(
+                                    Pos2::new(content_x, p_rect.top() + 8.0),
+                                    name_galley,
+                                    name_color,
+                                );
+
+                                // Spinner slot on the right
+                                if is_deploying || is_switching {
+                                    ui.ctx().request_repaint();
+                                    let spinner_center =
+                                        Pos2::new(p_rect.right() - 16.0, p_rect.center().y);
+                                    let spinner_color = if is_deploying {
+                                        theme.primary
+                                    } else {
+                                        theme.text_subtle
+                                    };
+                                    draw_circle_loading_spinner(
+                                        ui.painter(),
+                                        spinner_center,
+                                        6.0,
+                                        spinner_color,
+                                        ui.input(|i| i.time),
+                                    );
+                                }
+
+                                let p_resp = if is_deploying {
+                                    p_resp.on_hover_text(format!(
+                                        "{}\n(A deployment is currently running)",
+                                        project.name
+                                    ))
+                                } else {
+                                    p_resp.on_hover_text(&project.name)
+                                };
+
+                                if p_resp.secondary_clicked() {
+                                    if let Some(pos) = ui.input(|i| i.pointer.latest_pos()) {
+                                        self.sidebar_context_menu = Some(SidebarContextMenuState {
+                                            project_id: project.id.clone(),
+                                            click_pos: pos,
+                                            submenu_open: false,
+                                        });
+                                    }
+                                }
+
+                                // Row 2: Env Badges below (11px mono, radius 4px)
+                                let row2_y = p_rect.top() + 30.0;
+                                if is_switching {
+                                    ui.ctx().request_repaint();
+                                    let time = ui.input(|i| i.time);
+                                    let pill1 = Rect::from_min_size(
+                                        Pos2::new(content_x, row2_y),
+                                        Vec2::new(44.0, 18.0),
+                                    );
+                                    paint_shimmer_rect(ui.painter(), pill1, R_SM, time);
+                                    let pill2 = Rect::from_min_size(
+                                        Pos2::new(content_x + 50.0, row2_y),
+                                        Vec2::new(52.0, 18.0),
+                                    );
+                                    paint_shimmer_rect(ui.painter(), pill2, R_SM, time);
+                                } else if project.environments.is_empty() {
+                                    paint_sidebar_env_badge(
+                                        ui.painter(),
+                                        Pos2::new(content_x, row2_y),
+                                        "NO ENVS",
+                                        theme.surface_2,
+                                        theme.text_subtle,
+                                    );
+                                } else {
+                                    let mut pill_x = content_x;
+                                    for env in project.environments.iter().take(3) {
+                                        let badge = env.badge_label();
+                                        let is_env_running = self.is_env_deploying(&project.id, &env.key)
+                                            || self.storage.deployments.iter().any(|d| {
+                                                d.project_id == project.id
+                                                    && d.environment == env.key
+                                                    && (d.status == DeploymentStatus::Running
+                                                        || self.is_deployment_active(&d.id))
+                                            });
+                                        let key_lower = env.key.to_lowercase();
+                                        let is_prod = key_lower.contains("prod");
+
+                                        let (bg, fg) = if is_prod {
+                                            (theme.purple_soft, theme.purple)
+                                        } else {
+                                            (theme.primary_soft, theme.primary)
+                                        };
+
+                                        let label = if is_env_running {
+                                            format!("{badge} Deploying...")
+                                        } else if let Some(ok_dep) = self
+                                            .storage
+                                            .last_succeeded_deployment(&project.id, &env.key)
+                                        {
+                                            format!("{badge} v{}", ok_dep.version)
+                                        } else {
+                                            format!("{badge} —")
+                                        };
+
+                                        let w = paint_sidebar_env_badge(
+                                            ui.painter(),
+                                            Pos2::new(pill_x, row2_y),
+                                            &label,
+                                            bg,
+                                            fg,
+                                        );
+                                        pill_x += w + 6.0;
+                                    }
+                                }
+
+                                if p_resp.clicked() {
+                                    clicked_project_id = Some(project.id.clone());
+                                }
+
+                                ui.add_space(6.0);
+                            }
+                        }
+
+                        if let Some((from, to)) = drag_reorder {
+                            self.storage.reorder_project(from, to);
+                            self.project_sort_mode = ProjectSortMode::Custom;
+                            self.dragged_project_idx = None;
+                        } else if is_pointer_released {
+                            self.dragged_project_idx = None;
+                        }
+
+                        if let Some(pid) = clicked_project_id {
+                            self.sidebar_context_menu = None;
+                            let was_different = match &self.selection {
+                                SidebarSelection::Project(cur) => cur != &pid,
+                                SidebarSelection::AllDeployments => true,
+                            };
+                            self.selection = SidebarSelection::Project(pid.clone());
+                            if was_different {
+                                self.project_switch_loading_id = Some(pid);
+                                self.project_switch_loading_start = Some(Instant::now());
+                            }
+                            self.refresh_selected_project_metadata(true);
+                        }
+                    }
+                });
+        }
     }
 
     fn render_sidebar_sort_dropdown(&mut self, ctx: &egui::Context, trigger_rect: Rect) {
@@ -3284,16 +4097,17 @@ impl ShiplyApp {
                 }
             });
 
+        let (modal_w, inner_w) = modal_width_and_inner(ctx);
         egui::Window::new("Add Project")
             .order(egui::Order::Foreground)
             .title_bar(false)
             .collapsible(false)
             .resizable(false)
             .anchor(Align2::CENTER_CENTER, Vec2::ZERO)
-            .fixed_size(Vec2::new(560.0, 0.0))
-            .frame(modal_dialog_frame())
+            .fixed_size(Vec2::new(modal_w, 0.0))
+            .frame(modal_dialog_frame_for(ctx))
             .show(ctx, |ui| {
-                ui.set_width(512.0);
+                ui.set_width(inner_w);
 
                 if render_modal_header(
                     ui,
@@ -3323,6 +4137,7 @@ impl ShiplyApp {
                         horizontal_row(ui, 40.0, |ui| {
                             modal_text_input(
                                 ui,
+                                "new_project_ps1_path",
                                 &mut self.new_project_ps1_path,
                                 264.0,
                                 Some(r"e.g. C:\Projects\my-app\deploy-dev.ps1"),
@@ -3389,6 +4204,7 @@ impl ShiplyApp {
                 ui.add_space(SP_8);
                 modal_text_input(
                     ui,
+                    "new_project_name",
                     &mut self.new_project_name,
                     512.0,
                     Some("e.g. my-web-service"),
@@ -3405,6 +4221,7 @@ impl ShiplyApp {
                 horizontal_row(ui, 40.0, |ui| {
                     modal_text_input(
                         ui,
+                        "new_project_path",
                         &mut self.new_project_path,
                         360.0,
                         Some(r"e.g. C:\Projects\my-web-service"),
@@ -3431,6 +4248,7 @@ impl ShiplyApp {
                 ui.add_space(SP_8);
                 modal_text_input(
                     ui,
+                    "new_project_desc",
                     &mut self.new_project_desc,
                     512.0,
                     Some("e.g. Backend API service (Node.js / PM2)"),
@@ -3446,6 +4264,7 @@ impl ShiplyApp {
                 ui.add_space(SP_8);
                 modal_text_input(
                     ui,
+                    "new_project_group",
                     &mut self.new_project_group,
                     512.0,
                     Some("e.g. Backend, Frontend, Microservices..."),
@@ -3604,16 +4423,17 @@ impl ShiplyApp {
                 }
             });
 
+        let (modal_w, inner_w) = modal_width_and_inner(ctx);
         egui::Window::new("Edit Project")
             .order(egui::Order::Foreground)
             .title_bar(false)
             .collapsible(false)
             .resizable(false)
             .anchor(Align2::CENTER_CENTER, Vec2::ZERO)
-            .fixed_size(Vec2::new(560.0, 0.0))
-            .frame(modal_dialog_frame())
+            .fixed_size(Vec2::new(modal_w, 0.0))
+            .frame(modal_dialog_frame_for(ctx))
             .show(ctx, |ui| {
-                ui.set_width(512.0);
+                ui.set_width(inner_w);
 
                 if render_modal_header(
                     ui,
@@ -3643,6 +4463,7 @@ impl ShiplyApp {
                         horizontal_row(ui, 40.0, |ui| {
                             modal_text_input(
                                 ui,
+                                "edit_project_ps1_path",
                                 &mut self.edit_project_ps1_path,
                                 272.0,
                                 Some(r"e.g. C:\Projects\my-app\deploy-prod.ps1"),
@@ -3710,6 +4531,7 @@ impl ShiplyApp {
                 ui.add_space(SP_8);
                 modal_text_input(
                     ui,
+                    "edit_project_name",
                     &mut self.edit_project_name,
                     512.0,
                     Some("e.g. my-web-service"),
@@ -3726,6 +4548,7 @@ impl ShiplyApp {
                 horizontal_row(ui, 40.0, |ui| {
                     modal_text_input(
                         ui,
+                        "edit_project_path",
                         &mut self.edit_project_path,
                         360.0,
                         Some(r"e.g. C:\Projects\my-web-service"),
@@ -3749,6 +4572,7 @@ impl ShiplyApp {
                 ui.add_space(SP_8);
                 modal_text_input(
                     ui,
+                    "edit_project_desc",
                     &mut self.edit_project_desc,
                     512.0,
                     Some("e.g. Backend API service (Node.js / PM2)"),
@@ -3764,6 +4588,7 @@ impl ShiplyApp {
                 ui.add_space(SP_8);
                 modal_text_input(
                     ui,
+                    "edit_project_group",
                     &mut self.edit_project_group,
                     512.0,
                     Some("e.g. Backend, Frontend, Microservices..."),
@@ -3890,16 +4715,17 @@ impl ShiplyApp {
                 }
             });
 
+        let (modal_w, inner_w) = modal_width_and_inner(ctx);
         egui::Window::new("Add Environment Level")
             .order(egui::Order::Foreground)
             .title_bar(false)
             .collapsible(false)
             .resizable(false)
             .anchor(Align2::CENTER_CENTER, Vec2::ZERO)
-            .fixed_size(Vec2::new(560.0, 0.0))
-            .frame(modal_dialog_frame())
+            .fixed_size(Vec2::new(modal_w, 0.0))
+            .frame(modal_dialog_frame_for(ctx))
             .show(ctx, |ui| {
-                ui.set_width(512.0);
+                ui.set_width(inner_w);
                 if render_modal_header(
                     ui,
                     "close_new_env_modal",
@@ -3927,6 +4753,7 @@ impl ShiplyApp {
                         horizontal_row(ui, 40.0, |ui| {
                             modal_text_input(
                                 ui,
+                                "new_env_ps1_path",
                                 &mut self.new_env_ps1_path,
                                 272.0,
                                 Some(r"e.g. C:\Projects\my-app\deploy-staging.ps1"),
@@ -3988,6 +4815,7 @@ impl ShiplyApp {
                 ui.add_space(SP_8);
                 modal_text_input(
                     ui,
+                    "new_env_name",
                     &mut self.new_env_name,
                     512.0,
                     Some("e.g. Development, Staging, Production, UAT, QA"),
@@ -4107,6 +4935,8 @@ impl ShiplyApp {
                 }
             });
 
+        let (modal_w, inner_w) = modal_width_and_inner(ctx);
+
         if let Some(release) = self.available_update.clone() {
             egui::Window::new("Software Update Available")
                 .order(egui::Order::Foreground)
@@ -4114,10 +4944,10 @@ impl ShiplyApp {
                 .collapsible(false)
                 .resizable(false)
                 .anchor(Align2::CENTER_CENTER, Vec2::ZERO)
-                .fixed_size(Vec2::new(560.0, 0.0))
-                .frame(modal_dialog_frame())
+                .fixed_size(Vec2::new(modal_w, 0.0))
+                .frame(modal_dialog_frame_for(ctx))
                 .show(ctx, |ui| {
-                    ui.set_width(512.0);
+                    ui.set_width(inner_w);
                     if render_modal_header(
                         ui,
                         "close_github_update_modal",
@@ -4371,10 +5201,10 @@ impl ShiplyApp {
                 .collapsible(false)
                 .resizable(false)
                 .anchor(Align2::CENTER_CENTER, Vec2::ZERO)
-                .fixed_size(Vec2::new(560.0, 0.0))
-                .frame(modal_dialog_frame())
+                .fixed_size(Vec2::new(modal_w, 0.0))
+                .frame(modal_dialog_frame_for(ctx))
                 .show(ctx, |ui| {
-                    ui.set_width(512.0);
+                    ui.set_width(inner_w);
                     if render_modal_header(
                         ui,
                         "close_update_info_modal",
@@ -4478,19 +5308,20 @@ impl ShiplyApp {
                 }
             });
 
+        let (modal_w, inner_w) = modal_width_and_inner(ctx);
         egui::Window::new("Confirm Deletion")
             .order(egui::Order::Foreground)
             .title_bar(false)
             .collapsible(false)
             .resizable(false)
             .anchor(Align2::CENTER_CENTER, Vec2::ZERO)
-            .fixed_size(Vec2::new(560.0, 0.0))
+            .fixed_size(Vec2::new(modal_w, 0.0))
             .frame(
-                modal_dialog_frame()
+                modal_dialog_frame_for(ctx)
                     .stroke(Stroke::new(1.0_f32, Color32::from_rgb(252, 165, 165)))
             )
             .show(ctx, |ui| {
-                ui.set_width(512.0);
+                ui.set_width(inner_w);
 
                 let (modal_title, modal_subtitle, item_name, warning_text) = match &action {
                     ConfirmDeleteAction::Project { project_name, .. } => (
@@ -5173,6 +6004,7 @@ impl ShiplyApp {
                     );
                     styled_text_edit(
                         ui,
+                        "cred_guide_target_input",
                         &mut self.cred_guide_target_input,
                         170.0,
                         Some("e.g. prod-ssh-server"),
@@ -5186,6 +6018,7 @@ impl ShiplyApp {
                     );
                     styled_text_edit(
                         ui,
+                        "cred_guide_user_input",
                         &mut self.cred_guide_user_input,
                         130.0,
                         Some("e.g. deploy"),
@@ -5299,6 +6132,7 @@ impl ShiplyApp {
                                 let mut preview = cmdkey_cmd.clone();
                                 syntax_highlighted_text_edit(
                                     ui,
+                                    "cred_cmdkey_preview",
                                     &mut preview,
                                     (ui.available_width() - 125.0).max(220.0),
                                     None,
@@ -5344,6 +6178,7 @@ impl ShiplyApp {
                                 let mut preview = linux_cmd.clone();
                                 syntax_highlighted_text_edit(
                                     ui,
+                                    "cred_linux_preview",
                                     &mut preview,
                                     (ui.available_width() - 125.0).max(220.0),
                                     None,
@@ -5389,6 +6224,7 @@ impl ShiplyApp {
                                 let mut preview = mac_cmd.clone();
                                 syntax_highlighted_text_edit(
                                     ui,
+                                    "cred_mac_preview",
                                     &mut preview,
                                     (ui.available_width() - 125.0).max(220.0),
                                     None,
@@ -5440,16 +6276,17 @@ impl ShiplyApp {
                 }
             });
 
+        let (modal_w, inner_w) = modal_width_and_inner(ctx);
         egui::Window::new("Bulk Deployment")
             .order(egui::Order::Foreground)
             .title_bar(false)
             .collapsible(false)
             .resizable(false)
             .anchor(Align2::CENTER_CENTER, Vec2::ZERO)
-            .fixed_size(Vec2::new(560.0, 0.0))
-            .frame(modal_dialog_frame())
+            .fixed_size(Vec2::new(modal_w, 0.0))
+            .frame(modal_dialog_frame_for(ctx))
             .show(ctx, |ui| {
-                ui.set_width(512.0);
+                ui.set_width(inner_w);
 
                 if render_modal_header(
                     ui,
@@ -5632,6 +6469,7 @@ impl ShiplyApp {
                                                 .or_insert_with(|| "1.0.0".to_string());
                                             modal_text_input(
                                                 ui,
+                                                ("bulk_ver_entry", &pid),
                                                 ver_entry,
                                                 90.0,
                                                 Some("1.0.0"),
@@ -5733,6 +6571,7 @@ impl ShiplyApp {
         let proj_path = self.storage.projects[proj_idx].local_path.clone();
         let path_exists = PathBuf::from(&proj_path).exists();
         let avail_w = ui.available_width();
+        let theme = self.theme();
 
         // 1. Top Project Header Bar (Fixed 36px height — all right-side controls vertically centered at 32px height)
         let mut delete_project_clicked = false;
@@ -5826,6 +6665,9 @@ impl ShiplyApp {
             render_pill(ui, r_txt, r_bg, r_fg);
 
             let right_w = ui.available_width();
+            let screen_w = ui.ctx().screen_rect().width();
+            let is_narrow_header = screen_w < 720.0 || right_w < 340.0;
+
             ui.allocate_ui_with_layout(
                 Vec2::new(right_w, 36.0),
                 Layout::right_to_left(Align::Center),
@@ -5834,72 +6676,156 @@ impl ShiplyApp {
                     ui.set_max_height(36.0);
                     ui.spacing_mut().item_spacing = Vec2::new(8.0, 0.0);
 
-                    if outline_icon_button(
-                        ui,
-                        ("hdr_delete_proj", project_id),
-                        OutlineIcon::Trash,
-                        Some("Delete"),
-                        FAIL_PILL_TEXT,
-                        FAIL_PILL_BG,
-                        Color32::from_rgb(254, 202, 202),
-                        Color32::from_rgb(252, 165, 165),
-                        true,
-                    )
-                    .on_hover_text("Delete this project")
-                    .clicked()
-                    {
-                        delete_project_clicked = true;
-                    }
+                    if is_narrow_header {
+                        // Below 720px: move Edit/Duplicate/Refresh/Delete into a more-horizontal menu
+                        let more_resp = outline_icon_button(
+                            ui,
+                            ("hdr_more_menu_btn", project_id),
+                            OutlineIcon::MoreHorizontal,
+                            None,
+                            theme.text_muted,
+                            theme.surface,
+                            theme.surface_2,
+                            theme.border,
+                            true,
+                        )
+                        .on_hover_text("Project actions");
 
-                    if outline_icon_button(
-                        ui,
-                        ("hdr_refresh_proj", project_id),
-                        OutlineIcon::Refresh,
-                        Some("Refresh"),
-                        TEXT_SECONDARY,
-                        CARD_BG,
-                        SUBTLE_BG,
-                        CARD_BORDER,
-                        true,
-                    )
-                    .on_hover_text("Refresh Git branches, commits, and package.json version")
-                    .clicked()
-                    {
-                        self.refresh_selected_project_metadata(true);
-                    }
+                        more_resp.context_menu(|ui| {
+                            ui.set_min_width(160.0);
+                            ui.spacing_mut().item_spacing = Vec2::new(0.0, 2.0);
+                            ui.spacing_mut().button_padding = Vec2::new(10.0, 6.0);
 
-                    if outline_icon_button(
-                        ui,
-                        ("hdr_dup_proj", project_id),
-                        OutlineIcon::Copy,
-                        Some("Duplicate"),
-                        TEXT_PRIMARY,
-                        CARD_BG,
-                        SUBTLE_BG,
-                        CARD_BORDER,
-                        true,
-                    )
-                    .on_hover_text("Duplicate this project and all its environments")
-                    .clicked()
-                    {
-                        duplicate_project_clicked = true;
-                    }
+                            if ui
+                                .add(
+                                    egui::Button::new(
+                                        RichText::new("✎  Edit Project")
+                                            .size(POPUP_FONT_SIZE)
+                                            .color(theme.text),
+                                    )
+                                    .fill(theme.surface),
+                                )
+                                .clicked()
+                            {
+                                edit_project_clicked = true;
+                                ui.close_menu();
+                            }
 
-                    if outline_icon_button(
-                        ui,
-                        ("hdr_edit_proj", project_id),
-                        OutlineIcon::Edit,
-                        Some("Edit Project"),
-                        TEXT_PRIMARY,
-                        CARD_BG,
-                        SUBTLE_BG,
-                        CARD_BORDER,
-                        true,
-                    )
-                    .on_hover_text("Edit project name, local directory path, or description")
-                    .clicked()
-                    {
-                        edit_project_clicked = true;
+                            if ui
+                                .add(
+                                    egui::Button::new(
+                                        RichText::new("⧉  Duplicate Project")
+                                            .size(POPUP_FONT_SIZE)
+                                            .color(theme.text),
+                                    )
+                                    .fill(theme.surface),
+                                )
+                                .clicked()
+                            {
+                                duplicate_project_clicked = true;
+                                ui.close_menu();
+                            }
+
+                            if ui
+                                .add(
+                                    egui::Button::new(
+                                        RichText::new("↻  Refresh Metadata")
+                                            .size(POPUP_FONT_SIZE)
+                                            .color(theme.text_muted),
+                                    )
+                                    .fill(theme.surface),
+                                )
+                                .clicked()
+                            {
+                                self.refresh_selected_project_metadata(true);
+                                ui.close_menu();
+                            }
+
+                            ui.separator();
+
+                            if ui
+                                .add(
+                                    egui::Button::new(
+                                        RichText::new("🗑  Delete Project")
+                                            .size(POPUP_FONT_SIZE)
+                                            .color(theme.danger),
+                                    )
+                                    .fill(theme.surface),
+                                )
+                                .clicked()
+                            {
+                                delete_project_clicked = true;
+                                ui.close_menu();
+                            }
+                        });
+                    } else {
+                        if outline_icon_button(
+                            ui,
+                            ("hdr_delete_proj", project_id),
+                            OutlineIcon::Trash,
+                            Some("Delete"),
+                            theme.danger,
+                            theme.danger_soft,
+                            theme.danger_soft,
+                            theme.danger,
+                            true,
+                        )
+                        .on_hover_text("Delete this project")
+                        .clicked()
+                        {
+                            delete_project_clicked = true;
+                        }
+
+                        if outline_icon_button(
+                            ui,
+                            ("hdr_refresh_proj", project_id),
+                            OutlineIcon::Refresh,
+                            Some("Refresh"),
+                            theme.text_muted,
+                            theme.surface,
+                            theme.surface_2,
+                            theme.border,
+                            true,
+                        )
+                        .on_hover_text("Refresh Git branches, commits, and package.json version")
+                        .clicked()
+                        {
+                            self.refresh_selected_project_metadata(true);
+                        }
+
+                        if outline_icon_button(
+                            ui,
+                            ("hdr_dup_proj", project_id),
+                            OutlineIcon::Copy,
+                            Some("Duplicate"),
+                            theme.text,
+                            theme.surface,
+                            theme.surface_2,
+                            theme.border,
+                            true,
+                        )
+                        .on_hover_text("Duplicate this project and all its environments")
+                        .clicked()
+                        {
+                            duplicate_project_clicked = true;
+                        }
+
+                        if outline_icon_button(
+                            ui,
+                            ("hdr_edit_proj", project_id),
+                            OutlineIcon::Edit,
+                            Some("Edit Project"),
+                            theme.text,
+                            theme.surface,
+                            theme.surface_2,
+                            theme.border,
+                            true,
+                        )
+                        .on_hover_text("Edit project name, local directory path, or description")
+                        .clicked()
+                        {
+                            edit_project_clicked = true;
+                        }
                     }
 
                     // Git Branch Selector Dropdown — exact 32px height to match Edit/Refresh/Delete buttons
@@ -5924,9 +6850,9 @@ impl ShiplyApp {
                                     RichText::new(format!("Branch: {current_b}{commit_suffix}"))
                                         .size(FONT_SM)
                                         .strong()
-                                        .color(TEXT_PRIMARY),
+                                        .color(theme.text),
                                 )
-                                .width(185.0)
+                                .width(if is_narrow_header { 130.0 } else { 185.0 })
                                 .show_ui(ui, |ui| {
                                     for branch in self.cached_git_branches.clone() {
                                         let is_sel = self.selected_git_branch == branch;
@@ -6030,7 +6956,7 @@ impl ShiplyApp {
 
         ui.add_space(14.0);
 
-        // 3. Environment Cards Grid — Exact 96px height + direct Delete (`×`) button on each card (Feature #5)
+        // 3. Environment Cards Grid — Responsive columns (3 >= 1200px, 2 900-1199px, 1 < 900px)
         let env_summaries: Vec<(String, String)> = self.storage.projects[proj_idx]
             .environments
             .iter()
@@ -6040,7 +6966,19 @@ impl ShiplyApp {
         let mut new_selected_env_key = None;
         let mut delete_env_key = None;
         let card_spacing = 14.0;
-        let card_w = ((avail_w - card_spacing * 2.0) / 3.0).max(210.0);
+        let screen_w = ui.ctx().screen_rect().width();
+        let cols = if screen_w >= 1200.0 {
+            3
+        } else if screen_w >= 900.0 {
+            2
+        } else {
+            1
+        };
+        let card_w = if cols == 1 {
+            avail_w
+        } else {
+            ((avail_w - card_spacing * (cols - 1) as f32) / cols as f32).max(220.0)
+        };
 
         ui.horizontal_wrapped(|ui| {
             ui.spacing_mut().item_spacing = Vec2::new(card_spacing, 14.0);
@@ -6070,17 +7008,22 @@ impl ShiplyApp {
                     .on_hover_cursor(egui::CursorIcon::PointingHand);
 
                 let stroke = if is_active {
-                    Stroke::new(2.0_f32, PRIMARY_BLUE)
+                    Stroke::new(2.0_f32, theme.primary)
                 } else if card_resp.hovered() {
-                    Stroke::new(1.5_f32, INPUT_BORDER_HOVER)
+                    Stroke::new(1.5_f32, theme.primary_hover)
                 } else {
-                    Stroke::new(1.0_f32, CARD_BORDER)
+                    Stroke::new(1.0_f32, theme.border)
                 };
 
-                draw_elevated_card(ui.painter(), card_rect, CARD_BG, stroke);
+                draw_elevated_card(ui.painter(), card_rect, theme.surface_tint_top, stroke);
 
                 // Top-left: Environment pastel pill
-                let (pill_bg, pill_fg) = env_pastel_pill_colors(env_key);
+                let is_prod = env_key.to_lowercase().contains("prod");
+                let (pill_bg, pill_fg) = if is_prod {
+                    (theme.purple_soft, theme.purple)
+                } else {
+                    (theme.primary_soft, theme.primary)
+                };
                 paint_pill_left_aligned(
                     ui.painter(),
                     Pos2::new(card_rect.left() + 16.0, card_rect.top() + 24.0),
@@ -6118,7 +7061,7 @@ impl ShiplyApp {
                         Align2::RIGHT_CENTER,
                         "NOT DEPLOYED",
                         FontId::proportional(FONT_XS),
-                        TEXT_MUTED,
+                        theme.text_muted,
                     );
                 }
 
@@ -6127,9 +7070,9 @@ impl ShiplyApp {
                     del_rect,
                     CornerRadius::same(5),
                     if del_resp.hovered() {
-                        FAIL_PILL_BG
+                        theme.danger_soft
                     } else {
-                        SUBTLE_BG
+                        theme.surface_2
                     },
                 );
                 ui.painter().rect_stroke(
@@ -6138,9 +7081,9 @@ impl ShiplyApp {
                     Stroke::new(
                         1.0_f32,
                         if del_resp.hovered() {
-                            Color32::from_rgb(252, 165, 165)
+                            theme.danger
                         } else {
-                            CARD_BORDER
+                            theme.border
                         },
                     ),
                     StrokeKind::Inside,
@@ -6150,9 +7093,9 @@ impl ShiplyApp {
                     del_rect.center(),
                     OutlineIcon::Trash,
                     if del_resp.hovered() {
-                        FAIL_PILL_TEXT
+                        theme.danger
                     } else {
-                        TEXT_MUTED
+                        theme.text_muted
                     },
                 );
 
@@ -6163,14 +7106,14 @@ impl ShiplyApp {
                         Align2::LEFT_CENTER,
                         format!("Active: v{}", ok_dep.version),
                         FontId::proportional(FONT_LG),
-                        TEXT_PRIMARY,
+                        theme.text,
                     );
                     ui.painter().text(
                         Pos2::new(card_rect.left() + 16.0, card_rect.top() + 78.0),
                         Align2::LEFT_CENTER,
                         "CURRENT VERSION",
-                        FontId::proportional(FONT_XS),
-                        TEXT_MUTED,
+                        FontId::monospace(FONT_XS),
+                        theme.text_muted,
                     );
                 } else {
                     ui.painter().text(
@@ -6178,7 +7121,7 @@ impl ShiplyApp {
                         Align2::LEFT_CENTER,
                         "No Active Build",
                         FontId::proportional(FONT_LG),
-                        TEXT_PLACEHOLDER,
+                        theme.text_subtle,
                     );
                 }
 
@@ -6196,14 +7139,14 @@ impl ShiplyApp {
             );
             let add_resp = add_resp.on_hover_cursor(egui::CursorIcon::PointingHand);
             let add_bg = if add_resp.hovered() {
-                CARD_BG
+                theme.surface
             } else {
-                SUBTLE_BG
+                theme.surface_2
             };
             let add_stroke = if add_resp.hovered() {
-                Stroke::new(1.5_f32, PRIMARY_BLUE)
+                Stroke::new(1.5_f32, theme.primary)
             } else {
-                Stroke::new(1.0_f32, INPUT_BORDER)
+                Stroke::new(1.0_f32, theme.border)
             };
             ui.painter()
                 .rect_filled(add_rect, CornerRadius::same(10), add_bg);
@@ -6215,13 +7158,13 @@ impl ShiplyApp {
             );
 
             let plus_center = Pos2::new(add_rect.center().x, add_rect.center().y - 10.0);
-            draw_icon_plus(ui.painter(), plus_center, TEXT_MUTED);
+            draw_icon_plus(ui.painter(), plus_center, theme.text_muted);
             ui.painter().text(
                 Pos2::new(add_rect.center().x, add_rect.center().y + 14.0),
                 Align2::CENTER_CENTER,
                 "ADD / IMPORT ENVIRONMENT",
                 FontId::proportional(FONT_SM),
-                TEXT_SECONDARY,
+                theme.text_muted,
             );
 
             if add_resp.clicked() {
@@ -6306,36 +7249,42 @@ impl ShiplyApp {
             .filter_deployments(Some(project_id), Some(&self.selected_env_key), None)
             .len();
 
-        horizontal_row(ui, 38.0, |ui| {
-            ui.spacing_mut().item_spacing = Vec2::new(10.0, 0.0);
-            for (tab, label) in [
-                (
-                    WorkspaceTab::PipelineSteps,
-                    format!("Pipeline Steps ({enabled_count}/{total_steps})"),
-                ),
-                (
-                    WorkspaceTab::HistoryAndLogs,
-                    format!("Deployments & Logs ({history_count})"),
-                ),
-                (
-                    WorkspaceTab::ServerSettings,
-                    "Environment & SSH Settings".to_string(),
-                ),
-            ] {
-                let is_active = self.active_tab == tab;
-                if render_uniform_tab_button(
-                    ui,
-                    ("workspace_tab_btn", project_id, &label),
-                    &label,
-                    is_active,
-                    36.0,
-                )
-                .clicked()
-                {
-                    self.active_tab = tab;
-                }
-            }
-        });
+        egui::ScrollArea::horizontal()
+            .scroll_bar_visibility(egui::scroll_area::ScrollBarVisibility::AlwaysHidden)
+            .show(ui, |ui| {
+                horizontal_row(ui, TAB_HEIGHT, |ui| {
+                    ui.spacing_mut().item_spacing = Vec2::new(10.0, 0.0);
+                    for (tab, label) in [
+                        (
+                            WorkspaceTab::PipelineSteps,
+                            format!("Pipeline Steps ({enabled_count}/{total_steps})"),
+                        ),
+                        (
+                            WorkspaceTab::HistoryAndLogs,
+                            format!("Deployments & Logs ({history_count})"),
+                        ),
+                        (
+                            WorkspaceTab::ServerSettings,
+                            "Environment & SSH Settings".to_string(),
+                        ),
+                    ] {
+                        let is_active = self.active_tab == tab;
+                        let btn_resp = render_uniform_tab_button(
+                            ui,
+                            ("workspace_tab_btn", project_id, &label),
+                            &label,
+                            is_active,
+                            TAB_HEIGHT,
+                        );
+                        if is_active {
+                            btn_resp.scroll_to_me(Some(Align::Center));
+                        }
+                        if btn_resp.clicked() {
+                            self.active_tab = tab;
+                        }
+                    }
+                });
+            });
 
         ui.add_space(14.0);
 
@@ -6626,40 +7575,53 @@ impl ShiplyApp {
         let mut trigger_deploy = false;
         let mut trigger_rollback = None;
         let avail_w = ui.available_width();
+        let screen_w = ui.ctx().screen_rect().width();
+        let theme = self.theme();
 
-        let (bar_rect, _) = ui.allocate_exact_size(Vec2::new(avail_w, 78.0), Sense::hover());
+        let is_two_rows = screen_w < 900.0 || avail_w < 700.0;
+        let is_mobile_deploy = screen_w < 600.0 || avail_w < 480.0;
+        let bar_h = if is_two_rows { 122.0 } else { 78.0 };
+
+        let (bar_rect, _) = ui.allocate_exact_size(Vec2::new(avail_w, bar_h), Sense::hover());
         draw_elevated_card(
             ui.painter(),
             bar_rect,
-            CARD_BG,
-            Stroke::new(1.0_f32, CARD_BORDER),
+            theme.surface,
+            Stroke::new(1.0_f32, theme.border),
         );
 
         ui.painter().text(
-            Pos2::new(bar_rect.left() + 20.0, bar_rect.top() + 18.0),
+            Pos2::new(bar_rect.left() + 20.0, bar_rect.top() + 16.0),
             Align2::LEFT_CENTER,
             "VERSION CONTROL & RELEASE",
-            FontId::proportional(FONT_XS),
-            TEXT_MUTED,
+            FontId::monospace(FONT_XS),
+            theme.text_muted,
         );
 
-        let controls_rect = Rect::from_min_max(
-            Pos2::new(bar_rect.left() + 20.0, bar_rect.top() + 30.0),
-            Pos2::new(bar_rect.right() - 20.0, bar_rect.bottom() - 12.0),
+        let row1_rect = Rect::from_min_max(
+            Pos2::new(bar_rect.left() + 20.0, bar_rect.top() + 28.0),
+            Pos2::new(
+                if is_two_rows { bar_rect.right() - 20.0 } else { bar_rect.right() - 280.0 },
+                bar_rect.top() + 66.0,
+            ),
         );
 
         let mut child = ui.new_child(
             egui::UiBuilder::new()
-                .max_rect(controls_rect)
+                .id_salt("deploy_bar_controls")
+                .max_rect(row1_rect)
                 .layout(Layout::left_to_right(Align::Center)),
         );
 
         styled_text_edit(
             &mut child,
+            "deploy_version_input",
             &mut self.deploy_version_input,
             92.0,
             Some("1.0.0"),
         );
+        let ver_id = child.make_persistent_id("deploy_version_input");
+        self.is_version_input_focused = child.memory(|m| m.has_focus(ver_id));
         child.add_space(6.0);
 
         for (lbl, bump) in [
@@ -6671,12 +7633,12 @@ impl ShiplyApp {
                 RichText::new(lbl)
                     .size(FONT_SM)
                     .strong()
-                    .color(TEXT_SECONDARY),
+                    .color(theme.text),
             )
-            .fill(SUBTLE_BG)
-            .stroke(Stroke::new(1.0_f32, CARD_BORDER))
-            .corner_radius(6.0)
-            .min_size(Vec2::new(56.0, 32.0));
+            .fill(theme.surface)
+            .stroke(Stroke::new(1.0_f32, theme.border_strong))
+            .corner_radius(R_MD as u8)
+            .min_size(Vec2::new(54.0, BTN_HEIGHT));
             if child.add(b).clicked() {
                 self.deploy_version_input = bump_semver(&self.deploy_version_input, bump);
             }
@@ -6711,20 +7673,20 @@ impl ShiplyApp {
             OutlineIcon::Refresh,
             Some(sync_btn_text),
             if self.sync_version_dropdown_open {
-                PRIMARY_BLUE
+                theme.primary
             } else {
-                TEXT_SECONDARY
+                theme.text
             },
             if self.sync_version_dropdown_open {
-                Color32::from_rgb(239, 246, 255)
+                theme.primary_soft
             } else {
-                SUBTLE_BG
+                theme.surface
             },
-            CARD_BG,
+            theme.surface_2,
             if self.sync_version_dropdown_open {
-                PRIMARY_BLUE
+                theme.primary
             } else {
-                CARD_BORDER
+                theme.border_strong
             },
             true,
         )
@@ -6741,34 +7703,34 @@ impl ShiplyApp {
             }
         }
 
-        child.add_space(12.0);
+        child.add_space(10.0);
         let sep_x = child.cursor().min.x;
         child.painter().line_segment(
             [
-                Pos2::new(sep_x, bar_rect.top() + 18.0),
-                Pos2::new(sep_x, bar_rect.bottom() - 18.0),
+                Pos2::new(sep_x, row1_rect.top() + 4.0),
+                Pos2::new(sep_x, row1_rect.bottom() - 4.0),
             ],
-            Stroke::new(1.0_f32, CARD_BORDER),
+            Stroke::new(1.0_f32, theme.border),
         );
-        child.add_space(14.0);
+        child.add_space(10.0);
 
         child.checkbox(
             &mut self.bump_package_json,
             RichText::new("Bump package.json")
-                .size(FONT_MD)
+                .size(FONT_SM)
                 .strong()
-                .color(TEXT_PRIMARY),
+                .color(theme.text),
         );
-        child.add_space(10.0);
+        child.add_space(8.0);
         child.checkbox(
             &mut self.create_git_tag,
             RichText::new("Git Tag")
-                .size(FONT_MD)
+                .size(FONT_SM)
                 .strong()
-                .color(TEXT_SECONDARY),
+                .color(theme.text_muted),
         );
 
-        // Right-aligned Deploy Button + Rollback Button (Feature #3: Dynamic sizing based on env & version)
+        // Deploy Button + Rollback Button
         let is_busy = self.is_env_deploying(project_id, &self.selected_env_key);
         let btn_text = if is_busy {
             "Deploying...".to_string()
@@ -6783,47 +7745,79 @@ impl ShiplyApp {
 
         let deploy_galley = ui.painter().layout_no_wrap(
             btn_text,
-            FontId::proportional(FONT_MD),
+            FontId::proportional(FS_BASE),
             Color32::WHITE,
         );
         let deploy_icon_w = 14.0;
         let deploy_gap = 8.0;
-        let deploy_pad_x = 18.0;
+        let deploy_pad_x = 16.0;
         let deploy_content_w = deploy_icon_w + deploy_gap + deploy_galley.size().x;
-        let mut btn_w = (deploy_content_w + deploy_pad_x * 2.0).max(180.0);
-        let btn_h = 42.0;
+        let btn_h = BTN_PRIMARY_HEIGHT; // 36px
 
         let rollback_info = rollback_candidate.as_ref().map(|prev_dep| {
             let rb_text = format!("Rollback v{}", prev_dep.version);
             let rb_galley = ui.painter().layout_no_wrap(
                 rb_text,
                 FontId::proportional(FONT_SM),
-                WARN_PILL_TEXT,
+                theme.warning,
             );
             let rb_icon_w = 14.0;
-            let rb_gap = 7.0;
-            let rb_pad_x = 14.0;
+            let rb_gap = 6.0;
+            let rb_pad_x = 12.0;
             let rb_content_w = rb_icon_w + rb_gap + rb_galley.size().x;
-            let rb_w = (rb_content_w + rb_pad_x * 2.0).max(136.0);
+            let rb_w = (rb_content_w + rb_pad_x * 2.0).max(120.0);
             (rb_galley, rb_icon_w, rb_gap, rb_content_w, rb_w)
         });
 
-        let left_controls_right = child.cursor().min.x;
-        let max_right_area_w = (bar_rect.right() - 20.0 - (left_controls_right + 16.0)).max(180.0);
-        let rb_total_w = rollback_info.as_ref().map(|(_, _, _, _, w)| *w + 10.0).unwrap_or(0.0);
-        let total_needed = btn_w + rb_total_w;
-        if total_needed > max_right_area_w {
-            let overflow = total_needed - max_right_area_w;
-            btn_w = (btn_w - overflow).max(140.0);
-        }
+        let (btn_rect, rb_rect_opt) = if is_two_rows {
+            // Row 2 below controls
+            let row2_y = bar_rect.top() + 74.0;
+            if is_mobile_deploy {
+                // Full width deploy button below 600px
+                let w = bar_rect.width() - 40.0;
+                let b_rect = Rect::from_min_size(Pos2::new(bar_rect.left() + 20.0, row2_y), Vec2::new(w, btn_h));
+                (b_rect, None)
+            } else {
+                let b_w = (deploy_content_w + deploy_pad_x * 2.0).max(180.0);
+                let rb_w = rollback_info.as_ref().map(|(_, _, _, _, w)| *w).unwrap_or(0.0);
+                let b_rect = Rect::from_min_size(
+                    Pos2::new(bar_rect.right() - 20.0 - b_w, row2_y),
+                    Vec2::new(b_w, btn_h),
+                );
+                let r_rect = if rb_w > 0.0 {
+                    Some(Rect::from_min_size(
+                        Pos2::new(b_rect.left() - 10.0 - rb_w, row2_y + (btn_h - BTN_HEIGHT) / 2.0),
+                        Vec2::new(rb_w, BTN_HEIGHT),
+                    ))
+                } else {
+                    None
+                };
+                (b_rect, r_rect)
+            }
+        } else {
+            // Single row: right-aligned
+            let mut b_w = (deploy_content_w + deploy_pad_x * 2.0).max(180.0);
+            let rb_w = rollback_info.as_ref().map(|(_, _, _, _, w)| *w).unwrap_or(0.0);
+            let total_needed = b_w + if rb_w > 0.0 { rb_w + 10.0 } else { 0.0 };
+            let max_r_w = (bar_rect.right() - 20.0 - (child.cursor().min.x + 16.0)).max(180.0);
+            if total_needed > max_r_w {
+                b_w = (b_w - (total_needed - max_r_w)).max(140.0);
+            }
+            let b_rect = Rect::from_min_size(
+                Pos2::new(bar_rect.right() - 20.0 - b_w, bar_rect.center().y - btn_h / 2.0),
+                Vec2::new(b_w, btn_h),
+            );
+            let r_rect = if rb_w > 0.0 {
+                Some(Rect::from_min_size(
+                    Pos2::new(b_rect.left() - 10.0 - rb_w, bar_rect.center().y - BTN_HEIGHT / 2.0),
+                    Vec2::new(rb_w, BTN_HEIGHT),
+                ))
+            } else {
+                None
+            };
+            (b_rect, r_rect)
+        };
 
-        let btn_rect = Rect::from_min_size(
-            Pos2::new(
-                bar_rect.right() - 20.0 - btn_w,
-                bar_rect.center().y - btn_h / 2.0,
-            ),
-            Vec2::new(btn_w, btn_h),
-        );
         let btn_resp = ui
             .interact(btn_rect, egui::Id::new("primary_deploy_btn"), Sense::click())
             .on_hover_cursor(if is_busy {
@@ -6832,16 +7826,18 @@ impl ShiplyApp {
                 egui::CursorIcon::PointingHand
             });
         let btn_bg = if is_busy {
-            TEXT_MUTED
+            theme.text_subtle
+        } else if btn_resp.is_pointer_button_down_on() {
+            theme.primary_active
         } else if btn_resp.hovered() {
-            PRIMARY_BLUE_HOVER
+            theme.primary_hover
         } else {
-            PRIMARY_BLUE
+            theme.primary
         };
         ui.painter()
-            .rect_filled(btn_rect, CornerRadius::same(8), btn_bg);
+            .rect_filled(btn_rect, CornerRadius::same(R_MD as u8), btn_bg);
 
-        // Center icon and text together as a cohesive unit
+        // Center icon and text together
         let deploy_start_x = (btn_rect.center().x - deploy_content_w / 2.0)
             .max(btn_rect.left() + 10.0);
         draw_icon_send(
@@ -6859,17 +7855,10 @@ impl ShiplyApp {
             trigger_deploy = true;
         }
 
-        // Quick Rollback Button if a previous succeeded deployment exists
-        if let (Some(prev_dep), Some((rb_galley, rb_icon_w, rb_gap, rb_content_w, rb_w))) =
-            (rollback_candidate, rollback_info)
+        // Quick Rollback Button
+        if let (Some(prev_dep), Some(rb_rect), Some((rb_galley, rb_icon_w, rb_gap, rb_content_w, _))) =
+            (rollback_candidate, rb_rect_opt, rollback_info)
         {
-            let rb_rect = Rect::from_min_size(
-                Pos2::new(
-                    btn_rect.left() - 10.0 - rb_w,
-                    bar_rect.center().y - btn_h / 2.0,
-                ),
-                Vec2::new(rb_w, btn_h),
-            );
             let rb_resp = ui
                 .interact(
                     rb_rect,
@@ -6881,19 +7870,20 @@ impl ShiplyApp {
                 } else {
                     egui::CursorIcon::PointingHand
                 });
+            let rb_bg = if rb_resp.hovered() && !is_busy {
+                theme.warning_soft
+            } else {
+                theme.surface
+            };
             ui.painter().rect_filled(
                 rb_rect,
-                CornerRadius::same(8),
-                if rb_resp.hovered() && !is_busy {
-                    WARN_PILL_BG
-                } else {
-                    SUBTLE_BG
-                },
+                CornerRadius::same(R_MD as u8),
+                rb_bg,
             );
             ui.painter().rect_stroke(
                 rb_rect,
-                CornerRadius::same(8),
-                Stroke::new(1.0_f32, WARN_PILL_TEXT),
+                CornerRadius::same(R_MD as u8),
+                Stroke::new(1.0_f32, theme.warning),
                 StrokeKind::Inside,
             );
 
@@ -6903,13 +7893,13 @@ impl ShiplyApp {
                 ui.painter(),
                 Pos2::new(rb_start_x + rb_icon_w / 2.0, rb_rect.center().y),
                 OutlineIcon::RotateCcw,
-                WARN_PILL_TEXT,
+                theme.warning,
             );
             let rb_text_pos = Pos2::new(
                 rb_start_x + rb_icon_w + rb_gap,
                 rb_rect.center().y - rb_galley.size().y / 2.0,
             );
-            ui.painter().galley(rb_text_pos, rb_galley, WARN_PILL_TEXT);
+            ui.painter().galley(rb_text_pos, rb_galley, theme.warning);
 
             if !is_busy
                 && rb_resp
@@ -7072,6 +8062,7 @@ impl ShiplyApp {
         );
         ui.add_space(10.0);
 
+        let theme = self.theme();
         let project = &mut self.storage.projects[proj_idx];
         let Some(env_cfg) = project.get_env_mut(&env_key) else {
             return;
@@ -7092,26 +8083,28 @@ impl ShiplyApp {
 
         for (idx, step) in env_cfg.steps.iter_mut().enumerate() {
             let is_being_dragged = self.dragged_step_idx == Some(idx);
-            let mut card_fill = if step.enabled { CARD_BG } else { SUBTLE_BG };
-            let step_border_color = if is_being_dragged {
-                PRIMARY_BLUE
+            let card_fill = if is_being_dragged {
+                theme.primary_soft
             } else if !step.enabled {
-                CARD_BORDER
+                theme.surface_2
             } else {
-                match &step.kind {
-                    StepKind::LocalCommand { .. } => Color32::from_rgb(147, 197, 253),
-                    StepKind::VerifyLocalPath { .. } => Color32::from_rgb(252, 211, 77),
-                    StepKind::TransferFiles { .. } => Color32::from_rgb(216, 180, 254),
-                    StepKind::RemoteCommand { .. } => Color32::from_rgb(153, 246, 228),
-                }
+                theme.surface
             };
-            if is_being_dragged {
-                card_fill = BLUE_PILL_BG.gamma_multiply(0.4);
-            }
+            let step_border_color = if is_being_dragged {
+                theme.primary
+            } else {
+                theme.border
+            };
+            let step_accent_color = match &step.kind {
+                StepKind::LocalCommand { .. } => Color32::from_rgb(20, 110, 245), // local #146EF5
+                StepKind::VerifyLocalPath { .. } => Color32::from_rgb(245, 158, 11), // verify #F59E0B
+                StepKind::TransferFiles { .. } => Color32::from_rgb(122, 61, 255), // scp #7A3DFF
+                StepKind::RemoteCommand { .. } => Color32::from_rgb(20, 184, 166), // ssh #14B8A6
+            };
 
             let frame_resp = egui::Frame::new()
                 .fill(card_fill)
-                .stroke(Stroke::new(if is_being_dragged { 2.0_f32 } else { 1.2_f32 }, step_border_color))
+                .stroke(Stroke::new(if is_being_dragged { 2.0_f32 } else { 1.0_f32 }, step_border_color))
                 .corner_radius(10.0)
                 .inner_margin(Margin::symmetric(16, 12))
                 .show(ui, |ui| {
@@ -7243,6 +8236,7 @@ impl ShiplyApp {
 
                         if styled_text_edit(
                             ui,
+                            ("step_name", &step.id),
                             &mut step.name,
                             210.0,
                             Some("Step name (e.g. Build Application)"),
@@ -7389,6 +8383,7 @@ impl ShiplyApp {
                             StepKind::LocalCommand { command, .. } => {
                                 if syntax_highlighted_text_edit(
                                     ui,
+                                    ("step_local_cmd", &step.id),
                                     command,
                                     input_w,
                                     Some(placeholder),
@@ -7399,6 +8394,7 @@ impl ShiplyApp {
                             StepKind::VerifyLocalPath { path } => {
                                 if syntax_highlighted_text_edit(
                                     ui,
+                                    ("step_verify_path", &step.id),
                                     path,
                                     input_w,
                                     Some(placeholder),
@@ -7407,14 +8403,23 @@ impl ShiplyApp {
                                 }
                             }
                             StepKind::TransferFiles { sources, .. } => {
-                                let mut joined = sources.join(", ");
+                                let sources_text = match &mut self.step_scp_sources_buffer {
+                                    Some((id, buf)) if id == &step.id => buf,
+                                    _ => {
+                                        let joined = sources.join(", ");
+                                        self.step_scp_sources_buffer =
+                                            Some((step.id.clone(), joined));
+                                        &mut self.step_scp_sources_buffer.as_mut().unwrap().1
+                                    }
+                                };
                                 if syntax_highlighted_text_edit(
                                     ui,
-                                    &mut joined,
+                                    ("step_transfer_sources", &step.id),
+                                    sources_text,
                                     input_w,
                                     Some(placeholder),
                                 ) {
-                                    *sources = joined
+                                    *sources = sources_text
                                         .split(',')
                                         .map(|s| s.trim().to_string())
                                         .filter(|s| !s.is_empty())
@@ -7425,6 +8430,7 @@ impl ShiplyApp {
                             StepKind::RemoteCommand { command } => {
                                 if syntax_highlighted_text_edit(
                                     ui,
+                                    ("step_remote_cmd", &step.id),
                                     command,
                                     input_w,
                                     Some(placeholder),
@@ -7437,6 +8443,15 @@ impl ShiplyApp {
                 });
 
             let card_rect = frame_resp.response.rect;
+            let bar_rect = Rect::from_min_max(
+                Pos2::new(card_rect.left(), card_rect.top() + 6.0),
+                Pos2::new(card_rect.left() + 3.0, card_rect.bottom() - 6.0),
+            );
+            ui.painter().rect_filled(
+                bar_rect,
+                CornerRadius { nw: 0, ne: 3, se: 3, sw: 0 },
+                if step.enabled { step_accent_color } else { theme.text_subtle },
+            );
             if let Some(from_idx) = self.dragged_step_idx {
                 if from_idx != idx {
                     if let Some(pos) = pointer_pos {
@@ -7491,7 +8506,12 @@ impl ShiplyApp {
         let mut delete_current_env = false;
         let mut verify_vault_clicked = false;
         let mut open_cred_guide_on_overview = false;
-        let field_width = 480.0;
+        let is_two_col = ui.ctx().screen_rect().width() >= 800.0 && ui.available_width() >= 550.0;
+        let field_width = if is_two_col {
+            (ui.available_width() - 280.0).clamp(240.0, 520.0)
+        } else {
+            (ui.available_width() - 36.0).max(200.0)
+        };
 
         let current_env_name = self.storage.projects[proj_idx]
             .get_env(&env_key)
@@ -7576,8 +8596,8 @@ impl ShiplyApp {
             .show(ui, |ui| {
                 let project = &mut self.storage.projects[proj_idx];
                 egui::Grid::new("clean_server_settings_grid")
-                    .num_columns(2)
-                    .spacing([28.0, 14.0])
+                    .num_columns(if is_two_col { 2 } else { 1 })
+                    .spacing(if is_two_col { [28.0, 14.0] } else { [0.0, 6.0] })
                     .show(ui, |ui| {
                         ui.label(
                             RichText::new("Local Project Directory:")
@@ -7585,8 +8605,12 @@ impl ShiplyApp {
                                 .color(TEXT_SECONDARY)
                                 .strong(),
                         );
+                        if !is_two_col {
+                            ui.end_row();
+                        }
                         if styled_text_edit(
                             ui,
+                            "srv_local_path",
                             &mut project.local_path,
                             field_width,
                             Some(r"e.g. C:\Projects\my-web-service"),
@@ -7594,6 +8618,10 @@ impl ShiplyApp {
                             config_changed = true;
                         }
                         ui.end_row();
+                        if !is_two_col {
+                            ui.add_space(6.0);
+                            ui.end_row();
+                        }
 
                         if let Some(env_cfg) = project.get_env_mut(&env_key) {
                             ui.label(
@@ -7602,8 +8630,12 @@ impl ShiplyApp {
                                     .color(TEXT_SECONDARY)
                                     .strong(),
                             );
+                            if !is_two_col {
+                                ui.end_row();
+                            }
                             if styled_text_edit(
                                 ui,
+                                ("srv_env_name", &env_key),
                                 &mut env_cfg.name,
                                 field_width,
                                 Some("e.g. Development, Staging, Production"),
@@ -7611,6 +8643,10 @@ impl ShiplyApp {
                                 config_changed = true;
                             }
                             ui.end_row();
+                            if !is_two_col {
+                                ui.add_space(6.0);
+                                ui.end_row();
+                            }
 
                             ui.label(
                                 RichText::new("Application Name (PM2 / Dir):")
@@ -7618,8 +8654,12 @@ impl ShiplyApp {
                                     .color(TEXT_SECONDARY)
                                     .strong(),
                             );
+                            if !is_two_col {
+                                ui.end_row();
+                            }
                             if styled_text_edit(
                                 ui,
+                                ("srv_app_name", &env_key),
                                 &mut env_cfg.app_name,
                                 field_width,
                                 Some("e.g. my-web-service-dev"),
@@ -7627,6 +8667,10 @@ impl ShiplyApp {
                                 config_changed = true;
                             }
                             ui.end_row();
+                            if !is_two_col {
+                                ui.add_space(6.0);
+                                ui.end_row();
+                            }
 
                             ui.label(
                                 RichText::new("Target Servers (comma-separated):")
@@ -7634,6 +8678,9 @@ impl ShiplyApp {
                                     .color(TEXT_SECONDARY)
                                     .strong(),
                             );
+                            if !is_two_col {
+                                ui.end_row();
+                            }
                             let servers_text = match &mut self.servers_edit_buffer {
                                 Some((k, buf)) if k == &env_key => buf,
                                 _ => {
@@ -7644,6 +8691,7 @@ impl ShiplyApp {
                             };
                             if styled_text_edit(
                                 ui,
+                                ("srv_servers", &env_key),
                                 servers_text,
                                 field_width,
                                 Some("e.g. 192.168.1.10, 192.168.1.11"),
@@ -7656,6 +8704,10 @@ impl ShiplyApp {
                                 config_changed = true;
                             }
                             ui.end_row();
+                            if !is_two_col {
+                                ui.add_space(6.0);
+                                ui.end_row();
+                            }
 
                             ui.label(
                                 RichText::new("Remote Directory Path:")
@@ -7663,8 +8715,12 @@ impl ShiplyApp {
                                     .color(TEXT_SECONDARY)
                                     .strong(),
                             );
+                            if !is_two_col {
+                                ui.end_row();
+                            }
                             if styled_text_edit(
                                 ui,
+                                ("srv_remote_dir", &env_key),
                                 &mut env_cfg.remote_dir,
                                 field_width,
                                 Some("e.g. /var/www/my-web-service or /home/deploy/apps/my-app"),
@@ -7672,6 +8728,10 @@ impl ShiplyApp {
                                 config_changed = true;
                             }
                             ui.end_row();
+                            if !is_two_col {
+                                ui.add_space(6.0);
+                                ui.end_row();
+                            }
 
                             ui.label(
                                 RichText::new("Remote SSH Username:")
@@ -7679,8 +8739,12 @@ impl ShiplyApp {
                                     .color(TEXT_SECONDARY)
                                     .strong(),
                             );
+                            if !is_two_col {
+                                ui.end_row();
+                            }
                             if styled_text_edit(
                                 ui,
+                                ("srv_remote_user", &env_key),
                                 &mut env_cfg.remote_user,
                                 field_width,
                                 Some("e.g. deploy or ubuntu"),
@@ -7688,6 +8752,10 @@ impl ShiplyApp {
                                 config_changed = true;
                             }
                             ui.end_row();
+                            if !is_two_col {
+                                ui.add_space(6.0);
+                                ui.end_row();
+                            }
 
                             ui.label(
                                 RichText::new("OS Credential Vault Target:")
@@ -7695,9 +8763,13 @@ impl ShiplyApp {
                                     .color(TEXT_SECONDARY)
                                     .strong(),
                             );
+                            if !is_two_col {
+                                ui.end_row();
+                            }
                             ui.horizontal(|ui| {
                                 if styled_text_edit(
                                     ui,
+                                    ("srv_vault_target", &env_key),
                                     &mut env_cfg.vault_target,
                                     field_width - 102.0,
                                     Some("e.g. prod-ssh-server or my-vault-target"),
@@ -7724,6 +8796,10 @@ impl ShiplyApp {
                                 }
                             });
                             ui.end_row();
+                            if !is_two_col {
+                                ui.add_space(6.0);
+                                ui.end_row();
+                            }
 
                             ui.label(
                                 RichText::new("SSH Password Override:")
@@ -7731,13 +8807,18 @@ impl ShiplyApp {
                                     .color(TEXT_SECONDARY)
                                     .strong(),
                             );
+                            if !is_two_col {
+                                ui.end_row();
+                            }
                             ui.add(
                                 egui::TextEdit::singleline(&mut self.manual_ssh_password)
+                                    .id_salt(("srv_manual_pwd", &env_key))
                                     .font(FontId::proportional(FONT_MD))
                                     .background_color(INPUT_BG)
                                     .password(true)
                                     .desired_width(field_width)
-                                    .margin(Margin::symmetric(10, 7))
+                                    .min_size(Vec2::new(field_width, INPUT_HEIGHT))
+                                    .margin(Margin::symmetric(10, 8))
                                     .hint_text(
                                         RichText::new(
                                             "Optional — leave blank to use OS Credential Vault or SSH Key",
@@ -7747,6 +8828,10 @@ impl ShiplyApp {
                                     ),
                             );
                             ui.end_row();
+                            if !is_two_col {
+                                ui.add_space(6.0);
+                                ui.end_row();
+                            }
 
                             ui.label(
                                 RichText::new("Environment File Source (.env):")
@@ -7754,21 +8839,36 @@ impl ShiplyApp {
                                     .color(TEXT_SECONDARY)
                                     .strong(),
                             );
-                            let mut env_src = env_cfg.env_source.clone().unwrap_or_default();
+                            if !is_two_col {
+                                ui.end_row();
+                            }
+                            let env_src_text = match &mut self.server_env_source_buffer {
+                                Some((k, buf)) if k == &env_key => buf,
+                                _ => {
+                                    self.server_env_source_buffer =
+                                        Some((env_key.clone(), env_cfg.env_source.clone().unwrap_or_default()));
+                                    &mut self.server_env_source_buffer.as_mut().unwrap().1
+                                }
+                            };
                             if styled_text_edit(
                                 ui,
-                                &mut env_src,
+                                ("srv_env_source", &env_key),
+                                env_src_text,
                                 field_width,
                                 Some("Optional — e.g. ./.env.dev or ./.env.production"),
                             ) {
-                                env_cfg.env_source = if env_src.trim().is_empty() {
+                                env_cfg.env_source = if env_src_text.trim().is_empty() {
                                     None
                                 } else {
-                                    Some(env_src)
+                                    Some(env_src_text.clone())
                                 };
                                 config_changed = true;
                             }
                             ui.end_row();
+                            if !is_two_col {
+                                ui.add_space(6.0);
+                                ui.end_row();
+                            }
 
                             ui.label(
                                 RichText::new("Outbound HTTP Proxy:")
@@ -7776,21 +8876,36 @@ impl ShiplyApp {
                                     .color(TEXT_SECONDARY)
                                     .strong(),
                             );
-                            let mut proxy = env_cfg.http_proxy.clone().unwrap_or_default();
+                            if !is_two_col {
+                                ui.end_row();
+                            }
+                            let proxy_text = match &mut self.server_http_proxy_buffer {
+                                Some((k, buf)) if k == &env_key => buf,
+                                _ => {
+                                    self.server_http_proxy_buffer =
+                                        Some((env_key.clone(), env_cfg.http_proxy.clone().unwrap_or_default()));
+                                    &mut self.server_http_proxy_buffer.as_mut().unwrap().1
+                                }
+                            };
                             if styled_text_edit(
                                 ui,
-                                &mut proxy,
+                                ("srv_http_proxy", &env_key),
+                                proxy_text,
                                 field_width,
                                 Some("Optional — e.g. http://proxy.example.com:8080"),
                             ) {
-                                env_cfg.http_proxy = if proxy.trim().is_empty() {
+                                env_cfg.http_proxy = if proxy_text.trim().is_empty() {
                                     None
                                 } else {
-                                    Some(proxy)
+                                    Some(proxy_text.clone())
                                 };
                                 config_changed = true;
                             }
                             ui.end_row();
+                            if !is_two_col {
+                                ui.add_space(6.0);
+                                ui.end_row();
+                            }
 
                             guide_vault_target = env_cfg.vault_target.trim().to_string();
                             guide_remote_user = env_cfg.remote_user.trim().to_string();
@@ -7889,12 +9004,13 @@ impl ShiplyApp {
         let mut switched_history_filter = None;
 
         // Section Header + Filter Pills (Fixed 34px height)
+        let theme = self.theme();
         horizontal_row(ui, 34.0, |ui| {
             ui.label(
                 RichText::new("DEPLOYMENT HISTORY")
                     .size(FONT_MD)
                     .strong()
-                    .color(TEXT_PRIMARY),
+                    .color(theme.text),
             );
 
             if is_project_view {
@@ -7904,17 +9020,17 @@ impl ShiplyApp {
                         let is_active = self.selected_env_key == env_key;
                         let btn = egui::Button::new(
                             RichText::new(env_name).size(FONT_SM).strong().color(if is_active {
-                                Color32::WHITE
+                                theme.ink_fg
                             } else {
-                                TEXT_SECONDARY
+                                theme.text_muted
                             }),
                         )
-                        .fill(if is_active { TEXT_PRIMARY } else { CARD_BG })
+                        .fill(if is_active { theme.ink } else { theme.surface_2 })
                         .stroke(Stroke::new(
                             1.0_f32,
-                            if is_active { TEXT_PRIMARY } else { CARD_BORDER },
+                            if is_active { theme.ink } else { theme.border },
                         ))
-                        .corner_radius(6.0);
+                        .corner_radius(R_MD as u8);
                         if ui.add(btn).clicked() {
                             switched_env_key = Some(env_key);
                         }
@@ -7927,17 +9043,17 @@ impl ShiplyApp {
                         let is_active = self.history_env_filter == filter_val;
                         let btn = egui::Button::new(
                             RichText::new(label).size(FONT_SM).strong().color(if is_active {
-                                Color32::WHITE
+                                theme.ink_fg
                             } else {
-                                TEXT_SECONDARY
+                                theme.text_muted
                             }),
                         )
-                        .fill(if is_active { TEXT_PRIMARY } else { CARD_BG })
+                        .fill(if is_active { theme.ink } else { theme.surface_2 })
                         .stroke(Stroke::new(
                             1.0_f32,
-                            if is_active { TEXT_PRIMARY } else { CARD_BORDER },
+                            if is_active { theme.ink } else { theme.border },
                         ))
-                        .corner_radius(6.0);
+                        .corner_radius(R_MD as u8);
                         if ui.add(btn).clicked() {
                             switched_history_filter = Some(filter_val);
                         }
@@ -7977,6 +9093,10 @@ impl ShiplyApp {
 
         let mut redeploy_target: Option<(DeploymentRecord, bool)> = None;
 
+        let is_stacked_view = ui.ctx().screen_rect().width() < 900.0 || ui.available_width() < 640.0;
+        let total_count = filtered.len();
+        let visible_count = total_count.min(self.history_visible_limit.max(5));
+
         // Structured Deployment History Table Card
         egui::Frame::new()
             .fill(CARD_BG)
@@ -7984,64 +9104,66 @@ impl ShiplyApp {
             .corner_radius(10.0)
             .inner_margin(Margin::symmetric(20, 14))
             .show(ui, |ui| {
-                horizontal_row(ui, 22.0, |ui| {
-                    ui.add_sized(
-                        [110.0, 20.0],
-                        egui::Label::new(
-                            RichText::new("STATUS")
-                                .size(FONT_XS)
-                                .strong()
-                                .color(TEXT_MUTED),
-                        ),
-                    );
-                    ui.add_sized(
-                        [80.0, 20.0],
-                        egui::Label::new(
-                            RichText::new("ENV")
-                                .size(FONT_XS)
-                                .strong()
-                                .color(TEXT_MUTED),
-                        ),
-                    );
-                    ui.add_sized(
-                        [95.0, 20.0],
-                        egui::Label::new(
-                            RichText::new("VERSION")
-                                .size(FONT_XS)
-                                .strong()
-                                .color(TEXT_MUTED),
-                        ),
-                    );
-                    ui.add_sized(
-                        [280.0, 20.0],
-                        egui::Label::new(
-                            RichText::new("DETAILS & GIT CHANGES")
-                                .size(FONT_XS)
-                                .strong()
-                                .color(TEXT_MUTED),
-                        ),
-                    );
-                    ui.add_sized(
-                        [150.0, 20.0],
-                        egui::Label::new(
-                            RichText::new("TIMESTAMP")
-                                .size(FONT_XS)
-                                .strong()
-                                .color(TEXT_MUTED),
-                        ),
-                    );
-                    ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                        ui.label(
-                            RichText::new("ACTIONS")
-                                .size(FONT_XS)
-                                .strong()
-                                .color(TEXT_MUTED),
+                if !is_stacked_view {
+                    horizontal_row(ui, 22.0, |ui| {
+                        ui.add_sized(
+                            [110.0, 20.0],
+                            egui::Label::new(
+                                RichText::new("STATUS")
+                                    .size(FONT_XS)
+                                    .strong()
+                                    .color(TEXT_MUTED),
+                            ),
                         );
+                        ui.add_sized(
+                            [80.0, 20.0],
+                            egui::Label::new(
+                                RichText::new("ENV")
+                                    .size(FONT_XS)
+                                    .strong()
+                                    .color(TEXT_MUTED),
+                            ),
+                        );
+                        ui.add_sized(
+                            [95.0, 20.0],
+                            egui::Label::new(
+                                RichText::new("VERSION")
+                                    .size(FONT_XS)
+                                    .strong()
+                                    .color(TEXT_MUTED),
+                            ),
+                        );
+                        ui.add_sized(
+                            [280.0, 20.0],
+                            egui::Label::new(
+                                RichText::new("DETAILS & GIT CHANGES")
+                                    .size(FONT_XS)
+                                    .strong()
+                                    .color(TEXT_MUTED),
+                            ),
+                        );
+                        ui.add_sized(
+                            [150.0, 20.0],
+                            egui::Label::new(
+                                RichText::new("TIMESTAMP")
+                                    .size(FONT_XS)
+                                    .strong()
+                                    .color(TEXT_MUTED),
+                            ),
+                        );
+                        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                            ui.label(
+                                RichText::new("ACTIONS")
+                                    .size(FONT_XS)
+                                    .strong()
+                                    .color(TEXT_MUTED),
+                            );
+                        });
                     });
-                });
 
-                ui.add_space(6.0);
-                draw_divider(ui, CARD_BORDER);
+                    ui.add_space(6.0);
+                    draw_divider(ui, CARD_BORDER);
+                }
 
                 if filtered.is_empty() {
                     ui.vertical_centered(|ui| {
@@ -8060,221 +9182,423 @@ impl ShiplyApp {
                     });
                 }
 
-                let total_count = filtered.len();
-                let visible_count = total_count.min(self.history_visible_limit.max(5));
-
-                for (idx, dep) in filtered.iter().take(visible_count).enumerate() {
-                    if idx > 0 {
-                        draw_divider(ui, SUBTLE_BG);
-                    }
-                    ui.add_space(6.0);
-                    let is_selected = self.selected_deployment_id.as_deref() == Some(&dep.id);
-                    let row_h = 44.0;
-
-                    horizontal_row(ui, row_h, |ui| {
-                        // STATUS column
-                        let (s_rect, _) =
-                            ui.allocate_exact_size(Vec2::new(110.0, row_h), Sense::hover());
-                        let (s_bg, s_fg) = status_pill_colors(dep.status);
-                        if dep.status == DeploymentStatus::Running {
-                            ui.ctx().request_repaint();
-                            let time = ui.input(|i| i.time);
-                            paint_running_pill_left_aligned(
-                                ui.painter(),
-                                Pos2::new(s_rect.left(), s_rect.center().y),
-                                &dep.status.label().to_uppercase(),
-                                s_bg,
-                                s_fg,
-                                time,
-                            );
-                        } else {
-                            paint_pill_left_aligned(
-                                ui.painter(),
-                                Pos2::new(s_rect.left(), s_rect.center().y),
-                                &dep.status.label().to_uppercase(),
-                                s_bg,
-                                s_fg,
-                            );
+                if is_stacked_view {
+                    // Mobile / narrow stacked card view (< 900px)
+                    for (idx, dep) in filtered.iter().take(visible_count).enumerate() {
+                        if idx > 0 {
+                            draw_divider(ui, SUBTLE_BG);
                         }
+                        ui.add_space(6.0);
+                        let is_selected = self.selected_deployment_id.as_deref() == Some(&dep.id);
 
-                        // ENV column
-                        let (e_rect, _) =
-                            ui.allocate_exact_size(Vec2::new(80.0, row_h), Sense::hover());
-                        let (_, env_fg) = env_pastel_pill_colors(&dep.environment);
-                        ui.painter().text(
-                            Pos2::new(e_rect.left(), e_rect.center().y),
-                            Align2::LEFT_CENTER,
-                            format_env_badge(&dep.environment),
-                            FontId::proportional(FONT_MD),
-                            env_fg,
-                        );
-
-                        // VERSION column (+ ROLLBACK tag if rollback)
-                        let (v_rect, _) =
-                            ui.allocate_exact_size(Vec2::new(95.0, row_h), Sense::hover());
-                        ui.painter().text(
-                            Pos2::new(
-                                v_rect.left(),
-                                if dep.is_rollback {
-                                    v_rect.top() + 13.0
-                                } else {
-                                    v_rect.center().y
-                                },
-                            ),
-                            Align2::LEFT_CENTER,
-                            format!("v{}", dep.version),
-                            FontId::proportional(FONT_MD),
-                            TEXT_PRIMARY,
-                        );
-                        if dep.is_rollback {
-                            ui.painter().text(
-                                Pos2::new(v_rect.left(), v_rect.top() + 31.0),
-                                Align2::LEFT_CENTER,
-                                "ROLLBACK",
-                                FontId::proportional(FONT_XS),
-                                WARN_PILL_TEXT,
-                            );
-                        }
-
-                        // DETAILS & GIT CHANGES column (Feature #10)
-                        let (d_rect, d_resp) =
-                            ui.allocate_exact_size(Vec2::new(280.0, row_h), Sense::hover());
-                        draw_icon_git_branch(
-                            ui.painter(),
-                            Pos2::new(d_rect.left() + 6.0, d_rect.top() + 12.0),
-                            TEXT_MUTED,
-                        );
-                        let git_line = match (&dep.git_branch, &dep.git_commit) {
-                            (Some(b), Some(c)) => format!("{b} @ {c}"),
-                            _ => dep.project_name.clone(),
-                        };
-                        ui.painter().text(
-                            Pos2::new(d_rect.left() + 18.0, d_rect.top() + 12.0),
-                            Align2::LEFT_CENTER,
-                            git_line,
-                            FontId::proportional(FONT_SM),
-                            TEXT_SECONDARY,
-                        );
-
-                        // Second line in DETAILS: Latest commit subject or server list
-                        let sub_detail = dep
-                            .git_changes
-                            .first()
-                            .cloned()
-                            .unwrap_or_else(|| dep.servers.join(", "));
-                        let truncated_detail = if sub_detail.chars().count() > 38 {
-                            let s: String = sub_detail.chars().take(36).collect();
-                            format!("{s}…")
-                        } else {
-                            sub_detail
-                        };
-                        ui.painter().text(
-                            Pos2::new(d_rect.left() + 6.0, d_rect.top() + 31.0),
-                            Align2::LEFT_CENTER,
-                            truncated_detail,
-                            FontId::proportional(FONT_SM),
-                            TEXT_MUTED,
-                        );
-                        if !dep.git_changes.is_empty() {
-                            d_resp.on_hover_text(format!(
-                                "Code Changes in v{}:\n• {}",
-                                dep.version,
-                                dep.git_changes.join("\n• ")
-                            ));
-                        }
-
-                        // TIMESTAMP column
-                        let (t_rect, _) =
-                            ui.allocate_exact_size(Vec2::new(150.0, row_h), Sense::hover());
-                        ui.painter().text(
-                            Pos2::new(t_rect.left(), t_rect.top() + 12.0),
-                            Align2::LEFT_CENTER,
-                            dep.started_at.format("%Y-%m-%d %H:%M:%S").to_string(),
-                            FontId::proportional(FONT_SM),
-                            TEXT_PRIMARY,
-                        );
-                        let dur_str = dep
-                            .duration_ms
-                            .map(|ms| format!("took {:.1}s", ms as f64 / 1000.0))
-                            .unwrap_or_else(|| "running...".to_string());
-                        ui.painter().text(
-                            Pos2::new(t_rect.left(), t_rect.top() + 31.0),
-                            Align2::LEFT_CENTER,
-                            dur_str,
-                            FontId::proportional(FONT_SM),
-                            TEXT_MUTED,
-                        );
-
-                        // ACTIONS column (Rollback + Re-run + View Logs) using outline icons
-                        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                            ui.spacing_mut().item_spacing = Vec2::new(6.0, 0.0);
-                            let is_busy = self.is_env_deploying(&dep.project_id, &dep.environment);
-
-                            if outline_icon_button(
-                                ui,
-                                ("hist_rerun_btn", &dep.id),
-                                OutlineIcon::Refresh,
-                                None,
-                                TEXT_SECONDARY,
-                                SUBTLE_BG,
-                                PILL_CONTAINER_BG,
-                                CARD_BORDER,
-                                !is_busy,
-                            )
-                            .on_hover_text("Re-run this deployment version and pipeline")
-                            .clicked()
-                                && !is_busy
-                            {
-                                redeploy_target = Some((dep.clone(), false));
-                            }
-
-                            if dep.status == DeploymentStatus::Succeeded
-                                && outline_icon_button(
-                                    ui,
-                                    ("hist_rollback_btn", &dep.id),
-                                    OutlineIcon::RotateCcw,
-                                    Some("Rollback"),
-                                    WARN_PILL_TEXT,
-                                    WARN_PILL_BG,
-                                    Color32::from_rgb(253, 230, 138),
-                                    Color32::from_rgb(251, 191, 36),
-                                    !is_busy,
-                                )
-                                .on_hover_text(format!(
-                                    "Rollback {} to v{}",
-                                    dep.environment, dep.version
-                                ))
-                                .clicked()
-                                && !is_busy
-                            {
-                                redeploy_target = Some((dep.clone(), true));
-                            }
-
-                            let logs_btn = egui::Button::new(
-                                RichText::new(if is_selected {
-                                    "Viewing Logs"
-                                } else {
-                                    "View Logs"
-                                })
-                                .size(FONT_SM)
-                                .strong()
-                                .color(TEXT_PRIMARY),
-                            )
-                            .fill(if is_selected {
-                                PILL_CONTAINER_BG
+                        // Line 1: Status + Env + Version (left), Timestamp (right)
+                        horizontal_row(ui, 24.0, |ui| {
+                            let (s_rect, _) =
+                                ui.allocate_exact_size(Vec2::new(96.0, 22.0), Sense::hover());
+                            let (s_bg, s_fg) = status_pill_colors(dep.status);
+                            if dep.status == DeploymentStatus::Running {
+                                ui.ctx().request_repaint();
+                                let time = ui.input(|i| i.time);
+                                paint_running_pill_left_aligned(
+                                    ui.painter(),
+                                    Pos2::new(s_rect.left(), s_rect.center().y),
+                                    &dep.status.label().to_uppercase(),
+                                    s_bg,
+                                    s_fg,
+                                    time,
+                                );
                             } else {
-                                SUBTLE_BG
-                            })
-                            .stroke(Stroke::new(1.0_f32, CARD_BORDER))
-                            .corner_radius(6.0);
+                                paint_pill_left_aligned(
+                                    ui.painter(),
+                                    Pos2::new(s_rect.left(), s_rect.center().y),
+                                    &dep.status.label().to_uppercase(),
+                                    s_bg,
+                                    s_fg,
+                                );
+                            }
 
-                            if ui.add(logs_btn).clicked() {
-                                self.selected_deployment_id = Some(dep.id.clone());
-                                self.console_collapsed = false;
+                            let (_, env_fg) = env_pastel_pill_colors(&dep.environment);
+                            ui.label(
+                                RichText::new(format_env_badge(&dep.environment))
+                                    .size(FONT_SM)
+                                    .strong()
+                                    .color(env_fg),
+                            );
+
+                            ui.label(
+                                RichText::new(format!("v{}", dep.version))
+                                    .size(FONT_MD)
+                                    .strong()
+                                    .color(TEXT_PRIMARY),
+                            );
+
+                            if dep.is_rollback {
+                                ui.label(
+                                    RichText::new("ROLLBACK")
+                                        .size(FONT_XS)
+                                        .strong()
+                                        .color(WARN_PILL_TEXT),
+                                );
+                            }
+
+                            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                                ui.label(
+                                    RichText::new(
+                                        dep.started_at.format("%Y-%m-%d %H:%M").to_string(),
+                                    )
+                                    .size(FONT_SM)
+                                    .color(TEXT_MUTED),
+                                );
+                            });
+                        });
+
+                        ui.add_space(4.0);
+
+                        // Line 2: Git branch @ commit + git_changes / server summary
+                        horizontal_row(ui, 20.0, |ui| {
+                            let (icon_r, _) =
+                                ui.allocate_exact_size(Vec2::new(14.0, 14.0), Sense::hover());
+                            draw_icon_git_branch(
+                                ui.painter(),
+                                Pos2::new(icon_r.left(), icon_r.top() + 3.0),
+                                TEXT_MUTED,
+                            );
+                            let git_line = match (&dep.git_branch, &dep.git_commit) {
+                                (Some(b), Some(c)) => format!("{b} @ {c}"),
+                                _ => dep.project_name.clone(),
+                            };
+                            ui.label(
+                                RichText::new(git_line)
+                                    .size(FONT_SM)
+                                    .color(TEXT_SECONDARY),
+                            );
+
+                            let sub_detail = dep
+                                .git_changes
+                                .first()
+                                .cloned()
+                                .unwrap_or_else(|| dep.servers.join(", "));
+                            let truncated = if sub_detail.chars().count() > 36 {
+                                let s: String = sub_detail.chars().take(34).collect();
+                                format!("{s}…")
+                            } else {
+                                sub_detail
+                            };
+                            let det_resp = ui.label(
+                                RichText::new(format!("— {truncated}"))
+                                    .size(FONT_SM)
+                                    .color(TEXT_MUTED),
+                            );
+                            if !dep.git_changes.is_empty() {
+                                det_resp.on_hover_text(format!(
+                                    "Code Changes in v{}:\n• {}",
+                                    dep.version,
+                                    dep.git_changes.join("\n• ")
+                                ));
                             }
                         });
-                    });
-                    ui.add_space(6.0);
+
+                        ui.add_space(6.0);
+
+                        // Line 3: Duration (left), Action buttons (right)
+                        horizontal_row(ui, 28.0, |ui| {
+                            let dur_str = dep
+                                .duration_ms
+                                .map(|ms| format!("took {:.1}s", ms as f64 / 1000.0))
+                                .unwrap_or_else(|| "running...".to_string());
+                            ui.label(
+                                RichText::new(dur_str)
+                                    .size(FONT_SM)
+                                    .color(TEXT_MUTED),
+                            );
+
+                            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                                ui.spacing_mut().item_spacing = Vec2::new(6.0, 0.0);
+                                let is_busy =
+                                    self.is_env_deploying(&dep.project_id, &dep.environment);
+
+                                if outline_icon_button(
+                                    ui,
+                                    ("stacked_rerun_btn", &dep.id),
+                                    OutlineIcon::Refresh,
+                                    None,
+                                    TEXT_SECONDARY,
+                                    SUBTLE_BG,
+                                    PILL_CONTAINER_BG,
+                                    CARD_BORDER,
+                                    !is_busy,
+                                )
+                                .on_hover_text("Re-run this deployment version and pipeline")
+                                .clicked()
+                                    && !is_busy
+                                {
+                                    redeploy_target = Some((dep.clone(), false));
+                                }
+
+                                if dep.status == DeploymentStatus::Succeeded
+                                    && outline_icon_button(
+                                        ui,
+                                        ("stacked_rollback_btn", &dep.id),
+                                        OutlineIcon::RotateCcw,
+                                        Some("Rollback"),
+                                        WARN_PILL_TEXT,
+                                        WARN_PILL_BG,
+                                        Color32::from_rgb(253, 230, 138),
+                                        Color32::from_rgb(251, 191, 36),
+                                        !is_busy,
+                                    )
+                                    .on_hover_text(format!(
+                                        "Rollback {} to v{}",
+                                        dep.environment, dep.version
+                                    ))
+                                    .clicked()
+                                    && !is_busy
+                                {
+                                    redeploy_target = Some((dep.clone(), true));
+                                }
+
+                                let logs_btn = egui::Button::new(
+                                    RichText::new(if is_selected {
+                                        "Viewing Logs"
+                                    } else {
+                                        "View Logs"
+                                    })
+                                    .size(FONT_SM)
+                                    .strong()
+                                    .color(TEXT_PRIMARY),
+                                )
+                                .fill(if is_selected {
+                                    PILL_CONTAINER_BG
+                                } else {
+                                    SUBTLE_BG
+                                })
+                                .stroke(Stroke::new(1.0_f32, CARD_BORDER))
+                                .corner_radius(6.0);
+
+                                if ui.add(logs_btn).clicked() {
+                                    self.selected_deployment_id = Some(dep.id.clone());
+                                    self.console_collapsed = false;
+                                }
+                            });
+                        });
+                        ui.add_space(6.0);
+                    }
+                } else {
+                    // Desktop normal table (>= 900px, 48px row height)
+                    for (idx, dep) in filtered.iter().take(visible_count).enumerate() {
+                        if idx > 0 {
+                            draw_divider(ui, SUBTLE_BG);
+                        }
+                        ui.add_space(6.0);
+                        let is_selected = self.selected_deployment_id.as_deref() == Some(&dep.id);
+                        let row_h = TABLE_ROW_HEIGHT;
+
+                        horizontal_row(ui, row_h, |ui| {
+                            // STATUS column
+                            let (s_rect, _) =
+                                ui.allocate_exact_size(Vec2::new(110.0, row_h), Sense::hover());
+                            let (s_bg, s_fg) = status_pill_colors(dep.status);
+                            if dep.status == DeploymentStatus::Running {
+                                ui.ctx().request_repaint();
+                                let time = ui.input(|i| i.time);
+                                paint_running_pill_left_aligned(
+                                    ui.painter(),
+                                    Pos2::new(s_rect.left(), s_rect.center().y),
+                                    &dep.status.label().to_uppercase(),
+                                    s_bg,
+                                    s_fg,
+                                    time,
+                                );
+                            } else {
+                                paint_pill_left_aligned(
+                                    ui.painter(),
+                                    Pos2::new(s_rect.left(), s_rect.center().y),
+                                    &dep.status.label().to_uppercase(),
+                                    s_bg,
+                                    s_fg,
+                                );
+                            }
+
+                            // ENV column
+                            let (e_rect, _) =
+                                ui.allocate_exact_size(Vec2::new(80.0, row_h), Sense::hover());
+                            let (_, env_fg) = env_pastel_pill_colors(&dep.environment);
+                            ui.painter().text(
+                                Pos2::new(e_rect.left(), e_rect.center().y),
+                                Align2::LEFT_CENTER,
+                                format_env_badge(&dep.environment),
+                                FontId::proportional(FONT_MD),
+                                env_fg,
+                            );
+
+                            // VERSION column (+ ROLLBACK tag if rollback)
+                            let (v_rect, _) =
+                                ui.allocate_exact_size(Vec2::new(95.0, row_h), Sense::hover());
+                            ui.painter().text(
+                                Pos2::new(
+                                    v_rect.left(),
+                                    if dep.is_rollback {
+                                        v_rect.top() + 14.0
+                                    } else {
+                                        v_rect.center().y
+                                    },
+                                ),
+                                Align2::LEFT_CENTER,
+                                format!("v{}", dep.version),
+                                FontId::proportional(FONT_MD),
+                                TEXT_PRIMARY,
+                            );
+                            if dep.is_rollback {
+                                ui.painter().text(
+                                    Pos2::new(v_rect.left(), v_rect.top() + 32.0),
+                                    Align2::LEFT_CENTER,
+                                    "ROLLBACK",
+                                    FontId::proportional(FONT_XS),
+                                    WARN_PILL_TEXT,
+                                );
+                            }
+
+                            // DETAILS & GIT CHANGES column (Feature #10)
+                            let (d_rect, d_resp) =
+                                ui.allocate_exact_size(Vec2::new(280.0, row_h), Sense::hover());
+                            draw_icon_git_branch(
+                                ui.painter(),
+                                Pos2::new(d_rect.left() + 6.0, d_rect.top() + 14.0),
+                                TEXT_MUTED,
+                            );
+                            let git_line = match (&dep.git_branch, &dep.git_commit) {
+                                (Some(b), Some(c)) => format!("{b} @ {c}"),
+                                _ => dep.project_name.clone(),
+                            };
+                            ui.painter().text(
+                                Pos2::new(d_rect.left() + 18.0, d_rect.top() + 14.0),
+                                Align2::LEFT_CENTER,
+                                git_line,
+                                FontId::proportional(FONT_SM),
+                                TEXT_SECONDARY,
+                            );
+
+                            // Second line in DETAILS: Latest commit subject or server list
+                            let sub_detail = dep
+                                .git_changes
+                                .first()
+                                .cloned()
+                                .unwrap_or_else(|| dep.servers.join(", "));
+                            let truncated_detail = if sub_detail.chars().count() > 38 {
+                                let s: String = sub_detail.chars().take(36).collect();
+                                format!("{s}…")
+                            } else {
+                                sub_detail
+                            };
+                            ui.painter().text(
+                                Pos2::new(d_rect.left() + 6.0, d_rect.top() + 33.0),
+                                Align2::LEFT_CENTER,
+                                truncated_detail,
+                                FontId::proportional(FONT_SM),
+                                TEXT_MUTED,
+                            );
+                            if !dep.git_changes.is_empty() {
+                                d_resp.on_hover_text(format!(
+                                    "Code Changes in v{}:\n• {}",
+                                    dep.version,
+                                    dep.git_changes.join("\n• ")
+                                ));
+                            }
+
+                            // TIMESTAMP column
+                            let (t_rect, _) =
+                                ui.allocate_exact_size(Vec2::new(150.0, row_h), Sense::hover());
+                            ui.painter().text(
+                                Pos2::new(t_rect.left(), t_rect.top() + 14.0),
+                                Align2::LEFT_CENTER,
+                                dep.started_at.format("%Y-%m-%d %H:%M:%S").to_string(),
+                                FontId::proportional(FONT_SM),
+                                TEXT_PRIMARY,
+                            );
+                            let dur_str = dep
+                                .duration_ms
+                                .map(|ms| format!("took {:.1}s", ms as f64 / 1000.0))
+                                .unwrap_or_else(|| "running...".to_string());
+                            ui.painter().text(
+                                Pos2::new(t_rect.left(), t_rect.top() + 33.0),
+                                Align2::LEFT_CENTER,
+                                dur_str,
+                                FontId::proportional(FONT_SM),
+                                TEXT_MUTED,
+                            );
+
+                            // ACTIONS column (Rollback + Re-run + View Logs) using outline icons
+                            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                                ui.spacing_mut().item_spacing = Vec2::new(6.0, 0.0);
+                                let is_busy =
+                                    self.is_env_deploying(&dep.project_id, &dep.environment);
+
+                                if outline_icon_button(
+                                    ui,
+                                    ("hist_rerun_btn", &dep.id),
+                                    OutlineIcon::Refresh,
+                                    None,
+                                    TEXT_SECONDARY,
+                                    SUBTLE_BG,
+                                    PILL_CONTAINER_BG,
+                                    CARD_BORDER,
+                                    !is_busy,
+                                )
+                                .on_hover_text("Re-run this deployment version and pipeline")
+                                .clicked()
+                                    && !is_busy
+                                {
+                                    redeploy_target = Some((dep.clone(), false));
+                                }
+
+                                if dep.status == DeploymentStatus::Succeeded
+                                    && outline_icon_button(
+                                        ui,
+                                        ("hist_rollback_btn", &dep.id),
+                                        OutlineIcon::RotateCcw,
+                                        Some("Rollback"),
+                                        WARN_PILL_TEXT,
+                                        WARN_PILL_BG,
+                                        Color32::from_rgb(253, 230, 138),
+                                        Color32::from_rgb(251, 191, 36),
+                                        !is_busy,
+                                    )
+                                    .on_hover_text(format!(
+                                        "Rollback {} to v{}",
+                                        dep.environment, dep.version
+                                    ))
+                                    .clicked()
+                                    && !is_busy
+                                {
+                                    redeploy_target = Some((dep.clone(), true));
+                                }
+
+                                let logs_btn = egui::Button::new(
+                                    RichText::new(if is_selected {
+                                        "Viewing Logs"
+                                    } else {
+                                        "View Logs"
+                                    })
+                                    .size(FONT_SM)
+                                    .strong()
+                                    .color(TEXT_PRIMARY),
+                                )
+                                .fill(if is_selected {
+                                    PILL_CONTAINER_BG
+                                } else {
+                                    SUBTLE_BG
+                                })
+                                .stroke(Stroke::new(1.0_f32, CARD_BORDER))
+                                .corner_radius(6.0);
+
+                                if ui.add(logs_btn).clicked() {
+                                    self.selected_deployment_id = Some(dep.id.clone());
+                                    self.console_collapsed = false;
+                                }
+                            });
+                        });
+                        ui.add_space(6.0);
+                    }
                 }
 
                 if total_count > visible_count {
@@ -8971,26 +10295,49 @@ fn horizontal_row<R>(
     )
 }
 
-/// Consistent text input field with grey fill (`INPUT_BG`), visible border on focus,
-/// structured proportional font (`FONT_MD`), and grey placeholder (`TEXT_PLACEHOLDER`).
+/// Consistent text input field with white fill (`INPUT_BG`), 1px hairline/strong border (`INPUT_BORDER`),
+/// focus ring (`PRIMARY_BLUE`), structured proportional font (`FONT_MD`), and grey placeholder (`TEXT_PLACEHOLDER`).
 fn styled_text_edit(
     ui: &mut egui::Ui,
+    id_salt: impl std::hash::Hash,
     value: &mut String,
     width: f32,
     hint: Option<&str>,
 ) -> bool {
     let placeholder_str = hint.unwrap_or("Enter value...");
     let edit = egui::TextEdit::singleline(value)
+        .id_salt(id_salt)
         .font(FontId::proportional(FONT_MD))
         .background_color(INPUT_BG)
         .desired_width(width)
-        .margin(Margin::symmetric(10, 7))
+        .min_size(Vec2::new(width, INPUT_HEIGHT))
+        .margin(Margin::symmetric(10, 8))
         .hint_text(
             RichText::new(placeholder_str)
                 .size(FONT_MD)
                 .color(TEXT_PLACEHOLDER),
         );
-    ui.add(edit).changed()
+    let mut output = edit.show(ui);
+
+    // Precise cursor placement on click: places cursor at the exact character clicked
+    if output.response.clicked() {
+        if let Some(pos) = output.response.interact_pointer_pos() {
+            let rel_pos = pos - output.galley_pos;
+            let ccursor = output.galley.cursor_from_pos(rel_pos).ccursor;
+            output
+                .state
+                .cursor
+                .set_char_range(Some(egui::text_selection::CCursorRange::one(ccursor)));
+            output.state.store(ui.ctx(), output.response.id);
+        }
+    }
+
+    // Smooth drag selection without lag: request continuous repaint while blocking/dragging text
+    if output.response.dragged() || ui.ctx().is_being_dragged(output.response.id) {
+        ui.ctx().request_repaint();
+    }
+
+    output.response.changed()
 }
 
 /// Syntax-highlighted single-line text editor for pipeline commands, paths, and SCP sources.
@@ -8998,6 +10345,7 @@ fn styled_text_edit(
 /// paths/strings in teal, and shell operators (`&&`, `|`, `;`) in crimson.
 fn syntax_highlighted_text_edit(
     ui: &mut egui::Ui,
+    id_salt: impl std::hash::Hash,
     value: &mut String,
     width: f32,
     hint: Option<&str>,
@@ -9009,17 +10357,37 @@ fn syntax_highlighted_text_edit(
         ui.fonts(|f| f.layout_job(job))
     };
     let edit = egui::TextEdit::singleline(value)
+        .id_salt(id_salt)
         .font(FontId::proportional(FONT_MD))
         .background_color(INPUT_BG)
         .desired_width(width)
-        .margin(Margin::symmetric(10, 7))
+        .min_size(Vec2::new(width, INPUT_HEIGHT))
+        .margin(Margin::symmetric(10, 8))
         .layouter(&mut layouter)
         .hint_text(
             RichText::new(placeholder_str)
                 .size(FONT_MD)
                 .color(TEXT_PLACEHOLDER),
         );
-    ui.add(edit).changed()
+    let mut output = edit.show(ui);
+
+    if output.response.clicked() {
+        if let Some(pos) = output.response.interact_pointer_pos() {
+            let rel_pos = pos - output.galley_pos;
+            let ccursor = output.galley.cursor_from_pos(rel_pos).ccursor;
+            output
+                .state
+                .cursor
+                .set_char_range(Some(egui::text_selection::CCursorRange::one(ccursor)));
+            output.state.store(ui.ctx(), output.response.id);
+        }
+    }
+
+    if output.response.dragged() || ui.ctx().is_being_dragged(output.response.id) {
+        ui.ctx().request_repaint();
+    }
+
+    output.response.changed()
 }
 
 pub fn build_pipeline_syntax_layout_job(text: &str) -> egui::text::LayoutJob {
@@ -9033,37 +10401,35 @@ pub fn build_pipeline_syntax_layout_job(text: &str) -> egui::text::LayoutJob {
     let color_path = TEAL_PILL_TEXT; // ./dist, /var/www/..., "..."
     let color_operator = FAIL_PILL_TEXT; // &&, ||, |, ;
 
-    let chars: Vec<char> = text.chars().collect();
-    let len = chars.len();
+    let bytes = text.as_bytes();
+    let len = bytes.len();
     let mut i = 0;
 
     while i < len {
-        let ch = chars[i];
+        let b = bytes[i];
 
         // 1. Whitespace
-        if ch.is_whitespace() {
+        if b.is_ascii_whitespace() {
             let start = i;
-            while i < len && chars[i].is_whitespace() {
+            while i < len && bytes[i].is_ascii_whitespace() {
                 i += 1;
             }
-            let slice: String = chars[start..i].iter().collect();
-            job.append(&slice, 0.0, TextFormat::simple(font_id.clone(), TEXT_PRIMARY));
+            job.append(&text[start..i], 0.0, TextFormat::simple(font_id.clone(), TEXT_PRIMARY));
             continue;
         }
 
         // 2. Template Variable `{...}`
-        if ch == '{' {
+        if b == b'{' {
             let start = i;
             i += 1;
-            while i < len && chars[i] != '}' && !chars[i].is_whitespace() {
+            while i < len && bytes[i] != b'}' && !bytes[i].is_ascii_whitespace() {
                 i += 1;
             }
-            if i < len && chars[i] == '}' {
+            if i < len && bytes[i] == b'}' {
                 i += 1;
             }
-            let slice: String = chars[start..i].iter().collect();
             job.append(
-                &slice,
+                &text[start..i],
                 0.0,
                 TextFormat::simple(font_id.clone(), color_template),
             );
@@ -9071,34 +10437,32 @@ pub fn build_pipeline_syntax_layout_job(text: &str) -> egui::text::LayoutJob {
         }
 
         // 3. Quoted String `"..."` or `'...'`
-        if ch == '"' || ch == '\'' {
-            let quote = ch;
+        if b == b'"' || b == b'\'' {
+            let quote = b;
             let start = i;
             i += 1;
-            while i < len && chars[i] != quote {
-                if chars[i] == '{' {
+            while i < len && bytes[i] != quote {
+                if bytes[i] == b'{' {
                     break;
                 }
                 i += 1;
             }
-            if i < len && chars[i] == quote {
+            if i < len && bytes[i] == quote {
                 i += 1;
             }
-            let slice: String = chars[start..i].iter().collect();
-            job.append(&slice, 0.0, TextFormat::simple(font_id.clone(), color_path));
+            job.append(&text[start..i], 0.0, TextFormat::simple(font_id.clone(), color_path));
             continue;
         }
 
         // 4. Operators & Separators (`&&`, `||`, `|`, `;`, `,`)
-        if ch == '&' || ch == '|' || ch == ';' || ch == ',' {
+        if b == b'&' || b == b'|' || b == b';' || b == b',' {
             let start = i;
             i += 1;
-            while i < len && (chars[i] == '&' || chars[i] == '|') {
+            while i < len && (bytes[i] == b'&' || bytes[i] == b'|') {
                 i += 1;
             }
-            let slice: String = chars[start..i].iter().collect();
             job.append(
-                &slice,
+                &text[start..i],
                 0.0,
                 TextFormat::simple(font_id.clone(), color_operator),
             );
@@ -9108,19 +10472,18 @@ pub fn build_pipeline_syntax_layout_job(text: &str) -> egui::text::LayoutJob {
         // 5. General Token (stop at whitespace, `{`, quote, or operator)
         let start = i;
         while i < len
-            && !chars[i].is_whitespace()
-            && chars[i] != '{'
-            && chars[i] != '"'
-            && chars[i] != '\''
-            && chars[i] != '&'
-            && chars[i] != '|'
-            && chars[i] != ';'
-            && chars[i] != ','
+            && !bytes[i].is_ascii_whitespace()
+            && bytes[i] != b'{'
+            && bytes[i] != b'"'
+            && bytes[i] != b'\''
+            && bytes[i] != b'&'
+            && bytes[i] != b'|'
+            && bytes[i] != b';'
+            && bytes[i] != b','
         {
             i += 1;
         }
-        let token: String = chars[start..i].iter().collect();
-        let lower = token.to_ascii_lowercase();
+        let token = &text[start..i];
         let token_color = if token.starts_with('-') {
             color_flag
         } else if token.starts_with("./")
@@ -9135,59 +10498,57 @@ pub fn build_pipeline_syntax_layout_job(text: &str) -> egui::text::LayoutJob {
             || token.ends_with(".env")
         {
             color_path
-        } else if matches!(
-            lower.as_str(),
-            "npm"
-                | "npx"
-                | "yarn"
-                | "pnpm"
-                | "node"
-                | "pm2"
-                | "cargo"
-                | "git"
-                | "docker"
-                | "systemctl"
-                | "service"
-                | "ssh"
-                | "scp"
-                | "mkdir"
-                | "rm"
-                | "cp"
-                | "mv"
-                | "chmod"
-                | "chown"
-                | "tar"
-                | "curl"
-                | "wget"
-                | "export"
-                | "cd"
-                | "echo"
-                | "python"
-                | "pytest"
-                | "go"
-                | "cmdkey"
-                | "security"
-                | "secret-tool"
-                | "sudo"
-                | "run"
-                | "build"
-                | "test"
-                | "install"
-                | "ci"
-                | "restart"
-                | "reload"
-                | "start"
-                | "stop"
-                | "delete"
-                | "status"
-                | "store"
-        ) {
+        } else if token.eq_ignore_ascii_case("npm")
+            || token.eq_ignore_ascii_case("npx")
+            || token.eq_ignore_ascii_case("yarn")
+            || token.eq_ignore_ascii_case("pnpm")
+            || token.eq_ignore_ascii_case("node")
+            || token.eq_ignore_ascii_case("pm2")
+            || token.eq_ignore_ascii_case("cargo")
+            || token.eq_ignore_ascii_case("git")
+            || token.eq_ignore_ascii_case("docker")
+            || token.eq_ignore_ascii_case("systemctl")
+            || token.eq_ignore_ascii_case("service")
+            || token.eq_ignore_ascii_case("ssh")
+            || token.eq_ignore_ascii_case("scp")
+            || token.eq_ignore_ascii_case("mkdir")
+            || token.eq_ignore_ascii_case("rm")
+            || token.eq_ignore_ascii_case("cp")
+            || token.eq_ignore_ascii_case("mv")
+            || token.eq_ignore_ascii_case("chmod")
+            || token.eq_ignore_ascii_case("chown")
+            || token.eq_ignore_ascii_case("tar")
+            || token.eq_ignore_ascii_case("curl")
+            || token.eq_ignore_ascii_case("wget")
+            || token.eq_ignore_ascii_case("export")
+            || token.eq_ignore_ascii_case("cd")
+            || token.eq_ignore_ascii_case("echo")
+            || token.eq_ignore_ascii_case("python")
+            || token.eq_ignore_ascii_case("pytest")
+            || token.eq_ignore_ascii_case("go")
+            || token.eq_ignore_ascii_case("cmdkey")
+            || token.eq_ignore_ascii_case("security")
+            || token.eq_ignore_ascii_case("secret-tool")
+            || token.eq_ignore_ascii_case("sudo")
+            || token.eq_ignore_ascii_case("run")
+            || token.eq_ignore_ascii_case("build")
+            || token.eq_ignore_ascii_case("test")
+            || token.eq_ignore_ascii_case("install")
+            || token.eq_ignore_ascii_case("ci")
+            || token.eq_ignore_ascii_case("restart")
+            || token.eq_ignore_ascii_case("reload")
+            || token.eq_ignore_ascii_case("start")
+            || token.eq_ignore_ascii_case("stop")
+            || token.eq_ignore_ascii_case("delete")
+            || token.eq_ignore_ascii_case("status")
+            || token.eq_ignore_ascii_case("store")
+        {
             color_keyword
         } else {
             TEXT_PRIMARY
         };
 
-        job.append(&token, 0.0, TextFormat::simple(font_id.clone(), token_color));
+        job.append(token, 0.0, TextFormat::simple(font_id.clone(), token_color));
     }
 
     job
@@ -9258,42 +10619,82 @@ fn render_modal_header(
     close_resp.on_hover_text("Close dialog (Esc)").clicked()
 }
 
+/// Calculates responsive modal width: min(560px, 100vw - 32px); below 480px it becomes a full-screen sheet.
+fn modal_width_and_inner(ctx: &egui::Context) -> (f32, f32) {
+    let screen_w = ctx.screen_rect().width();
+    if screen_w < 480.0 {
+        let modal_w = screen_w;
+        let inner_w = (screen_w - 24.0).max(200.0);
+        (modal_w, inner_w)
+    } else {
+        let modal_w = 560.0_f32.min(screen_w - 32.0).max(300.0);
+        let inner_w = modal_w - 48.0;
+        (modal_w, inner_w)
+    }
+}
+
 /// Standardized dialog window frame adhering to design tokens:
-/// width 560px, bg --md-bg, border 1px --md-border, radius --r-xl (16px), padding 24px, shadow 0 24px 60px rgba(2,6,23,0.35)
-fn modal_dialog_frame() -> egui::Frame {
+/// width 560px, bg --md-bg, border 1px --md-border, radius --r-xl (14px), padding 24px, shadow 0 24px 60px rgba(2,6,23,0.35)
+fn modal_dialog_frame_for(ctx: &egui::Context) -> egui::Frame {
+    let screen_w = ctx.screen_rect().width();
+    let is_sheet = screen_w < 480.0;
     egui::Frame::new()
         .fill(MD_BG)
         .stroke(Stroke::new(1.0_f32, MD_BORDER))
-        .corner_radius(R_XL)
-        .shadow(Shadow {
-            offset: [0, 24],
-            blur: 60,
-            spread: 0,
-            color: Color32::from_rgba_unmultiplied(2, 6, 23, 89),
+        .corner_radius(if is_sheet { CornerRadius::ZERO } else { CornerRadius::same(14) })
+        .shadow(if is_sheet {
+            Shadow::NONE
+        } else {
+            Shadow {
+                offset: [0, 24],
+                blur: 60,
+                spread: 0,
+                color: Color32::from_rgba_unmultiplied(2, 6, 23, 89),
+            }
         })
-        .inner_margin(Margin::same(24))
+        .inner_margin(if is_sheet { Margin::same(12) } else { Margin::same(24) })
 }
 
-/// Unified modal text input (height 40px, font --fs-base 14px, bg --md-input-bg, border 1px --md-border, radius --r-md 8px).
+/// Unified modal text input (height 36px, font FS_BASE 13px, bg MD_INPUT_BG, border 1px MD_BORDER, radius R_MD 6px).
 fn modal_text_input(
     ui: &mut egui::Ui,
+    id_salt: impl std::hash::Hash,
     value: &mut String,
     width: f32,
     placeholder: Option<&str>,
 ) -> egui::Response {
     let hint_str = placeholder.unwrap_or("Enter value...");
     let edit = egui::TextEdit::singleline(value)
+        .id_salt(id_salt)
         .font(FontId::proportional(FS_BASE))
         .background_color(MD_INPUT_BG)
         .desired_width(width)
-        .min_size(Vec2::new(width, 40.0))
-        .margin(Margin::symmetric(12, 10))
+        .min_size(Vec2::new(width, INPUT_HEIGHT))
+        .margin(Margin::symmetric(12, 8))
         .hint_text(
             RichText::new(hint_str)
                 .size(FS_BASE)
                 .color(MD_TEXT_MUTED.gamma_multiply(0.7)),
         );
-    ui.add(edit)
+    let mut output = edit.show(ui);
+
+    if output.response.clicked() {
+        if let Some(pos) = output.response.interact_pointer_pos() {
+            let rel_pos = pos - output.galley_pos;
+            let ccursor = output.galley.cursor_from_pos(rel_pos).ccursor;
+            output
+                .state
+                .cursor
+                .set_char_range(Some(egui::text_selection::CCursorRange::one(ccursor)));
+            output.state.store(ui.ctx(), output.response.id);
+        }
+    }
+
+    if output.response.dragged() || ui.ctx().is_being_dragged(output.response.id) {
+        ui.ctx().request_repaint();
+    }
+
+    output.response
 }
 
 /// Unified modal primary action button (height 40px, padding 0 16px, font --fs-base 14px, radius --r-md 8px, bg --accent).
@@ -9376,9 +10777,9 @@ fn render_uniform_tab_button(
     };
 
     ui.painter()
-        .rect_filled(rect, CornerRadius::same(8), fill);
+        .rect_filled(rect, CornerRadius::same(6), fill);
     ui.painter()
-        .rect_stroke(rect, CornerRadius::same(8), stroke, StrokeKind::Inside);
+        .rect_stroke(rect, CornerRadius::same(6), stroke, StrokeKind::Inside);
 
     let colored_galley = ui.painter().layout_no_wrap(
         label.to_string(),
@@ -9540,7 +10941,7 @@ fn paint_sidebar_env_badge(
     bg: Color32,
     fg: Color32,
 ) -> f32 {
-    let font_id = FontId::proportional(FS_MICRO);
+    let font_id = FontId::monospace(FS_MICRO);
     let galley = painter.layout_no_wrap(text.to_string(), font_id, fg);
     let pad_x = 8.0_f32;
     let h = 20.0_f32;
@@ -10057,6 +11458,7 @@ enum OutlineIcon {
     ChevronUp,
     Check,
     X,
+    MoreHorizontal,
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -10312,6 +11714,12 @@ fn draw_outline_icon(painter: &egui::Painter, c: Pos2, icon: OutlineIcon, color:
         OutlineIcon::X => {
             painter.line_segment([Pos2::new(c.x - 4.0, c.y - 4.0), Pos2::new(c.x + 4.0, c.y + 4.0)], s);
             painter.line_segment([Pos2::new(c.x + 4.0, c.y - 4.0), Pos2::new(c.x - 4.0, c.y + 4.0)], s);
+        }
+        OutlineIcon::MoreHorizontal => {
+            let r = 1.6_f32;
+            for dx in [-4.5_f32, 0.0, 4.5_f32] {
+                painter.circle_filled(Pos2::new(c.x + dx, c.y), r, color);
+            }
         }
     }
 }
@@ -11119,8 +12527,8 @@ mod tests {
         // 1. Verify typography tokens
         assert_eq!(FS_TITLE, 18.0);
         assert_eq!(FS_BRAND, 16.0);
-        assert_eq!(FS_BASE, 14.0);
-        assert_eq!(FS_SMALL, 13.0);
+        assert_eq!(FS_BASE, 13.0);
+        assert_eq!(FS_SMALL, 12.0);
         assert_eq!(FS_MICRO, 11.0);
 
         // 2. Verify spacing and radius scales
@@ -11130,17 +12538,18 @@ mod tests {
         assert_eq!(SP_16, 16.0);
         assert_eq!(SP_20, 20.0);
         assert_eq!(SP_24, 24.0);
-        assert_eq!(R_SM, 6.0);
-        assert_eq!(R_MD, 8.0);
-        assert_eq!(R_LG, 12.0);
-        assert_eq!(R_XL, 16.0);
+        assert_eq!(R_SM, 4.0);
+        assert_eq!(R_MD, 6.0);
+        assert_eq!(R_LG, 10.0);
+        assert_eq!(R_XL, 14.0);
 
         // 3. Verify color tokens
-        assert_eq!(SB_BG, Color32::from_rgb(11, 18, 32));
-        assert_eq!(SB_SURFACE, Color32::from_rgb(17, 26, 46));
-        assert_eq!(SB_SURFACE_HOVER, Color32::from_rgb(22, 33, 58));
+        assert_eq!(SB_BG, Color32::WHITE);
+        assert_eq!(SB_SURFACE, Color32::from_rgb(245, 245, 247));
+        assert_eq!(SB_BORDER, Color32::from_rgb(230, 230, 234));
+        assert_eq!(ACCENT, Color32::from_rgb(20, 110, 245));
         assert_eq!(MD_BG, Color32::WHITE);
-        assert_eq!(MD_BORDER, Color32::from_rgb(226, 232, 240));
+        assert_eq!(MD_BORDER, Color32::from_rgb(230, 230, 234));
 
         let mut storage = crate::storage::AppStorage::default();
         storage.projects = vec![
@@ -11353,9 +12762,9 @@ mod tests {
         assert!(app.sidebar_context_menu.is_some());
 
         // 3. Test destructive styling tokens
-        assert_eq!(DESTRUCTIVE_TEXT, Color32::from_rgb(248, 113, 113));
-        assert_eq!(DESTRUCTIVE_HOVER_BG, Color32::from_rgba_premultiplied(29, 8, 8, 31));
-        assert_eq!(DESTRUCTIVE_ACTIVE_BG, Color32::from_rgba_premultiplied(48, 14, 14, 51));
+        assert_eq!(DESTRUCTIVE_TEXT, Color32::from_rgb(238, 29, 54));
+        assert_eq!(DESTRUCTIVE_HOVER_BG, Color32::from_rgba_premultiplied(18, 2, 4, 20));
+        assert_eq!(DESTRUCTIVE_ACTIVE_BG, Color32::from_rgba_premultiplied(35, 4, 8, 38));
 
         // 4. Test outline icons rendering without panic
         let _ = ctx.run(Default::default(), |ctx| {
@@ -12146,5 +13555,91 @@ mod tests {
         assert!(app.pending_update_restart.is_none());
         // Since mock exe does not exist, update_error safely records the error without crash
         assert!(app.update_error.is_some());
+    }
+
+    #[test]
+    fn test_webflow_palette_and_theme_tokens() {
+        let light = Theme::light();
+        assert_eq!(light.bg, Color32::WHITE);
+        assert_eq!(light.surface, Color32::WHITE);
+        assert_eq!(light.surface_2, Color32::from_rgb(245, 245, 247)); // #F5F5F7
+        assert_eq!(light.border, Color32::from_rgb(230, 230, 234)); // #E6E6EA
+        assert_eq!(light.border_strong, Color32::from_rgb(212, 212, 218)); // #D4D4DA
+        assert_eq!(light.text, Color32::from_rgb(8, 8, 8)); // #080808
+        assert_eq!(light.text_muted, Color32::from_rgb(90, 90, 90)); // #5A5A5A
+        assert_eq!(light.primary, Color32::from_rgb(20, 110, 245)); // #146EF5
+        assert_eq!(light.primary_hover, Color32::from_rgb(15, 94, 215)); // #0F5ED7
+        assert_eq!(light.primary_active, Color32::from_rgb(11, 79, 184)); // #0B4FB8
+        assert_eq!(light.primary_soft, Color32::from_rgb(231, 240, 254)); // #E7F0FE
+        assert_eq!(light.purple, Color32::from_rgb(122, 61, 255)); // #7A3DFF
+        assert_eq!(light.danger, Color32::from_rgb(238, 29, 54)); // #EE1D36
+
+        let dark = Theme::dark();
+        assert_eq!(dark.bg, Color32::from_rgb(8, 8, 8)); // #080808
+        assert_eq!(dark.surface, Color32::from_rgb(16, 16, 18)); // #101012
+        assert_eq!(dark.surface_2, Color32::from_rgb(24, 24, 27)); // #18181B
+        assert_eq!(dark.border, Color32::from_rgb(38, 38, 43)); // #26262B
+        assert_eq!(dark.text, Color32::from_rgb(245, 245, 245)); // #F5F5F5
+        assert_eq!(dark.primary, Color32::from_rgb(59, 130, 246)); // #3B82F6
+    }
+
+    #[test]
+    fn test_responsive_modal_width_and_sheet_breakpoints() {
+        let ctx = egui::Context::default();
+
+        // 1. Desktop screen width 1280px
+        let _ = ctx.run(
+            egui::RawInput {
+                screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(1280.0, 800.0))),
+                ..Default::default()
+            },
+            |ctx| {
+                let (modal_w, inner_w) = modal_width_and_inner(ctx);
+                assert_eq!(modal_w, 560.0);
+                assert_eq!(inner_w, 560.0 - 48.0);
+            },
+        );
+
+        // 2. Narrow screen width 400px (< 480px) becomes full-screen sheet
+        let _ = ctx.run(
+            egui::RawInput {
+                screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(400.0, 700.0))),
+                ..Default::default()
+            },
+            |ctx| {
+                let (modal_w, inner_w) = modal_width_and_inner(ctx);
+                assert_eq!(modal_w, 400.0);
+                assert_eq!(inner_w, 400.0 - 24.0);
+            },
+        );
+    }
+
+    #[test]
+    fn test_responsive_environment_cards_and_history_stacked_breakpoints() {
+        // Breakpoints: >= 1200px: 3 cols, 900-1199px: 2 cols, < 900px: 1 col
+        let cols_at = |screen_w: f32| -> usize {
+            if screen_w >= 1200.0 {
+                3
+            } else if (900.0..1200.0).contains(&screen_w) {
+                2
+            } else {
+                1
+            }
+        };
+        assert_eq!(cols_at(1400.0), 3);
+        assert_eq!(cols_at(1200.0), 3);
+        assert_eq!(cols_at(1199.0), 2);
+        assert_eq!(cols_at(950.0), 2);
+        assert_eq!(cols_at(900.0), 2);
+        assert_eq!(cols_at(899.0), 1);
+        assert_eq!(cols_at(600.0), 1);
+
+        // Deployments history view: stacked below 900px or when available width < 640px
+        let is_stacked = |screen_w: f32, avail_w: f32| -> bool {
+            screen_w < 900.0 || avail_w < 640.0
+        };
+        assert!(!is_stacked(1280.0, 900.0));
+        assert!(is_stacked(850.0, 700.0));
+        assert!(is_stacked(1280.0, 600.0));
     }
 }

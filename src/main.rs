@@ -80,8 +80,8 @@ fn main() -> eframe::Result<()> {
             .with_title(format!("Shiply v{APP_VERSION} — Mini Deployment Platform"))
             .with_icon(app_icon)
             .with_decorations(false)
-            .with_inner_size([1340.0, 840.0])
-            .with_min_inner_size([980.0, 640.0]),
+            .with_inner_size([1280.0, 800.0])
+            .with_min_inner_size([800.0, 560.0]),
         ..Default::default()
     };
 

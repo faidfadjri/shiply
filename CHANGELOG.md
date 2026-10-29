@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.10.10] - 2026-10-29
+
+### Added
+- Webflow-Style Light First Theme: clean white canvas, brand blue accents (`#146EF5`), near-black typography (`#080808`), soft lavender-blue tint backgrounds, hairline borders (`#E6E6EA`), and crisp radii across all components, with full dark mode support.
+- Top Signature Accent: 3px solid `--primary` strip across the very top edge of the window.
+- Fully Responsive Layout Matrix:
+  - Responsive Sidebar: expanded (248px) at $\ge 1200\text{px}$, collapsed rail (64px) with 32px initial avatars at $900\text{px}-1199\text{px}$, off-canvas drawer with `rgba(8,8,8,0.4)` overlay below $900\text{px}$.
+  - Environment Cards: auto-responsive 3 columns ($\ge 1200\text{px}$), 2 columns ($900\text{px}-1199\text{px}$), and 1 column below $900\text{px}$.
+  - Project Header: below $720\text{px}$ keeps primary Deploy button visible and moves project actions into a `MoreHorizontal` ("⋯") menu.
+  - Workspace Tabs: horizontally scrollable single row with hidden scrollbars, auto-scrolling active tab into view (`scroll_to_me`), uniform 40px height.
+  - Deployments History: desktop 48px row table at $\ge 900\text{px}$, responsive stacked cards below $900\text{px}$ with status, version, git commit details, duration, and action buttons.
+  - Settings & Forms: 2 columns at $\ge 800\text{px}$, 1 column stack below $800\text{px}$.
+  - Modals & Sheets: responsive dialogs scaling to `min(560px, 100vw - 32px)`, converting to a full-screen sheet below $480\text{px}$.
+  - Window Size: minimum inner window dimensions enforced at $800\times 560$.
+
+### Fixed
+- Text Input Cursor Snap: clicking a prefilled field now places the cursor accurately where clicked rather than snapping to the beginning of the field.
+- Text Drag Selection Lag: fixed mouse drag lag and text blocking failure by requesting continuous frame repaints during active selection interactions.
+
 ## [0.10.9] - 2026-10-29
 
 ### Fixed
