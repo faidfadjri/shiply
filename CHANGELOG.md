@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.10.11] - 2026-10-29
+
+### Changed
+- Dark Sidebar: restored and preserved the deep navy-black dark background (`#0B1220`) and high-contrast dark theme tokens across the sidebar in expanded mode, collapsed 64px rail mode, and off-canvas mobile drawer.
+- Window Topbar: removed the 3px blue line on top of the window and vertically centered the topbar elements cleanly.
+- Sidebar Search: added dedicated dark styling `sidebar_search_text_edit` with smooth cursor positioning, instant text blocking, and dark borders matching sidebar design tokens.
+
 ## [0.10.10] - 2026-10-29
 
 ### Added

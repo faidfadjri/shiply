@@ -228,21 +228,24 @@ pub const STEP_VERIFY_ACCENT: Color32 = Color32::from_rgb(245, 158, 11); // #F59
 pub const STEP_SCP_ACCENT: Color32 = Color32::from_rgb(122, 61, 255); // #7A3DFF
 pub const STEP_SSH_ACCENT: Color32 = Color32::from_rgb(20, 184, 166); // #14B8A6
 
-// Sidebar Light Theme Colors
-pub const SB_BG: Color32 = Color32::from_rgb(255, 255, 255); // #FFFFFF
-pub const SB_SURFACE: Color32 = Color32::from_rgb(245, 245, 247); // #F5F5F7
-pub const SB_SURFACE_HOVER: Color32 = Color32::from_rgb(238, 240, 246);
-pub const SB_BORDER: Color32 = Color32::from_rgb(230, 230, 234); // #E6E6EA
-pub const SB_TEXT: Color32 = Color32::from_rgb(8, 8, 8); // #080808
-pub const SB_TEXT_MUTED: Color32 = Color32::from_rgb(90, 90, 90); // #5A5A5A
-pub const SB_TEXT_FAINT: Color32 = Color32::from_rgb(138, 138, 143); // #8A8A8F
-pub const ACCENT: Color32 = Color32::from_rgb(20, 110, 245); // #146EF5
-pub const ACCENT_SOFT: Color32 = Color32::from_rgb(231, 240, 254); // #E7F0FE
+// Sidebar Dark Theme Colors (keeps dark background)
+pub const SB_BG: Color32 = Color32::from_rgb(11, 18, 32);                          // #0B1220 deep dark navy
+pub const SB_SURFACE: Color32 = Color32::from_rgb(17, 26, 46);                     // #111A2E surface
+pub const SB_SURFACE_HOVER: Color32 = Color32::from_rgb(22, 33, 58);               // #16213A hover
+pub const SB_BORDER: Color32 = Color32::from_rgba_premultiplied(15, 15, 15, 15);    // rgba(255,255,255,0.06)
+pub const SB_BORDER_LINE: Color32 = Color32::from_rgb(28, 38, 60);                  // solid hairline border #1C263C
+pub const SB_TEXT: Color32 = Color32::from_rgb(230, 234, 242);                     // #E6EAF2
+pub const SB_TEXT_MUTED: Color32 = Color32::from_rgb(139, 150, 173);               // #8B96AD
+pub const SB_TEXT_FAINT: Color32 = Color32::from_rgb(100, 112, 138);               // #64708A
+pub const SB_ACCENT: Color32 = Color32::from_rgb(59, 130, 246);                    // #3B82F6
+pub const SB_ACCENT_SOFT: Color32 = Color32::from_rgba_premultiplied(8, 18, 35, 36); // rgba(59,130,246,0.14)
+pub const ACCENT: Color32 = Color32::from_rgb(20, 110, 245);                        // #146EF5 (primary brand blue)
+pub const ACCENT_SOFT: Color32 = Color32::from_rgb(231, 240, 254);                  // #E7F0FE (soft blue)
 
-pub const BADGE_DEV_BG: Color32 = Color32::from_rgb(231, 240, 254); // #E7F0FE
-pub const BADGE_DEV_TEXT: Color32 = Color32::from_rgb(20, 110, 245); // #146EF5
-pub const BADGE_PROD_BG: Color32 = Color32::from_rgb(240, 234, 255); // #F0EAFF
-pub const BADGE_PROD_TEXT: Color32 = Color32::from_rgb(122, 61, 255); // #7A3DFF
+pub const BADGE_DEV_BG: Color32 = Color32::from_rgba_premultiplied(9, 21, 40, 41);  // rgba(59,130,246,0.16)
+pub const BADGE_DEV_TEXT: Color32 = Color32::from_rgb(125, 178, 255);              // #7DB2FF
+pub const BADGE_PROD_BG: Color32 = Color32::from_rgba_premultiplied(27, 14, 40, 41); // rgba(168,85,247,0.16)
+pub const BADGE_PROD_TEXT: Color32 = Color32::from_rgb(196, 161, 255);             // #C4A1FF
 
 pub const DESTRUCTIVE_TEXT: Color32 = Color32::from_rgb(238, 29, 54); // #EE1D36
 pub const DESTRUCTIVE_HOVER_BG: Color32 = Color32::from_rgba_premultiplied(18, 2, 4, 20);
@@ -1736,18 +1739,7 @@ impl ShiplyApp {
             )
             .show(ctx, |ui| {
                 let bar_rect = ui.max_rect();
-
-                // Signature detail: a 3px solid --primary strip at the very top edge of the window
-                ui.painter().rect_filled(
-                    Rect::from_min_max(
-                        Pos2::new(bar_rect.left(), bar_rect.top()),
-                        Pos2::new(bar_rect.right(), bar_rect.top() + 3.0),
-                    ),
-                    CornerRadius::ZERO,
-                    theme.primary,
-                );
-
-                let cy = bar_rect.top() + 3.0 + (bar_rect.height() - 3.0) * 0.5;
+                let cy = bar_rect.center().y;
                 let pill_h = 28.0;
                 let mut x = bar_rect.left() + 2.0;
 
@@ -2116,7 +2108,6 @@ impl ShiplyApp {
 
     fn render_sidebar_drawer(&mut self, ctx: &egui::Context) {
         let screen_rect = ctx.screen_rect();
-        let theme = self.theme();
 
         egui::Area::new(egui::Id::new("sidebar_drawer_overlay"))
             .fixed_pos(screen_rect.min)
@@ -2137,19 +2128,19 @@ impl ShiplyApp {
                 let mut drawer_ui = ui.new_child(egui::UiBuilder::new().max_rect(drawer_rect));
                 drawer_ui
                     .painter()
-                    .rect_filled(drawer_rect, CornerRadius::ZERO, theme.surface);
+                    .rect_filled(drawer_rect, CornerRadius::ZERO, SB_BG);
                 drawer_ui.painter().line_segment(
                     [
                         Pos2::new(drawer_rect.right(), drawer_rect.top()),
                         Pos2::new(drawer_rect.right(), drawer_rect.bottom()),
                     ],
-                    Stroke::new(1.0_f32, theme.border),
+                    Stroke::new(1.0_f32, SB_BORDER_LINE),
                 );
 
                 let mut inner_ui = drawer_ui.new_child(
                     egui::UiBuilder::new().max_rect(drawer_rect.shrink2(Vec2::new(10.0, 0.0))),
                 );
-                inner_ui.visuals_mut().override_text_color = Some(theme.text);
+                inner_ui.visuals_mut().override_text_color = Some(SB_TEXT);
                 let mut sort_trigger_rect_out = None;
                 self.render_sidebar_content(&mut inner_ui, false, ctx, &mut sort_trigger_rect_out);
                 if let Some(r) = sort_trigger_rect_out {
@@ -2168,7 +2159,6 @@ impl ShiplyApp {
                 + (SIDEBAR_EXPANDED_WIDTH - SIDEBAR_COLLAPSED_WIDTH)
                     * ((anim_t - 0.35) / 0.65).clamp(0.0, 1.0)
         };
-        let theme = self.theme();
         let pad_x = if is_rail { 4.0 } else { 10.0 };
         let mut sort_trigger_rect_out = None;
 
@@ -2177,12 +2167,12 @@ impl ShiplyApp {
             .exact_width(width)
             .frame(
                 egui::Frame::new()
-                    .fill(theme.surface)
+                    .fill(SB_BG)
                     .inner_margin(Margin::symmetric(pad_x as i8, 0))
-                    .stroke(Stroke::new(1.0_f32, theme.border)),
+                    .stroke(Stroke::new(1.0_f32, SB_BORDER_LINE)),
             )
             .show(ctx, |ui| {
-                ui.visuals_mut().override_text_color = Some(theme.text);
+                ui.visuals_mut().override_text_color = Some(SB_TEXT);
                 self.render_sidebar_content(ui, is_rail, ctx, &mut sort_trigger_rect_out);
             });
 
@@ -2221,7 +2211,7 @@ impl ShiplyApp {
                     Pos2::new(brand_rect.left(), brand_rect.bottom()),
                     Pos2::new(brand_rect.right(), brand_rect.bottom()),
                 ],
-                Stroke::new(1.0_f32, theme.border),
+                Stroke::new(1.0_f32, SB_BORDER_LINE),
             );
 
             // 2. Pinned Footer (128px)
@@ -2236,7 +2226,7 @@ impl ShiplyApp {
                     Pos2::new(footer_rect.left(), footer_rect.top()),
                     Pos2::new(footer_rect.right(), footer_rect.top()),
                 ],
-                Stroke::new(1.0_f32, theme.border),
+                Stroke::new(1.0_f32, SB_BORDER_LINE),
             );
             footer_ui.add_space(8.0);
 
@@ -2252,12 +2242,12 @@ impl ShiplyApp {
             if sync_resp.hovered() {
                 footer_ui
                     .painter()
-                    .rect_filled(sync_rect, CornerRadius::same(R_MD as u8), theme.surface_2);
+                    .rect_filled(sync_rect, CornerRadius::same(R_MD as u8), SB_SURFACE_HOVER);
             }
             draw_icon_refresh(
                 footer_ui.painter(),
                 sync_rect.center(),
-                if sync_resp.hovered() { theme.text } else { theme.text_muted },
+                if sync_resp.hovered() { SB_TEXT } else { SB_TEXT_MUTED },
             );
             if sync_resp.clicked() {
                 self.sidebar_refreshing_until = Some(Instant::now() + Duration::from_millis(400));
@@ -2285,12 +2275,12 @@ impl ShiplyApp {
             if dir_resp.hovered() {
                 footer_ui
                     .painter()
-                    .rect_filled(dir_rect, CornerRadius::same(R_MD as u8), theme.surface_2);
+                    .rect_filled(dir_rect, CornerRadius::same(R_MD as u8), SB_SURFACE_HOVER);
             }
             draw_icon_folder(
                 footer_ui.painter(),
                 dir_rect.center(),
-                if dir_resp.hovered() { theme.text } else { theme.text_muted },
+                if dir_resp.hovered() { SB_TEXT } else { SB_TEXT_MUTED },
             );
             if dir_resp.clicked() {
                 let dir = self.storage.app_data_dir();
@@ -2311,14 +2301,14 @@ impl ShiplyApp {
             if upd_resp.hovered() {
                 footer_ui
                     .painter()
-                    .rect_filled(upd_rect, CornerRadius::same(R_MD as u8), theme.surface_2);
+                    .rect_filled(upd_rect, CornerRadius::same(R_MD as u8), SB_SURFACE_HOVER);
             }
             let upd_color = if self.available_update.is_some() {
                 theme.warning
             } else if upd_resp.hovered() {
-                theme.text
+                SB_TEXT
             } else {
-                theme.text_muted
+                SB_TEXT_MUTED
             };
             draw_icon_refresh(footer_ui.painter(), upd_rect.center(), upd_color);
             if upd_resp.clicked() {
@@ -2368,18 +2358,18 @@ impl ShiplyApp {
                         .on_hover_cursor(egui::CursorIcon::PointingHand)
                         .on_hover_text("All Deployments");
                     let all_bg = if is_overview {
-                        theme.primary_soft
+                        SB_ACCENT_SOFT
                     } else if all_resp.hovered() {
-                        theme.surface_2
+                        SB_SURFACE_HOVER
                     } else {
                         Color32::TRANSPARENT
                     };
                     let all_fg = if is_overview {
-                        theme.primary
+                        SB_ACCENT
                     } else if all_resp.hovered() {
-                        theme.text
+                        SB_TEXT
                     } else {
-                        theme.text_muted
+                        SB_TEXT_MUTED
                     };
                     ui.painter().rect_filled(all_rect, CornerRadius::same(R_MD as u8), all_bg);
                     draw_icon_layers(ui.painter(), all_rect.center(), all_fg);
@@ -2397,18 +2387,18 @@ impl ShiplyApp {
                             .on_hover_cursor(egui::CursorIcon::PointingHand)
                             .on_hover_text("Bulk Deploy...");
                         let bulk_bg = if is_bulk {
-                            theme.primary_soft
+                            SB_ACCENT_SOFT
                         } else if bulk_resp.hovered() {
-                            theme.surface_2
+                            SB_SURFACE_HOVER
                         } else {
                             Color32::TRANSPARENT
                         };
                         let bulk_fg = if is_bulk {
-                            theme.primary
+                            SB_ACCENT
                         } else if bulk_resp.hovered() {
-                            theme.text
+                            SB_TEXT
                         } else {
-                            theme.text_muted
+                            SB_TEXT_MUTED
                         };
                         ui.painter().rect_filled(bulk_rect, CornerRadius::same(R_MD as u8), bulk_bg);
                         draw_icon_send(ui.painter(), bulk_rect.center(), bulk_fg);
@@ -2422,7 +2412,7 @@ impl ShiplyApp {
                     let sep_y = ui.cursor().min.y + 4.0;
                     ui.painter().line_segment(
                         [Pos2::new(center_x - 14.0, sep_y), Pos2::new(center_x + 14.0, sep_y)],
-                        Stroke::new(1.0_f32, theme.border),
+                        Stroke::new(1.0_f32, SB_BORDER_LINE),
                     );
                     ui.add_space(12.0);
 
@@ -2432,9 +2422,9 @@ impl ShiplyApp {
                         .interact(add_rect, egui::Id::new("rail_add_proj_btn"), Sense::click())
                         .on_hover_cursor(egui::CursorIcon::PointingHand)
                         .on_hover_text("Add Project");
-                    let add_bg = if add_resp.hovered() { theme.surface_2 } else { Color32::TRANSPARENT };
+                    let add_bg = if add_resp.hovered() { SB_SURFACE_HOVER } else { Color32::TRANSPARENT };
                     ui.painter().rect_filled(add_rect, CornerRadius::same(R_MD as u8), add_bg);
-                    draw_icon_plus(ui.painter(), add_rect.center(), theme.text_muted);
+                    draw_icon_plus(ui.painter(), add_rect.center(), if add_resp.hovered() { SB_TEXT } else { SB_TEXT_MUTED });
                     if add_resp.clicked() {
                         self.new_project_group.clear();
                         self.show_new_project_modal = true;
@@ -2451,23 +2441,23 @@ impl ShiplyApp {
                             .on_hover_cursor(egui::CursorIcon::PointingHand);
 
                         let bg_fill = if is_selected {
-                            theme.primary_soft
+                            SB_ACCENT_SOFT
                         } else if p_resp.hovered() {
-                            theme.surface_2
+                            SB_SURFACE_HOVER
                         } else {
-                            theme.surface_tint_top
+                            SB_SURFACE
                         };
                         let stroke = if is_selected {
-                            Stroke::new(2.0_f32, theme.primary)
+                            Stroke::new(2.0_f32, SB_ACCENT)
                         } else {
-                            Stroke::new(1.0_f32, theme.border)
+                            Stroke::new(1.0_f32, SB_BORDER_LINE)
                         };
 
                         ui.painter().rect_filled(p_avatar_rect, CornerRadius::same(8), bg_fill);
                         ui.painter().rect_stroke(p_avatar_rect, CornerRadius::same(8), stroke, StrokeKind::Inside);
 
                         let initial = project.name.chars().next().unwrap_or('P').to_uppercase().to_string();
-                        let fg_color = if is_selected { theme.primary } else { theme.text };
+                        let fg_color = if is_selected { SB_ACCENT } else { SB_TEXT };
                         ui.painter().text(
                             p_avatar_rect.center(),
                             Align2::CENTER_CENTER,
@@ -2540,15 +2530,15 @@ impl ShiplyApp {
                     Align2::LEFT_CENTER,
                     "Shiply",
                     FontId::proportional(FS_BRAND),
-                    theme.text,
+                    SB_TEXT,
                 );
 
-                // Version badge: mono 11px, bg --surface-2, text --text-muted, radius 4px
+                // Version badge: mono 11px, bg --sb-surface, text --sb-text-muted, radius 4px
                 let ver_text = format!("v{APP_VERSION}");
                 let ver_galley = brand_ui.painter().layout_no_wrap(
                     ver_text,
                     FontId::monospace(FS_MICRO),
-                    theme.text_muted,
+                    SB_TEXT_MUTED,
                 );
                 let badge_pad_x = 6.0_f32;
                 let badge_h = 20.0_f32;
@@ -2562,14 +2552,14 @@ impl ShiplyApp {
                 );
                 brand_ui
                     .painter()
-                    .rect_filled(badge_rect, CornerRadius::same(R_SM as u8), theme.surface_2);
+                    .rect_filled(badge_rect, CornerRadius::same(R_SM as u8), SB_SURFACE);
                 brand_ui.painter().galley(
                     Pos2::new(
                         badge_rect.left() + badge_pad_x,
                         badge_rect.center().y - ver_galley.size().y / 2.0,
                     ),
                     ver_galley,
-                    theme.text_muted,
+                    SB_TEXT_MUTED,
                 );
 
                 // Hairline bottom border
@@ -2578,7 +2568,7 @@ impl ShiplyApp {
                         Pos2::new(brand_rect.left() - 10.0, brand_rect.bottom()),
                         Pos2::new(brand_rect.right() + 10.0, brand_rect.bottom()),
                     ],
-                    Stroke::new(1.0_f32, theme.border),
+                    Stroke::new(1.0_f32, SB_BORDER_LINE),
                 );
             }
 
@@ -2595,7 +2585,7 @@ impl ShiplyApp {
                         Pos2::new(footer_rect.left() - 10.0, footer_rect.top()),
                         Pos2::new(footer_rect.right() + 10.0, footer_rect.top()),
                     ],
-                    Stroke::new(1.0_f32, theme.border),
+                    Stroke::new(1.0_f32, SB_BORDER_LINE),
                 );
 
                 footer_ui.add_space(8.0);
@@ -2606,14 +2596,14 @@ impl ShiplyApp {
                     footer_ui.allocate_exact_size(Vec2::new(full_w, 32.0), Sense::click());
                 let sync_resp = sync_resp.on_hover_cursor(egui::CursorIcon::PointingHand);
                 let sync_bg = if sync_resp.hovered() {
-                    theme.surface_2
+                    SB_SURFACE_HOVER
                 } else {
                     Color32::TRANSPARENT
                 };
                 let sync_fg = if sync_resp.hovered() {
-                    theme.text
+                    SB_TEXT
                 } else {
-                    theme.text_muted
+                    SB_TEXT_MUTED
                 };
                 footer_ui
                     .painter()
@@ -2655,14 +2645,14 @@ impl ShiplyApp {
                     footer_ui.allocate_exact_size(Vec2::new(full_w, 32.0), Sense::click());
                 let dir_resp = dir_resp.on_hover_cursor(egui::CursorIcon::PointingHand);
                 let dir_bg = if dir_resp.hovered() {
-                    theme.surface_2
+                    SB_SURFACE_HOVER
                 } else {
                     Color32::TRANSPARENT
                 };
                 let dir_fg = if dir_resp.hovered() {
-                    theme.text
+                    SB_TEXT
                 } else {
-                    theme.text_muted
+                    SB_TEXT_MUTED
                 };
                 footer_ui
                     .painter()
@@ -2702,14 +2692,14 @@ impl ShiplyApp {
                         theme.warning,
                     )
                 } else if self.update_checking {
-                    ("Checking Releases...".to_string(), theme.primary)
+                    ("Checking Releases...".to_string(), SB_ACCENT)
                 } else if upd_resp.hovered() {
-                    ("Check for Updates".to_string(), theme.text)
+                    ("Check for Updates".to_string(), SB_TEXT)
                 } else {
-                    ("Check for Updates".to_string(), theme.text_muted)
+                    ("Check for Updates".to_string(), SB_TEXT_MUTED)
                 };
                 let upd_bg = if upd_resp.hovered() {
-                    theme.surface_2
+                    SB_SURFACE_HOVER
                 } else {
                     Color32::TRANSPARENT
                 };
@@ -2749,7 +2739,7 @@ impl ShiplyApp {
                 let install_state = check_install_state(&default_install_dir(), APP_VERSION);
                 let (dot_color, status_text, action_text) = match &install_state {
                     InstallState::NotInstalled => {
-                        (theme.primary, "Not installed".to_string(), "Install (.exe)")
+                        (SB_ACCENT, "Not installed".to_string(), "Install (.exe)")
                     }
                     InstallState::InstalledCurrent { version, .. } => {
                         (theme.success, format!("Installed v{version}"), "Reinstall")
@@ -2770,7 +2760,7 @@ impl ShiplyApp {
                 let st_galley = footer_ui.painter().layout_no_wrap(
                     status_text,
                     FontId::monospace(FS_MICRO),
-                    theme.text_muted,
+                    SB_TEXT_MUTED,
                 );
                 footer_ui.painter().galley(
                     Pos2::new(
@@ -2778,14 +2768,14 @@ impl ShiplyApp {
                         stat_rect.center().y - st_galley.size().y / 2.0,
                     ),
                     st_galley.clone(),
-                    theme.text_muted,
+                    SB_TEXT_MUTED,
                 );
 
                 let link_x = stat_rect.left() + 20.0 + st_galley.size().x + 8.0;
                 let link_galley = footer_ui.painter().layout_no_wrap(
                     action_text.to_string(),
                     FontId::proportional(FS_MICRO),
-                    theme.text_subtle,
+                    SB_TEXT_FAINT,
                 );
                 let link_rect = Rect::from_min_size(
                     Pos2::new(link_x, stat_rect.center().y - link_galley.size().y / 2.0),
@@ -2799,9 +2789,9 @@ impl ShiplyApp {
                     )
                     .on_hover_cursor(egui::CursorIcon::PointingHand);
                 let link_color = if link_resp.hovered() {
-                    theme.primary
+                    SB_ACCENT
                 } else {
-                    theme.text_subtle
+                    SB_TEXT_FAINT
                 };
                 footer_ui
                     .painter()
@@ -2836,18 +2826,18 @@ impl ShiplyApp {
                         ui.allocate_exact_size(Vec2::new(full_w, 36.0), Sense::click());
                     let nav_resp = nav_resp.on_hover_cursor(egui::CursorIcon::PointingHand);
                     let nav_bg = if is_overview {
-                        theme.primary_soft
+                        SB_ACCENT_SOFT
                     } else if nav_resp.hovered() {
-                        theme.surface_2
+                        SB_SURFACE_HOVER
                     } else {
                         Color32::TRANSPARENT
                     };
                     let nav_fg = if is_overview {
-                        theme.primary
+                        SB_ACCENT
                     } else if nav_resp.hovered() {
-                        theme.text
+                        SB_TEXT
                     } else {
-                        theme.text_muted
+                        SB_TEXT_MUTED
                     };
                     ui.painter()
                         .rect_filled(nav_rect, CornerRadius::same(R_MD as u8), nav_bg);
@@ -2875,18 +2865,18 @@ impl ShiplyApp {
                             ui.allocate_exact_size(Vec2::new(full_w, 36.0), Sense::click());
                         let bulk_resp = bulk_resp.on_hover_cursor(egui::CursorIcon::PointingHand);
                         let bulk_bg = if is_bulk_active {
-                            theme.primary_soft
+                            SB_ACCENT_SOFT
                         } else if bulk_resp.hovered() {
-                            theme.surface_2
+                            SB_SURFACE_HOVER
                         } else {
                             Color32::TRANSPARENT
                         };
                         let bulk_fg = if is_bulk_active {
-                            theme.primary
+                            SB_ACCENT
                         } else if bulk_resp.hovered() {
-                            theme.text
+                            SB_TEXT
                         } else {
-                            theme.text_muted
+                            SB_TEXT_MUTED
                         };
                         ui.painter()
                             .rect_filled(bulk_rect, CornerRadius::same(R_MD as u8), bulk_bg);
@@ -2920,7 +2910,7 @@ impl ShiplyApp {
                         Align2::LEFT_CENTER,
                         "PROJECTS",
                         FontId::proportional(FS_SMALL),
-                        theme.text_subtle,
+                        SB_TEXT_FAINT,
                     );
 
                     let add_w = 46.0_f32;
@@ -2939,16 +2929,16 @@ impl ShiplyApp {
                         )
                         .on_hover_cursor(egui::CursorIcon::PointingHand);
                     let add_bg = if add_btn_resp.hovered() {
-                        theme.surface_2
+                        SB_SURFACE_HOVER
                     } else {
-                        theme.surface
+                        SB_SURFACE
                     };
                     ui.painter()
                         .rect_filled(add_btn_rect, CornerRadius::same(R_SM as u8), add_bg);
                     ui.painter().rect_stroke(
                         add_btn_rect,
                         CornerRadius::same(R_SM as u8),
-                        Stroke::new(1.0_f32, theme.border),
+                        Stroke::new(1.0_f32, SB_BORDER_LINE),
                         StrokeKind::Inside,
                     );
                     ui.painter().text(
@@ -2956,7 +2946,7 @@ impl ShiplyApp {
                         Align2::CENTER_CENTER,
                         "+ ADD",
                         FontId::proportional(FS_MICRO),
-                        theme.text,
+                        SB_TEXT,
                     );
                     if add_btn_resp.clicked() {
                         self.new_project_group.clear();
@@ -2986,14 +2976,14 @@ impl ShiplyApp {
 
                     let is_sort_open = self.sidebar_sort_dropdown_open;
                     let sort_bg = if is_sort_open || sort_btn_resp.hovered() {
-                        theme.surface_2
+                        SB_SURFACE_HOVER
                     } else {
-                        theme.surface
+                        SB_SURFACE
                     };
                     let sort_stroke = if is_sort_open {
-                        Stroke::new(1.5_f32, theme.primary)
+                        Stroke::new(1.5_f32, SB_ACCENT)
                     } else {
-                        Stroke::new(1.0_f32, theme.border)
+                        Stroke::new(1.0_f32, SB_BORDER_LINE)
                     };
                     ui.painter()
                         .rect_filled(sort_area_rect, CornerRadius::same(R_SM as u8), sort_bg);
@@ -3015,7 +3005,7 @@ impl ShiplyApp {
                         Align2::LEFT_CENTER,
                         sort_label,
                         FontId::proportional(FS_MICRO),
-                        theme.text,
+                        SB_TEXT,
                     );
                     draw_outline_icon(
                         ui.painter(),
@@ -3025,13 +3015,13 @@ impl ShiplyApp {
                         } else {
                             OutlineIcon::ChevronDown
                         },
-                        theme.text_muted,
+                        SB_TEXT_MUTED,
                     );
 
                     ui.add_space(8.0);
 
                     // Search input
-                    styled_text_edit(
+                    sidebar_search_text_edit(
                         ui,
                         "sidebar_project_search_box",
                         &mut self.project_search_query,
@@ -3055,12 +3045,12 @@ impl ShiplyApp {
                             ui.painter().rect_filled(
                                 skel_rect,
                                 CornerRadius::same(R_MD as u8),
-                                theme.surface_2,
+                                SB_SURFACE,
                             );
                             ui.painter().rect_stroke(
                                 skel_rect,
                                 CornerRadius::same(R_MD as u8),
-                                Stroke::new(1.0_f32, theme.border),
+                                Stroke::new(1.0_f32, SB_BORDER_LINE),
                                 StrokeKind::Inside,
                             );
 
@@ -3090,7 +3080,7 @@ impl ShiplyApp {
                         ui.painter().rect_stroke(
                             empty_rect,
                             CornerRadius::same(R_MD as u8),
-                            Stroke::new(1.0_f32, theme.border),
+                            Stroke::new(1.0_f32, SB_BORDER_LINE),
                             StrokeKind::Inside,
                         );
                         ui.painter().text(
@@ -3098,7 +3088,7 @@ impl ShiplyApp {
                             Align2::CENTER_CENTER,
                             "No projects yet.\nClick '+ ADD' or import .ps1",
                             FontId::proportional(FS_SMALL),
-                            theme.text_muted,
+                            SB_TEXT_MUTED,
                         );
                     } else {
                         let is_pointer_released = ui.input(|i| i.pointer.any_released());
@@ -3171,7 +3161,7 @@ impl ShiplyApp {
                                     ui.painter().rect_filled(
                                         grp_rect,
                                         CornerRadius::same(R_SM as u8),
-                                        theme.surface_2,
+                                        SB_SURFACE_HOVER,
                                     );
                                 }
 
@@ -3184,22 +3174,22 @@ impl ShiplyApp {
                                     ui.painter(),
                                     Pos2::new(grp_rect.left() + 8.0, grp_rect.center().y),
                                     chev,
-                                    theme.text_subtle,
+                                    SB_TEXT_FAINT,
                                 );
                                 ui.painter().text(
                                     Pos2::new(grp_rect.left() + 20.0, grp_rect.center().y),
                                     Align2::LEFT_CENTER,
                                     group_title.to_uppercase(),
                                     FontId::proportional(FS_MICRO),
-                                    theme.text_subtle,
+                                    SB_TEXT_FAINT,
                                 );
 
                                 paint_pill_right_aligned(
                                     ui.painter(),
                                     Pos2::new(grp_rect.right() - 4.0, grp_rect.center().y),
                                     &format!("{}", proj_indices.len()),
-                                    theme.surface_2,
-                                    theme.text_muted,
+                                    SB_SURFACE,
+                                    SB_TEXT_MUTED,
                                 );
 
                                 if grp_resp.clicked() {
@@ -3231,11 +3221,11 @@ impl ShiplyApp {
                                     p_resp.on_hover_cursor(egui::CursorIcon::PointingHand);
 
                                 let fill = if is_selected || is_switching {
-                                    theme.surface_tint_top
+                                    Color32::from_rgb(17, 30, 56)
                                 } else if p_resp.hovered() {
-                                    theme.surface_2
+                                    SB_SURFACE_HOVER
                                 } else {
-                                    Color32::TRANSPARENT
+                                    SB_SURFACE
                                 };
                                 ui.painter()
                                     .rect_filled(p_rect, CornerRadius::same(8), fill);
@@ -3259,9 +3249,9 @@ impl ShiplyApp {
                                 }
 
                                 let grip_color = if is_being_dragged || grip_resp.hovered() {
-                                    theme.primary
+                                    SB_ACCENT
                                 } else if p_resp.hovered() {
-                                    theme.text_subtle
+                                    SB_TEXT_FAINT
                                 } else {
                                     Color32::TRANSPARENT
                                 };
@@ -3280,7 +3270,7 @@ impl ShiplyApp {
                                                 ui.painter().rect_stroke(
                                                     p_rect,
                                                     CornerRadius::same(8),
-                                                    Stroke::new(2.0_f32, theme.primary),
+                                                    Stroke::new(2.0_f32, SB_ACCENT),
                                                     StrokeKind::Inside,
                                                 );
                                                 if is_pointer_released {
@@ -3291,14 +3281,20 @@ impl ShiplyApp {
                                     }
                                 }
 
-                                // Active project: 1px --primary-soft-border, 2px --primary left bar
+                                // Active project: 1px accent border, 2px left bar
+                                let stroke = if is_selected || is_switching {
+                                    Stroke::new(1.0_f32, Color32::from_rgb(30, 58, 102))
+                                } else {
+                                    Stroke::new(1.0_f32, SB_BORDER_LINE)
+                                };
+                                ui.painter().rect_stroke(
+                                    p_rect,
+                                    CornerRadius::same(8),
+                                    stroke,
+                                    StrokeKind::Inside,
+                                );
+
                                 if is_selected || is_switching {
-                                    ui.painter().rect_stroke(
-                                        p_rect,
-                                        CornerRadius::same(8),
-                                        Stroke::new(1.0_f32, theme.primary_soft_border),
-                                        StrokeKind::Inside,
-                                    );
                                     let bar_rect = Rect::from_min_max(
                                         Pos2::new(p_rect.left(), p_rect.top() + 8.0),
                                         Pos2::new(p_rect.left() + 2.0, p_rect.bottom() - 8.0),
@@ -3306,15 +3302,15 @@ impl ShiplyApp {
                                     ui.painter().rect_filled(
                                         bar_rect,
                                         CornerRadius { nw: 0, ne: 2, se: 2, sw: 0 },
-                                        theme.primary,
+                                        SB_ACCENT,
                                     );
                                 }
 
                                 let content_x = p_rect.left() + 20.0;
                                 let is_deploying = self.is_project_deploying(&project.id);
 
-                                // Row 1: Project Name (13px, weight 500, --text)
-                                let name_color = theme.text;
+                                // Row 1: Project Name (13px, weight 500, --sb-text)
+                                let name_color = SB_TEXT;
                                 let avail_name_w = (p_rect.right() - 26.0 - content_x).max(20.0);
                                 let mut job = egui::text::LayoutJob::simple_singleline(
                                     project.name.clone(),
@@ -3337,9 +3333,9 @@ impl ShiplyApp {
                                     let spinner_center =
                                         Pos2::new(p_rect.right() - 16.0, p_rect.center().y);
                                     let spinner_color = if is_deploying {
-                                        theme.primary
+                                        SB_ACCENT
                                     } else {
-                                        theme.text_subtle
+                                        SB_TEXT_FAINT
                                     };
                                     draw_circle_loading_spinner(
                                         ui.painter(),
@@ -3389,8 +3385,8 @@ impl ShiplyApp {
                                         ui.painter(),
                                         Pos2::new(content_x, row2_y),
                                         "NO ENVS",
-                                        theme.surface_2,
-                                        theme.text_subtle,
+                                        SB_SURFACE,
+                                        SB_TEXT_FAINT,
                                     );
                                 } else {
                                     let mut pill_x = content_x;
@@ -3407,9 +3403,9 @@ impl ShiplyApp {
                                         let is_prod = key_lower.contains("prod");
 
                                         let (bg, fg) = if is_prod {
-                                            (theme.purple_soft, theme.purple)
+                                            (BADGE_PROD_BG, BADGE_PROD_TEXT)
                                         } else {
-                                            (theme.primary_soft, theme.primary)
+                                            (BADGE_DEV_BG, BADGE_DEV_TEXT)
                                         };
 
                                         let label = if is_env_running {
@@ -10340,6 +10336,64 @@ fn styled_text_edit(
     output.response.changed()
 }
 
+fn sidebar_search_text_edit(
+    ui: &mut egui::Ui,
+    id_salt: impl std::hash::Hash,
+    value: &mut String,
+    width: f32,
+    hint: Option<&str>,
+) -> bool {
+    let placeholder_str = hint.unwrap_or("Search projects...");
+    let edit = egui::TextEdit::singleline(value)
+        .id_salt(id_salt)
+        .font(FontId::proportional(FS_BASE))
+        .text_color(SB_TEXT)
+        .background_color(SB_SURFACE)
+        .desired_width(width)
+        .min_size(Vec2::new(width, 32.0))
+        .margin(Margin::symmetric(10, 6))
+        .hint_text(
+            RichText::new(placeholder_str)
+                .size(FS_BASE)
+                .color(SB_TEXT_FAINT),
+        );
+    let mut output = edit.show(ui);
+
+    let stroke = if output.response.has_focus() {
+        Stroke::new(1.5_f32, SB_ACCENT)
+    } else if output.response.hovered() {
+        Stroke::new(1.0_f32, SB_ACCENT)
+    } else {
+        Stroke::new(1.0_f32, SB_BORDER_LINE)
+    };
+    ui.painter().rect_stroke(
+        output.response.rect,
+        CornerRadius::same(R_SM as u8),
+        stroke,
+        StrokeKind::Inside,
+    );
+
+    // Precise cursor placement on click: places cursor at the exact character clicked
+    if output.response.clicked() {
+        if let Some(pos) = output.response.interact_pointer_pos() {
+            let rel_pos = pos - output.galley_pos;
+            let ccursor = output.galley.cursor_from_pos(rel_pos).ccursor;
+            output
+                .state
+                .cursor
+                .set_char_range(Some(egui::text_selection::CCursorRange::one(ccursor)));
+            output.state.store(ui.ctx(), output.response.id);
+        }
+    }
+
+    // Smooth drag selection without lag: request continuous repaint while blocking/dragging text
+    if output.response.dragged() || ui.ctx().is_being_dragged(output.response.id) {
+        ui.ctx().request_repaint();
+    }
+
+    output.response.changed()
+}
+
 /// Syntax-highlighted single-line text editor for pipeline commands, paths, and SCP sources.
 /// Colors `{template}` variables in purple, CLI commands in blue, flags (`--flag`) in amber,
 /// paths/strings in teal, and shell operators (`&&`, `|`, `;`) in crimson.
@@ -12544,9 +12598,15 @@ mod tests {
         assert_eq!(R_XL, 14.0);
 
         // 3. Verify color tokens
-        assert_eq!(SB_BG, Color32::WHITE);
-        assert_eq!(SB_SURFACE, Color32::from_rgb(245, 245, 247));
-        assert_eq!(SB_BORDER, Color32::from_rgb(230, 230, 234));
+        assert_eq!(SB_BG, Color32::from_rgb(11, 18, 32));
+        assert_eq!(SB_SURFACE, Color32::from_rgb(17, 26, 46));
+        assert_eq!(SB_BORDER_LINE, Color32::from_rgb(28, 38, 60));
+        assert_eq!(SB_TEXT, Color32::from_rgb(230, 234, 242));
+        assert_eq!(SB_TEXT_MUTED, Color32::from_rgb(139, 150, 173));
+        assert_eq!(SB_TEXT_FAINT, Color32::from_rgb(100, 112, 138));
+        assert_eq!(SB_ACCENT, Color32::from_rgb(59, 130, 246));
+        assert_eq!(BADGE_DEV_TEXT, Color32::from_rgb(125, 178, 255));
+        assert_eq!(BADGE_PROD_TEXT, Color32::from_rgb(196, 161, 255));
         assert_eq!(ACCENT, Color32::from_rgb(20, 110, 245));
         assert_eq!(MD_BG, Color32::WHITE);
         assert_eq!(MD_BORDER, Color32::from_rgb(230, 230, 234));
