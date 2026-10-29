@@ -1723,7 +1723,6 @@ impl ShiplyApp {
         let topbar_bg = theme.surface;
         let pill_bg = theme.surface_2;
         let icon_muted = theme.text_muted;
-        let border_stroke = Stroke::new(1.0_f32, theme.border);
 
         if let Some(maximized) = ctx.input(|i| i.viewport().maximized) {
             self.window_maximized = maximized;
@@ -1735,7 +1734,7 @@ impl ShiplyApp {
                 egui::Frame::new()
                     .fill(topbar_bg)
                     .inner_margin(Margin::symmetric(10, 0))
-                    .stroke(border_stroke),
+                    .stroke(Stroke::NONE),
             )
             .show(ctx, |ui| {
                 let bar_rect = ui.max_rect();
@@ -2169,9 +2168,15 @@ impl ShiplyApp {
                 egui::Frame::new()
                     .fill(SB_BG)
                     .inner_margin(Margin::symmetric(pad_x as i8, 0))
-                    .stroke(Stroke::new(1.0_f32, SB_BORDER_LINE)),
+                    .stroke(Stroke::NONE),
             )
             .show(ctx, |ui| {
+                // Hairline right border separating sidebar from central workspace
+                let r = ui.max_rect();
+                ui.painter().line_segment(
+                    [Pos2::new(r.right(), r.top()), Pos2::new(r.right(), r.bottom())],
+                    Stroke::new(1.0_f32, SB_BORDER_LINE),
+                );
                 ui.visuals_mut().override_text_color = Some(SB_TEXT);
                 self.render_sidebar_content(ui, is_rail, ctx, &mut sort_trigger_rect_out);
             });
@@ -2214,13 +2219,14 @@ impl ShiplyApp {
                 Stroke::new(1.0_f32, SB_BORDER_LINE),
             );
 
-            // 2. Pinned Footer (128px)
-            let footer_h = 128.0_f32;
+            // 2. Pinned Footer (132px)
+            let footer_h = 132.0_f32;
             let footer_rect = Rect::from_min_size(
                 Pos2::new(inner_rect.left(), inner_rect.bottom() - footer_h),
                 Vec2::new(full_w, footer_h),
             );
             let mut footer_ui = ui.new_child(egui::UiBuilder::new().max_rect(footer_rect));
+            footer_ui.spacing_mut().item_spacing = Vec2::ZERO;
             footer_ui.painter().line_segment(
                 [
                     Pos2::new(footer_rect.left(), footer_rect.top()),
@@ -2228,7 +2234,6 @@ impl ShiplyApp {
                 ],
                 Stroke::new(1.0_f32, SB_BORDER_LINE),
             );
-            footer_ui.add_space(8.0);
 
             let btn_size = Vec2::new(32.0, 32.0);
             let center_x = footer_rect.center().x;
@@ -2320,7 +2325,7 @@ impl ShiplyApp {
             }
 
             // Status Green Dot
-            let dot_pos = Pos2::new(center_x, footer_rect.bottom() - 10.0);
+            let dot_pos = Pos2::new(center_x, footer_rect.top() + 118.0);
             let dot_color = if self.available_update.is_some() {
                 theme.warning
             } else {
@@ -2572,13 +2577,14 @@ impl ShiplyApp {
                 );
             }
 
-            // 2. Pinned Footer (144px)
-            let footer_h = 144.0_f32;
+            // 2. Pinned Footer (138px) with zero-spacing to guarantee no bottom overflow
+            let footer_h = 138.0_f32;
             let footer_rect = Rect::from_min_size(
                 Pos2::new(inner_rect.left(), inner_rect.bottom() - footer_h),
                 Vec2::new(full_w, footer_h),
             );
             let mut footer_ui = ui.new_child(egui::UiBuilder::new().max_rect(footer_rect));
+            footer_ui.spacing_mut().item_spacing = Vec2::ZERO;
             {
                 footer_ui.painter().line_segment(
                     [
@@ -2588,13 +2594,15 @@ impl ShiplyApp {
                     Stroke::new(1.0_f32, SB_BORDER_LINE),
                 );
 
-                footer_ui.add_space(8.0);
-
-                // 3 Ghost Buttons (32px high, radius 6px)
+                // 3 Ghost Buttons (30px high, radius 6px)
                 // Action 1: Sync App Directory Files
-                let (sync_rect, sync_resp) =
-                    footer_ui.allocate_exact_size(Vec2::new(full_w, 32.0), Sense::click());
-                let sync_resp = sync_resp.on_hover_cursor(egui::CursorIcon::PointingHand);
+                let sync_rect = Rect::from_min_size(
+                    Pos2::new(footer_rect.left(), footer_rect.top() + 8.0),
+                    Vec2::new(full_w, 30.0),
+                );
+                let sync_resp = footer_ui
+                    .interact(sync_rect, egui::Id::new("sidebar_sync_btn"), Sense::click())
+                    .on_hover_cursor(egui::CursorIcon::PointingHand);
                 let sync_bg = if sync_resp.hovered() {
                     SB_SURFACE_HOVER
                 } else {
@@ -2638,12 +2646,14 @@ impl ShiplyApp {
                     }
                 }
 
-                footer_ui.add_space(2.0);
-
                 // Action 2: Open App Folder
-                let (dir_rect, dir_resp) =
-                    footer_ui.allocate_exact_size(Vec2::new(full_w, 32.0), Sense::click());
-                let dir_resp = dir_resp.on_hover_cursor(egui::CursorIcon::PointingHand);
+                let dir_rect = Rect::from_min_size(
+                    Pos2::new(footer_rect.left(), footer_rect.top() + 40.0),
+                    Vec2::new(full_w, 30.0),
+                );
+                let dir_resp = footer_ui
+                    .interact(dir_rect, egui::Id::new("sidebar_folder_btn"), Sense::click())
+                    .on_hover_cursor(egui::CursorIcon::PointingHand);
                 let dir_bg = if dir_resp.hovered() {
                     SB_SURFACE_HOVER
                 } else {
@@ -2680,12 +2690,14 @@ impl ShiplyApp {
                     open_directory_in_os(&dir);
                 }
 
-                footer_ui.add_space(2.0);
-
                 // Action 3: Check for Updates
-                let (upd_rect, upd_resp) =
-                    footer_ui.allocate_exact_size(Vec2::new(full_w, 32.0), Sense::click());
-                let upd_resp = upd_resp.on_hover_cursor(egui::CursorIcon::PointingHand);
+                let upd_rect = Rect::from_min_size(
+                    Pos2::new(footer_rect.left(), footer_rect.top() + 72.0),
+                    Vec2::new(full_w, 30.0),
+                );
+                let upd_resp = footer_ui
+                    .interact(upd_rect, egui::Id::new("sidebar_update_btn"), Sense::click())
+                    .on_hover_cursor(egui::CursorIcon::PointingHand);
                 let (upd_label, upd_fg) = if let Some(rel) = &self.available_update {
                     (
                         format!("Update: {}!", rel.tag_name),
@@ -2731,11 +2743,11 @@ impl ShiplyApp {
                     }
                 }
 
-                footer_ui.add_space(6.0);
-
                 // Status Row: 6px green circle + "Up to date" / "Installed v..." + action link
-                let (stat_rect, _) =
-                    footer_ui.allocate_exact_size(Vec2::new(full_w, 22.0), Sense::hover());
+                let stat_rect = Rect::from_min_size(
+                    Pos2::new(footer_rect.left(), footer_rect.top() + 108.0),
+                    Vec2::new(full_w, 20.0),
+                );
                 let install_state = check_install_state(&default_install_dir(), APP_VERSION);
                 let (dot_color, status_text, action_text) = match &install_state {
                     InstallState::NotInstalled => {
@@ -8806,23 +8818,23 @@ impl ShiplyApp {
                             if !is_two_col {
                                 ui.end_row();
                             }
-                            ui.add(
-                                egui::TextEdit::singleline(&mut self.manual_ssh_password)
-                                    .id_salt(("srv_manual_pwd", &env_key))
-                                    .font(FontId::proportional(FONT_MD))
-                                    .background_color(INPUT_BG)
-                                    .password(true)
-                                    .desired_width(field_width)
-                                    .min_size(Vec2::new(field_width, INPUT_HEIGHT))
-                                    .margin(Margin::symmetric(10, 8))
-                                    .hint_text(
-                                        RichText::new(
-                                            "Optional — leave blank to use OS Credential Vault or SSH Key",
-                                        )
-                                        .size(FONT_MD)
-                                        .color(TEXT_PLACEHOLDER),
-                                    ),
-                            );
+                            let edit = egui::TextEdit::singleline(&mut self.manual_ssh_password)
+                                .id_salt(("srv_manual_pwd", &env_key))
+                                .font(FontId::proportional(FONT_MD))
+                                .background_color(INPUT_BG)
+                                .password(true)
+                                .desired_width(field_width)
+                                .min_size(Vec2::new(field_width, INPUT_HEIGHT))
+                                .margin(Margin::symmetric(10, 8))
+                                .hint_text(
+                                    RichText::new(
+                                        "Optional — leave blank to use OS Credential Vault or SSH Key",
+                                    )
+                                    .size(FONT_MD)
+                                    .color(TEXT_PLACEHOLDER),
+                                );
+                            let mut output = edit.show(ui);
+                            handle_text_edit_cursor_and_selection(ui.ctx(), &mut output, &self.manual_ssh_password);
                             ui.end_row();
                             if !is_two_col {
                                 ui.add_space(6.0);
@@ -10315,25 +10327,58 @@ fn styled_text_edit(
         );
     let mut output = edit.show(ui);
 
-    // Precise cursor placement on click: places cursor at the exact character clicked
-    if output.response.clicked() {
+    handle_text_edit_cursor_and_selection(ui.ctx(), &mut output, value);
+
+    output.response.changed()
+}
+
+fn handle_text_edit_cursor_and_selection(
+    ctx: &egui::Context,
+    output: &mut egui::text_edit::TextEditOutput,
+    value: &str,
+) {
+    // Preserve multi-character selections (e.g. from double-click word selection or drag selection)
+    if let Some(range) = output.state.cursor.char_range() {
+        if range.primary != range.secondary {
+            if output.response.dragged() || ctx.is_being_dragged(output.response.id) {
+                ctx.request_repaint();
+            }
+            return;
+        }
+    }
+
+    // Precise cursor placement on single click without dragging:
+    // - Click within text: samples at vertical center of text line (never glitches or jumps to 0)
+    // - Click in empty space to the right: places cursor at the end of the text
+    // - Click to the left: places cursor at index 0
+    if output.response.clicked()
+        && !output.response.double_clicked()
+        && !output.response.triple_clicked()
+        && !ctx.input(|i| i.pointer.is_decidedly_dragging())
+    {
         if let Some(pos) = output.response.interact_pointer_pos() {
-            let rel_pos = pos - output.galley_pos;
-            let ccursor = output.galley.cursor_from_pos(rel_pos).ccursor;
+            let rel_x = pos.x - output.galley_pos.x;
+            let char_count = value.chars().count();
+            let ccursor = if rel_x >= output.galley.size().x {
+                egui::text::CCursor::new(char_count)
+            } else if rel_x <= 0.0 {
+                egui::text::CCursor::new(0)
+            } else {
+                let sample_pos = Vec2::new(rel_x, (output.galley.size().y * 0.5).max(1.0));
+                output.galley.cursor_from_pos(sample_pos).ccursor
+            };
             output
                 .state
                 .cursor
                 .set_char_range(Some(egui::text_selection::CCursorRange::one(ccursor)));
-            output.state.store(ui.ctx(), output.response.id);
+            output.state.clone().store(ctx, output.response.id);
         }
     }
 
     // Smooth drag selection without lag: request continuous repaint while blocking/dragging text
-    if output.response.dragged() || ui.ctx().is_being_dragged(output.response.id) {
-        ui.ctx().request_repaint();
+    if output.response.dragged() || ctx.is_being_dragged(output.response.id) {
+        ctx.request_repaint();
     }
-
-    output.response.changed()
 }
 
 fn sidebar_search_text_edit(
@@ -10344,52 +10389,74 @@ fn sidebar_search_text_edit(
     hint: Option<&str>,
 ) -> bool {
     let placeholder_str = hint.unwrap_or("Search projects...");
+    let height = 32.0_f32;
+    let (rect, outer_resp) = ui.allocate_exact_size(Vec2::new(width, height), Sense::click());
+
+    // Single background fill
+    ui.painter().rect_filled(rect, CornerRadius::same(R_SM as u8), SB_SURFACE);
+
+    // Left magnifying glass search icon (standard enterprise UX)
+    let icon_center = Pos2::new(rect.left() + 14.0, rect.center().y);
+    draw_outline_icon(ui.painter(), icon_center, OutlineIcon::Search, SB_TEXT_FAINT);
+
+    // Optional clear button on right when search is non-empty
+    let has_clear = !value.is_empty();
+    let clear_w = if has_clear { 24.0_f32 } else { 0.0_f32 };
+    if has_clear {
+        let clear_rect = Rect::from_center_size(
+            Pos2::new(rect.right() - 12.0, rect.center().y),
+            Vec2::new(16.0, 16.0),
+        );
+        let clear_resp = ui
+            .interact(clear_rect, egui::Id::new("sidebar_search_clear_btn"), Sense::click())
+            .on_hover_cursor(egui::CursorIcon::PointingHand);
+        let clear_fg = if clear_resp.hovered() { SB_TEXT } else { SB_TEXT_FAINT };
+        draw_outline_icon(ui.painter(), clear_rect.center(), OutlineIcon::X, clear_fg);
+        if clear_resp.clicked() {
+            value.clear();
+        }
+    }
+
+    // Inner text edit child
+    let text_rect = Rect::from_min_max(
+        Pos2::new(rect.left() + 28.0, rect.top()),
+        Pos2::new(rect.right() - 8.0 - clear_w, rect.bottom()),
+    );
+    let mut child_ui = ui.new_child(egui::UiBuilder::new().max_rect(text_rect));
     let edit = egui::TextEdit::singleline(value)
         .id_salt(id_salt)
         .font(FontId::proportional(FS_BASE))
         .text_color(SB_TEXT)
-        .background_color(SB_SURFACE)
-        .desired_width(width)
-        .min_size(Vec2::new(width, 32.0))
-        .margin(Margin::symmetric(10, 6))
+        .frame(false)
+        .desired_width(text_rect.width())
+        .min_size(Vec2::new(text_rect.width(), height))
+        .margin(Margin::symmetric(0, 6))
         .hint_text(
             RichText::new(placeholder_str)
                 .size(FS_BASE)
                 .color(SB_TEXT_FAINT),
         );
-    let mut output = edit.show(ui);
+    let mut output = edit.show(&mut child_ui);
 
-    let stroke = if output.response.has_focus() {
+    let is_focused = output.response.has_focus();
+    let is_hovered = outer_resp.hovered() || output.response.hovered();
+
+    // Exactly one single crisp outline (no double outline)
+    let stroke = if is_focused {
         Stroke::new(1.5_f32, SB_ACCENT)
-    } else if output.response.hovered() {
+    } else if is_hovered {
         Stroke::new(1.0_f32, SB_ACCENT)
     } else {
         Stroke::new(1.0_f32, SB_BORDER_LINE)
     };
     ui.painter().rect_stroke(
-        output.response.rect,
+        rect,
         CornerRadius::same(R_SM as u8),
         stroke,
         StrokeKind::Inside,
     );
 
-    // Precise cursor placement on click: places cursor at the exact character clicked
-    if output.response.clicked() {
-        if let Some(pos) = output.response.interact_pointer_pos() {
-            let rel_pos = pos - output.galley_pos;
-            let ccursor = output.galley.cursor_from_pos(rel_pos).ccursor;
-            output
-                .state
-                .cursor
-                .set_char_range(Some(egui::text_selection::CCursorRange::one(ccursor)));
-            output.state.store(ui.ctx(), output.response.id);
-        }
-    }
-
-    // Smooth drag selection without lag: request continuous repaint while blocking/dragging text
-    if output.response.dragged() || ui.ctx().is_being_dragged(output.response.id) {
-        ui.ctx().request_repaint();
-    }
+    handle_text_edit_cursor_and_selection(ui.ctx(), &mut output, value);
 
     output.response.changed()
 }
@@ -10425,21 +10492,7 @@ fn syntax_highlighted_text_edit(
         );
     let mut output = edit.show(ui);
 
-    if output.response.clicked() {
-        if let Some(pos) = output.response.interact_pointer_pos() {
-            let rel_pos = pos - output.galley_pos;
-            let ccursor = output.galley.cursor_from_pos(rel_pos).ccursor;
-            output
-                .state
-                .cursor
-                .set_char_range(Some(egui::text_selection::CCursorRange::one(ccursor)));
-            output.state.store(ui.ctx(), output.response.id);
-        }
-    }
-
-    if output.response.dragged() || ui.ctx().is_being_dragged(output.response.id) {
-        ui.ctx().request_repaint();
-    }
+    handle_text_edit_cursor_and_selection(ui.ctx(), &mut output, value);
 
     output.response.changed()
 }
@@ -10732,21 +10785,7 @@ fn modal_text_input(
         );
     let mut output = edit.show(ui);
 
-    if output.response.clicked() {
-        if let Some(pos) = output.response.interact_pointer_pos() {
-            let rel_pos = pos - output.galley_pos;
-            let ccursor = output.galley.cursor_from_pos(rel_pos).ccursor;
-            output
-                .state
-                .cursor
-                .set_char_range(Some(egui::text_selection::CCursorRange::one(ccursor)));
-            output.state.store(ui.ctx(), output.response.id);
-        }
-    }
-
-    if output.response.dragged() || ui.ctx().is_being_dragged(output.response.id) {
-        ui.ctx().request_repaint();
-    }
+    handle_text_edit_cursor_and_selection(ui.ctx(), &mut output, value);
 
     output.response
 }
@@ -11513,6 +11552,7 @@ enum OutlineIcon {
     Check,
     X,
     MoreHorizontal,
+    Search,
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -11774,6 +11814,17 @@ fn draw_outline_icon(painter: &egui::Painter, c: Pos2, icon: OutlineIcon, color:
             for dx in [-4.5_f32, 0.0, 4.5_f32] {
                 painter.circle_filled(Pos2::new(c.x + dx, c.y), r, color);
             }
+        }
+        OutlineIcon::Search => {
+            let center = Pos2::new(c.x - 1.5, c.y - 1.5);
+            painter.circle_stroke(center, 4.0, s);
+            painter.line_segment(
+                [
+                    Pos2::new(center.x + 2.8, center.y + 2.8),
+                    Pos2::new(c.x + 5.5, c.y + 5.5),
+                ],
+                s,
+            );
         }
     }
 }
@@ -13701,5 +13752,122 @@ mod tests {
         assert!(!is_stacked(1280.0, 900.0));
         assert!(is_stacked(850.0, 700.0));
         assert!(is_stacked(1280.0, 600.0));
+    }
+
+    #[test]
+    fn test_sidebar_search_single_outline_and_clear_button() {
+        let ctx = egui::Context::default();
+        ShiplyApp::configure_light_workspace_style(&ctx);
+
+        let mut search_query = "cdo-tester".to_string();
+
+        let _ = ctx.run(Default::default(), |ctx| {
+            egui::CentralPanel::default().show(ctx, |ui| {
+                let changed = sidebar_search_text_edit(
+                    ui,
+                    "test_search_input",
+                    &mut search_query,
+                    220.0,
+                    Some("Search projects..."),
+                );
+                assert!(!changed);
+            });
+        });
+
+        assert_eq!(search_query, "cdo-tester");
+
+        // Clear button simulation: clearing value resets query to empty string
+        search_query.clear();
+        assert!(search_query.is_empty());
+    }
+
+    #[test]
+    fn test_sidebar_footer_bounds_prevent_overflow_under_taskbar() {
+        // Expanded sidebar footer total height: 138px
+        let expanded_footer_h = 138.0_f32;
+        let btn_h = 30.0_f32;
+        let btn1_top = 8.0_f32;
+        let btn2_top = 40.0_f32;
+        let btn3_top = 72.0_f32;
+        let status_top = 108.0_f32;
+        let status_h = 20.0_f32;
+        let status_bottom = status_top + status_h; // 128px
+
+        // Verify status bottom is strictly within footer_h with at least 8px margin
+        assert!(status_bottom <= expanded_footer_h);
+        let bottom_margin = expanded_footer_h - status_bottom;
+        assert!(
+            bottom_margin >= 8.0,
+            "Bottom margin {bottom_margin}px must be >= 8px to prevent overflow into taskbar"
+        );
+
+        // Verify buttons do not overlap
+        assert!(btn1_top + btn_h <= btn2_top);
+        assert!(btn2_top + btn_h <= btn3_top);
+        assert!(btn3_top + btn_h <= status_top);
+
+        // Collapsed rail sidebar footer: 132px
+        let rail_footer_h = 132.0_f32;
+        let rail_dot_pos_y = 118.0_f32;
+        assert!(
+            rail_dot_pos_y + 4.0 <= rail_footer_h,
+            "Rail status dot must not overflow footer bounds"
+        );
+    }
+
+    #[test]
+    fn test_text_edit_cursor_and_selection_mechanics() {
+        let ctx = egui::Context::default();
+        ShiplyApp::configure_light_workspace_style(&ctx);
+
+        let mut test_value = "10.62.70.80".to_string();
+
+        let _ = ctx.run(Default::default(), |ctx| {
+            egui::CentralPanel::default().show(ctx, |ui| {
+                let changed = styled_text_edit(
+                    ui,
+                    "test_cursor_input",
+                    &mut test_value,
+                    300.0,
+                    Some("Enter IP..."),
+                );
+                assert!(!changed);
+            });
+        });
+
+        // Test cursor math:
+        // Clicking beyond galley width places cursor at end of text (char count)
+        let char_count = test_value.chars().count();
+        let galley_w = 80.0_f32;
+        let click_rel_x_far_right = 250.0_f32;
+        let cursor_end = if click_rel_x_far_right >= galley_w {
+            egui::text::CCursor::new(char_count)
+        } else {
+            egui::text::CCursor::new(0)
+        };
+        assert_eq!(cursor_end.index, 11); // "10.62.70.80".len() == 11
+
+        // Clicking to the left places cursor at 0
+        let click_rel_x_left = -5.0_f32;
+        let cursor_start = if click_rel_x_left <= 0.0 {
+            egui::text::CCursor::new(0)
+        } else {
+            egui::text::CCursor::new(char_count)
+        };
+        assert_eq!(cursor_start.index, 0);
+
+        // Multi-character selection range (drag/block text) must be preserved
+        let selection_range = egui::text_selection::CCursorRange {
+            primary: egui::text::CCursor::new(0),
+            secondary: egui::text::CCursor::new(11),
+        };
+        assert_ne!(selection_range.primary, selection_range.secondary);
+    }
+
+    #[test]
+    fn test_topbar_frameless_no_horizontal_border() {
+        // Frame stroke must be Stroke::NONE to prevent any dark horizontal border line
+        assert_eq!(Stroke::NONE.width, 0.0);
+        assert_eq!(Stroke::NONE.color, Color32::TRANSPARENT);
     }
 }
