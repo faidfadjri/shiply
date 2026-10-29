@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.10.12] - 2026-10-29
+
+### Fixed
+- Search Project Field Double Outline: eliminated duplicate nested focus frames in `sidebar_search_text_edit` by configuring the inner `TextEdit` with `.frame(false)` and rendering a single crisp accent border with rounded corners. Added a left magnifying glass search icon and a quick-clear (`X`) button when the input is populated.
+- Frameless Topbar Clean Border: removed the dark horizontal stroke beneath the top window panel (`Stroke::NONE`), delivering a seamless frameless header aligned with standard enterprise desktop software.
+- Text Edit Cursor Snap & Glitch: resolved the issue where clicking into prefilled input fields (such as Target Servers, app name, remote directory) jumped to character 0 or glitched out. Sampling now occurs at the vertical center of the text line, preventing negative Y offsets from triggering line-0 snaps. Clicking to the right of text places the cursor at the end of the line, while multi-character drag selections and double-click word highlights are strictly protected from collapsing.
+- Sidebar Over-Height & Windows Taskbar Clipping: fixed the sidebar footer overflowing past the bottom of the window into the Windows taskbar. By eliminating unwanted implicit item spacing (`item_spacing = Vec2::ZERO`) and establishing a pinned 138px expanded / 132px rail footer container, all footer action buttons and the version status row remain cleanly visible above the taskbar with comfortable breathing margins.
+
 ## [0.10.11] - 2026-10-29
 
 ### Changed
