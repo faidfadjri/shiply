@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.10.7] - 2026-10-29
+
+### Changed
+- Concurrency: decoupled active deployment locking from a global app-level mutex to per-project isolation (`active_deployments`). Deploying a backend project now prevents only duplicate runs for the same project, allowing frontend or any other project to be deployed simultaneously in parallel.
+- Continuous Deployments on Update: downloading or receiving an in-app update notification no longer interrupts active deployment processes. Restarts are safely deferred until all active deployments and queued bulk deployments finish to completion, with an in-modal status banner and non-blocking dismissal allowing full visibility into active pipeline logs.
+- UI: per-project deploy and rollback buttons, sidebar loading spinners, and console indicators now track each project's individual deployment state without blocking other projects.
+
 ## [0.10.6] - 2026-10-29
 
 ### Added

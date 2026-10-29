@@ -23,7 +23,7 @@ use eframe::egui::{
     Layout, Margin, Pos2, Rect, RichText, ScrollArea, Sense, Shadow, Stroke, StrokeKind, TextStyle,
     Vec2,
 };
-use std::collections::{BTreeMap, HashSet, VecDeque};
+use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -255,7 +255,8 @@ pub struct ShiplyApp {
     // Background execution channel
     event_tx: Sender<ExecutorEvent>,
     event_rx: Receiver<ExecutorEvent>,
-    active_deployment_id: Option<String>,
+    pub active_deployments: HashMap<String, String>,
+    pub active_deployment_id: Option<String>,
 
     // Async Git inspection channel (instant project switching without UI freezing)
     git_inspect_tx: Sender<GitInspectionResult>,
@@ -315,6 +316,7 @@ pub struct ShiplyApp {
     update_progress: f32,
     update_status_text: String,
     update_error: Option<String>,
+    pub pending_update_restart: Option<(String, PathBuf)>,
 
     // Throttled external file sync timer (Requirement #8 & #9)
     last_sync_check: Instant,
@@ -387,6 +389,7 @@ impl ShiplyApp {
             cached_git_changes: Vec::new(),
             event_tx,
             event_rx,
+            active_deployments: HashMap::new(),
             active_deployment_id: None,
             show_new_project_modal: false,
             new_project_ps1_path: String::new(),
@@ -437,6 +440,7 @@ impl ShiplyApp {
             update_progress: 0.0,
             update_status_text: String::new(),
             update_error: None,
+            pending_update_restart: None,
             last_sync_check: Instant::now(),
             status_banner: None,
             sidebar_collapsed: false,
@@ -459,6 +463,41 @@ impl ShiplyApp {
 
     pub fn set_status_banner(&mut self, message: String, is_success: bool) {
         self.status_banner = Some((message, is_success));
+    }
+
+    pub fn is_project_deploying(&self, project_id: &str) -> bool {
+        self.active_deployments.contains_key(project_id)
+            || self.active_deployment_id.as_ref().is_some_and(|dep_id| {
+                self.storage
+                    .deployments
+                    .iter()
+                    .any(|d| &d.id == dep_id && d.project_id == project_id)
+            })
+            || self
+                .storage
+                .deployments
+                .iter()
+                .any(|d| d.project_id == project_id && d.status == DeploymentStatus::Running)
+    }
+
+    pub fn is_deployment_active(&self, deployment_id: &str) -> bool {
+        self.active_deployments.values().any(|id| id == deployment_id)
+            || self.active_deployment_id.as_deref() == Some(deployment_id)
+            || self
+                .storage
+                .deployments
+                .iter()
+                .any(|d| d.id == deployment_id && d.status == DeploymentStatus::Running)
+    }
+
+    pub fn has_active_deployments(&self) -> bool {
+        !self.active_deployments.is_empty()
+            || self.active_deployment_id.is_some()
+            || self
+                .storage
+                .deployments
+                .iter()
+                .any(|d| d.status == DeploymentStatus::Running)
     }
 
     /// Configures a single unified font family (`Segoe UI` on Windows) so all text shares a consistent structure.
@@ -573,20 +612,25 @@ impl ShiplyApp {
             self.cached_vault_found = false;
         }
 
-        // Ensure selected_deployment_id belongs strictly to this active project
-        let belongs_to_current_project = self
-            .selected_deployment_id
-            .as_ref()
-            .and_then(|id| self.storage.deployments.iter().find(|d| &d.id == id))
-            .is_some_and(|d| &d.project_id == proj_id);
+        // Ensure selected_deployment_id belongs strictly to this active project,
+        // prioritizing any active/running deployment for this project
+        if let Some(active_dep_id) = self.active_deployments.get(proj_id) {
+            self.selected_deployment_id = Some(active_dep_id.clone());
+        } else {
+            let belongs_to_current_project = self
+                .selected_deployment_id
+                .as_ref()
+                .and_then(|id| self.storage.deployments.iter().find(|d| &d.id == id))
+                .is_some_and(|d| &d.project_id == proj_id);
 
-        if !belongs_to_current_project {
-            self.selected_deployment_id = self
-                .storage
-                .deployments
-                .iter()
-                .find(|d| &d.project_id == proj_id)
-                .map(|d| d.id.clone());
+            if !belongs_to_current_project {
+                self.selected_deployment_id = self
+                    .storage
+                    .deployments
+                    .iter()
+                    .find(|d| &d.project_id == proj_id)
+                    .map(|d| d.id.clone());
+            }
         }
 
         if update_version_input {
@@ -660,9 +704,14 @@ impl ShiplyApp {
                     if is_current {
                         self.selected_deployment_id = Some(record.id.clone());
                     }
-                    self.active_deployment_id = None;
+                    self.active_deployments.remove(&record.project_id);
+                    if self.active_deployment_id.as_deref() == Some(&record.id) {
+                        self.active_deployment_id = self.active_deployments.values().next().cloned();
+                    }
                     self.storage.upsert_deployment(record);
-                    self.refresh_selected_project_metadata(true);
+                    if is_current {
+                        self.refresh_selected_project_metadata(true);
+                    }
 
                     if let Some(next_req) = self.bulk_deploy_queue.pop_front() {
                         let done = self
@@ -685,6 +734,21 @@ impl ShiplyApp {
                             format!("Bulk Deployment finished ({total} project(s) deployed). Last: {msg}"),
                             ok,
                         ));
+                    }
+
+                    // If all active deployments and queued bulk items are finished, apply any deferred update restart
+                    if !self.has_active_deployments() && self.bulk_deploy_queue.is_empty() {
+                        if let Some((new_ver, exe_path)) = self.pending_update_restart.take() {
+                            if let Err(err) = restart_application(&exe_path) {
+                                self.update_error = Some(err);
+                            } else {
+                                self.status_banner = Some((
+                                    format!("All deployments completed! Updated to Shiply v{new_ver}. Restarting application..."),
+                                    true,
+                                ));
+                                ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+                            }
+                        }
                     }
                 }
             }
@@ -738,7 +802,14 @@ impl ShiplyApp {
                 } => {
                     self.update_downloading = false;
                     self.update_progress = 1.0;
-                    if let Err(err) = restart_application(&exe_path) {
+                    if self.has_active_deployments() {
+                        self.pending_update_restart = Some((new_version.clone(), exe_path));
+                        self.show_update_modal = false;
+                        self.status_banner = Some((
+                            format!("Shiply v{new_version} update is downloaded! Active deployments will continue running uninterrupted before restart."),
+                            true,
+                        ));
+                    } else if let Err(err) = restart_application(&exe_path) {
                         self.update_error = Some(err);
                     } else {
                         self.status_banner = Some((
@@ -756,7 +827,7 @@ impl ShiplyApp {
         }
 
         // Throttled check (once every 2s) for files pasted into the app directory
-        if self.active_deployment_id.is_none()
+        if !self.has_active_deployments()
             && self.last_sync_check.elapsed() >= Duration::from_secs(2)
         {
             self.last_sync_check = Instant::now();
@@ -776,7 +847,7 @@ impl ShiplyApp {
         }
 
         if received
-            || self.active_deployment_id.is_some()
+            || self.has_active_deployments()
             || self.update_checking
             || self.update_downloading
             || self.project_switch_loading_id.is_some()
@@ -787,15 +858,19 @@ impl ShiplyApp {
 
     fn start_deployment(&mut self, req: DeploymentRequest) {
         self.flush_pending_save();
-        if self.active_deployment_id.is_some() {
+        if self.is_project_deploying(&req.project_id) {
             self.status_banner = Some((
-                "A deployment is already running. Please wait for it to finish.".to_string(),
+                format!(
+                    "A deployment for '{}' is already running. Please wait for it to finish.",
+                    req.project_name
+                ),
                 false,
             ));
             return;
         }
 
         let dep_id = req.deployment_id.clone();
+        self.active_deployments.insert(req.project_id.clone(), dep_id.clone());
         self.active_deployment_id = Some(dep_id.clone());
         self.selected_deployment_id = Some(dep_id);
         self.active_tab = WorkspaceTab::HistoryAndLogs;
@@ -919,7 +994,7 @@ impl ShiplyApp {
     }
 
     fn trigger_bulk_deployment(&mut self) {
-        if self.active_deployment_id.is_some() {
+        if self.has_active_deployments() {
             self.status_banner = Some((
                 "A deployment is already running. Please wait for it to finish.".to_string(),
                 false,
@@ -1285,6 +1360,38 @@ impl eframe::App for ShiplyApp {
                                     );
                                     if close_resp.clicked() {
                                         self.status_banner = None;
+                                    }
+
+                                    if let Some((_, exe_path)) = self.pending_update_restart.clone() {
+                                        let restart_rect = Rect::from_center_size(
+                                            Pos2::new(b_rect.right() - 118.0, b_rect.center().y),
+                                            Vec2::new(96.0, 24.0),
+                                        );
+                                        let restart_resp = ui.interact(
+                                            restart_rect,
+                                            egui::Id::new("banner_restart_now_btn"),
+                                            Sense::click(),
+                                        )
+                                        .on_hover_cursor(egui::CursorIcon::PointingHand);
+                                        ui.painter().rect_filled(
+                                            restart_rect,
+                                            CornerRadius::same(5),
+                                            PRIMARY_BLUE,
+                                        );
+                                        ui.painter().text(
+                                            restart_rect.center(),
+                                            Align2::CENTER_CENTER,
+                                            "Restart Now",
+                                            FontId::proportional(FONT_SM),
+                                            Color32::WHITE,
+                                        );
+                                        if restart_resp.clicked() {
+                                            if let Err(err) = restart_application(&exe_path) {
+                                                self.update_error = Some(err);
+                                            } else {
+                                                ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+                                            }
+                                        }
                                     }
                                     ui.add_space(12.0);
                                 }
@@ -2317,9 +2424,7 @@ impl ShiplyApp {
                                     let content_x = p_rect.left() + 22.0;
 
                                     // Check if this project is currently running an active deployment process
-                                    let is_deploying = self.active_deployment_id.as_ref().is_some_and(|dep_id| {
-                                        self.storage.deployments.iter().any(|d| &d.id == dep_id && d.project_id == project.id)
-                                    }) || self.storage.deployments.iter().any(|d| d.project_id == project.id && d.status == DeploymentStatus::Running);
+                                    let is_deploying = self.is_project_deploying(&project.id);
 
                                     // Row 1: Project Name (--fs-base, color --sb-text, SINGLE LINE ONLY, never wraps)
                                     let name_color = if is_selected || is_switching {
@@ -2405,7 +2510,7 @@ impl ShiplyApp {
                                                 d.project_id == project.id
                                                     && d.environment == env.key
                                                     && (d.status == DeploymentStatus::Running
-                                                        || self.active_deployment_id.as_deref() == Some(&d.id))
+                                                        || self.is_deployment_active(&d.id))
                                             });
                                             let key_lower = env.key.to_lowercase();
                                             let is_prod = key_lower.contains("prod");
@@ -3907,8 +4012,8 @@ impl ShiplyApp {
             return;
         }
 
-        // Close on Escape key if not downloading
-        if ctx.input(|i| i.key_pressed(egui::Key::Escape)) && !self.update_downloading {
+        // Close on Escape key (allows checking deployments while downloading or deferred)
+        if ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
             self.show_update_modal = false;
             return;
         }
@@ -3921,7 +4026,7 @@ impl ShiplyApp {
                 let screen_rect = ctx.screen_rect();
                 let resp = ui.allocate_rect(screen_rect, Sense::click());
                 ui.painter().rect_filled(screen_rect, CornerRadius::ZERO, MD_OVERLAY);
-                if resp.clicked() && !self.update_downloading {
+                if resp.clicked() {
                     self.show_update_modal = false;
                 }
             });
@@ -3944,8 +4049,7 @@ impl ShiplyApp {
                         &format!(
                             "A newer release of Shiply is available on GitHub Releases ({GITHUB_REPO})."
                         ),
-                    ) && !self.update_downloading
-                    {
+                    ) {
                         self.show_update_modal = false;
                     }
 
@@ -3999,6 +4103,26 @@ impl ShiplyApp {
                                 .color(MD_TEXT_MUTED),
                             );
                         });
+
+                    if self.has_active_deployments() {
+                        ui.add_space(SP_8);
+                        egui::Frame::new()
+                            .fill(BLUE_PILL_BG)
+                            .stroke(Stroke::new(1.0_f32, Color32::from_rgb(191, 219, 254)))
+                            .corner_radius(R_SM)
+                            .inner_margin(Margin::symmetric(12, 8))
+                            .show(ui, |ui| {
+                                let active_count = self.active_deployments.len();
+                                ui.label(
+                                    RichText::new(format!(
+                                        "{active_count} active deployment{} in progress. Deployments will continue running uninterrupted and update will apply once completed.",
+                                        if active_count > 1 { "s are" } else { " is" }
+                                    ))
+                                    .size(FS_SMALL)
+                                    .color(BLUE_PILL_TEXT),
+                                );
+                            });
+                    }
 
                     ui.add_space(SP_12);
 
@@ -4111,34 +4235,54 @@ impl ShiplyApp {
                         }
 
                         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                            let update_btn_label = if self.update_downloading {
-                                "Updating..."
-                            } else {
-                                "Update & Restart"
-                            };
-
-                            let btn_resp = ui.add(modal_primary_button(update_btn_label, !self.update_downloading));
-
-                            if btn_resp.clicked() && !self.update_downloading {
-                                self.update_error = None;
-                                if release.download_url.trim().is_empty() {
-                                    let url = if release.html_url.is_empty() {
-                                        GITHUB_RELEASES_PAGE_URL
+                            if let Some((_ver, exe_path)) = self.pending_update_restart.clone() {
+                                if ui.add(modal_primary_button("Restart Now", true)).clicked() {
+                                    if let Err(err) = restart_application(&exe_path) {
+                                        self.update_error = Some(err);
                                     } else {
-                                        &release.html_url
-                                    };
-                                    open_url_in_browser(url);
-                                } else {
-                                    self.update_downloading = true;
-                                    self.update_progress = 0.02;
-                                    self.update_status_text =
-                                        format!("Starting download of {}...", release.asset_name);
-                                    spawn_download_and_apply_update(release, self.updater_tx.clone());
+                                        ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+                                    }
                                 }
-                            }
+                                if ui.add(modal_secondary_button("Dismiss (Restart on Finish)")).clicked() {
+                                    self.show_update_modal = false;
+                                }
+                            } else {
+                                let update_btn_label = if self.update_downloading {
+                                    "Updating in Background..."
+                                } else if self.has_active_deployments() {
+                                    "Update (Safe Restart)"
+                                } else {
+                                    "Update & Restart"
+                                };
 
-                            if !self.update_downloading && ui.add(modal_secondary_button("Remind Me Later")).clicked() {
-                                self.show_update_modal = false;
+                                let btn_resp = ui.add(modal_primary_button(update_btn_label, !self.update_downloading));
+
+                                if btn_resp.clicked() && !self.update_downloading {
+                                    self.update_error = None;
+                                    if release.download_url.trim().is_empty() {
+                                        let url = if release.html_url.is_empty() {
+                                            GITHUB_RELEASES_PAGE_URL
+                                        } else {
+                                            &release.html_url
+                                        };
+                                        open_url_in_browser(url);
+                                    } else {
+                                        self.update_downloading = true;
+                                        self.update_progress = 0.02;
+                                        self.update_status_text =
+                                            format!("Starting download of {}...", release.asset_name);
+                                        spawn_download_and_apply_update(release, self.updater_tx.clone());
+                                    }
+                                }
+
+                                let cancel_label = if self.update_downloading {
+                                    "Dismiss / Background"
+                                } else {
+                                    "Remind Me Later"
+                                };
+                                if ui.add(modal_secondary_button(cancel_label)).clicked() {
+                                    self.show_update_modal = false;
+                                }
                             }
                         });
                     });
@@ -4539,7 +4683,7 @@ impl ShiplyApp {
 
         // Live Bulk Deployment Queue Progress Banner (when a bulk deployment is running)
         if !self.bulk_deploy_queue.is_empty()
-            || (self.bulk_total_count > 0 && self.active_deployment_id.is_some())
+            || (self.bulk_total_count > 0 && self.has_active_deployments())
         {
             let remaining = self.bulk_deploy_queue.len();
             let current_idx = self.bulk_total_count.saturating_sub(remaining);
@@ -6463,10 +6607,11 @@ impl ShiplyApp {
         }
 
         child.add_space(4.0);
-        let project_id = match &self.selection {
-            SidebarSelection::Project(pid) => pid.as_str(),
-            SidebarSelection::AllDeployments => "",
+        let project_id_owned = match &self.selection {
+            SidebarSelection::Project(pid) => pid.clone(),
+            SidebarSelection::AllDeployments => String::new(),
         };
+        let project_id = project_id_owned.as_str();
         let sync_candidates = self.sync_version_candidates(project_id);
         let sync_btn_text = if self.sync_version_dropdown_open {
             "Sync ▴"
@@ -6548,7 +6693,7 @@ impl ShiplyApp {
         );
 
         // Right-aligned Deploy Button + Rollback Button (Feature #3: Dynamic sizing based on env & version)
-        let is_busy = self.active_deployment_id.is_some();
+        let is_busy = self.is_project_deploying(project_id);
         let btn_text = if is_busy {
             "Deploying...".to_string()
         } else {
@@ -7987,7 +8132,7 @@ impl ShiplyApp {
                         // ACTIONS column (Rollback + Re-run + View Logs) using outline icons
                         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                             ui.spacing_mut().item_spacing = Vec2::new(6.0, 0.0);
-                            let is_busy = self.active_deployment_id.is_some();
+                            let is_busy = self.is_project_deploying(&dep.project_id);
 
                             if outline_icon_button(
                                 ui,
@@ -8282,7 +8427,7 @@ impl ShiplyApp {
                 render_light_status_badge(ui, dep.status);
 
                 if dep.status == DeploymentStatus::Running
-                    || self.active_deployment_id.as_deref() == Some(&dep.id)
+                    || self.is_deployment_active(&dep.id)
                 {
                     ui.add_space(8.0);
                     ui.ctx().request_repaint();
@@ -8399,7 +8544,7 @@ impl ShiplyApp {
                 );
 
                 if dep.status == DeploymentStatus::Running
-                    || self.active_deployment_id.as_deref() == Some(&dep.id)
+                    || self.is_deployment_active(&dep.id)
                 {
                     ui.ctx().request_repaint();
                     let time = ui.input(|i| i.time);
@@ -8547,7 +8692,7 @@ impl ShiplyApp {
                         }
 
                         if dep.status == DeploymentStatus::Running
-                            || self.active_deployment_id.as_deref() == Some(&dep.id)
+                            || self.is_deployment_active(&dep.id)
                         {
                             ui.add_space(4.0);
                             horizontal_row(ui, 24.0, |ui| {
@@ -11486,5 +11631,246 @@ mod tests {
         });
 
         assert_eq!(app.active_deployment_id.as_deref(), Some("dep-console-run"));
+    }
+
+    #[test]
+    fn test_concurrent_deployments_across_different_projects_prevent_same_project_only() {
+        let ctx = egui::Context::default();
+        ShiplyApp::configure_light_workspace_style(&ctx);
+
+        let mut storage = crate::storage::AppStorage::default();
+        let proj_backend = Project {
+            id: "proj-backend".to_string(),
+            name: "Backend Service".to_string(),
+            description: "API".to_string(),
+            local_path: ".".to_string(),
+            environments: vec![EnvironmentConfig {
+                key: "prod".to_string(),
+                name: "Production".to_string(),
+                app_name: "backend-prod".to_string(),
+                servers: vec!["10.0.0.1".to_string()],
+                remote_user: "deploy".to_string(),
+                vault_target: "v1".to_string(),
+                remote_dir: "/apps/backend".to_string(),
+                env_source: None,
+                http_proxy: None,
+                steps: Vec::new(),
+            }],
+            group: None,
+            sort_order: None,
+        };
+        let proj_frontend = Project {
+            id: "proj-frontend".to_string(),
+            name: "Frontend Service".to_string(),
+            description: "SPA".to_string(),
+            local_path: ".".to_string(),
+            environments: vec![EnvironmentConfig {
+                key: "prod".to_string(),
+                name: "Production".to_string(),
+                app_name: "frontend-prod".to_string(),
+                servers: vec!["10.0.0.2".to_string()],
+                remote_user: "deploy".to_string(),
+                vault_target: "v2".to_string(),
+                remote_dir: "/apps/frontend".to_string(),
+                env_source: None,
+                http_proxy: None,
+                steps: Vec::new(),
+            }],
+            group: None,
+            sort_order: None,
+        };
+        storage.projects = vec![proj_backend.clone(), proj_frontend.clone()];
+
+        let mut app = ShiplyApp::new(storage);
+
+        // 1. Initially neither project is deploying
+        assert!(!app.is_project_deploying("proj-backend"));
+        assert!(!app.is_project_deploying("proj-frontend"));
+        assert!(!app.has_active_deployments());
+
+        // 2. Start deployment for backend
+        let req_backend = crate::executor::DeploymentRequest {
+            deployment_id: "dep-backend-1".to_string(),
+            project_id: "proj-backend".to_string(),
+            project_name: "Backend Service".to_string(),
+            local_path: PathBuf::from("."),
+            env_config: proj_backend.environments[0].clone(),
+            version: "1.0.0".to_string(),
+            is_rollback: false,
+            previous_commit: None,
+            manual_password: None,
+            target_git_branch: None,
+            bump_package_json: false,
+            create_git_tag_on_success: false,
+            skip_ssh_preflight: false,
+            rollback_commit: None,
+        };
+        app.start_deployment(req_backend);
+
+        // Backend is now deploying
+        assert!(app.is_project_deploying("proj-backend"));
+        assert!(!app.is_project_deploying("proj-frontend")); // Frontend is free!
+        assert!(app.has_active_deployments());
+
+        // 3. Attempting to deploy backend AGAIN should be prevented
+        let req_backend_again = crate::executor::DeploymentRequest {
+            deployment_id: "dep-backend-2".to_string(),
+            project_id: "proj-backend".to_string(),
+            project_name: "Backend Service".to_string(),
+            local_path: PathBuf::from("."),
+            env_config: proj_backend.environments[0].clone(),
+            version: "1.0.1".to_string(),
+            is_rollback: false,
+            previous_commit: None,
+            manual_password: None,
+            target_git_branch: None,
+            bump_package_json: false,
+            create_git_tag_on_success: false,
+            skip_ssh_preflight: false,
+            rollback_commit: None,
+        };
+        app.start_deployment(req_backend_again);
+        let banner = app.status_banner.as_ref().unwrap();
+        assert!(banner.0.contains("A deployment for 'Backend Service' is already running"));
+        assert!(!banner.1); // false = error banner
+
+        // 4. Deploying frontend AT THE SAME TIME is allowed and succeeds!
+        let req_frontend = crate::executor::DeploymentRequest {
+            deployment_id: "dep-frontend-1".to_string(),
+            project_id: "proj-frontend".to_string(),
+            project_name: "Frontend Service".to_string(),
+            local_path: PathBuf::from("."),
+            env_config: proj_frontend.environments[0].clone(),
+            version: "2.0.0".to_string(),
+            is_rollback: false,
+            previous_commit: None,
+            manual_password: None,
+            target_git_branch: None,
+            bump_package_json: false,
+            create_git_tag_on_success: false,
+            skip_ssh_preflight: false,
+            rollback_commit: None,
+        };
+        app.start_deployment(req_frontend);
+
+        // BOTH projects are now deploying concurrently!
+        assert!(app.is_project_deploying("proj-backend"));
+        assert!(app.is_project_deploying("proj-frontend"));
+        assert_eq!(app.active_deployments.len(), 2);
+
+        // 5. Simulate finish event for backend
+        let finished_backend = DeploymentRecord {
+            id: "dep-backend-1".to_string(),
+            project_id: "proj-backend".to_string(),
+            project_name: "Backend Service".to_string(),
+            environment: "prod".to_string(),
+            app_name: "backend-prod".to_string(),
+            version: "1.0.0".to_string(),
+            git_branch: Some("main".to_string()),
+            git_commit: Some("c1".to_string()),
+            git_changes: vec![],
+            is_rollback: false,
+            servers: vec!["10.0.0.1".to_string()],
+            status: DeploymentStatus::Succeeded,
+            started_at: chrono::Utc::now(),
+            finished_at: Some(chrono::Utc::now()),
+            duration_ms: Some(1500),
+            step_logs: vec![],
+            executed_steps: vec![],
+        };
+        let (tx, rx) = mpsc::channel();
+        tx.send(ExecutorEvent::Finished(finished_backend)).unwrap();
+        app.event_rx = rx;
+        app.poll_executor_events(&ctx);
+
+        // Backend is no longer deploying, but Frontend is STILL deploying!
+        assert!(!app.is_project_deploying("proj-backend"));
+        assert!(app.is_project_deploying("proj-frontend"));
+        assert_eq!(app.active_deployments.len(), 1);
+
+        // Backend can now be deployed again
+        let req_backend_new = crate::executor::DeploymentRequest {
+            deployment_id: "dep-backend-3".to_string(),
+            project_id: "proj-backend".to_string(),
+            project_name: "Backend Service".to_string(),
+            local_path: PathBuf::from("."),
+            env_config: proj_backend.environments[0].clone(),
+            version: "1.0.2".to_string(),
+            is_rollback: false,
+            previous_commit: None,
+            manual_password: None,
+            target_git_branch: None,
+            bump_package_json: false,
+            create_git_tag_on_success: false,
+            skip_ssh_preflight: false,
+            rollback_commit: None,
+        };
+        app.start_deployment(req_backend_new);
+        assert!(app.is_project_deploying("proj-backend"));
+    }
+
+    #[test]
+    fn test_deployment_keeps_running_on_update_and_restart_deferred_until_finished() {
+        let storage = crate::storage::AppStorage::default();
+        let mut app = ShiplyApp::new(storage);
+        let ctx = egui::Context::default();
+
+        // 1. Mark an active deployment in progress
+        app.active_deployments
+            .insert("proj-app".to_string(), "dep-99".to_string());
+        assert!(app.has_active_deployments());
+        assert!(app.is_project_deploying("proj-app"));
+
+        // 2. An update download completes while deployment is still running
+        let (updater_tx, updater_rx) = mpsc::channel();
+        updater_tx
+            .send(UpdaterEvent::ReadyToRestart {
+                new_version: "0.10.7".to_string(),
+                exe_path: PathBuf::from("mock/path/shiply.exe"),
+            })
+            .unwrap();
+        app.updater_rx = updater_rx;
+        app.poll_executor_events(&ctx);
+
+        // 3. Deployment was NOT interrupted, restart is deferred
+        assert!(app.has_active_deployments());
+        assert!(app.is_project_deploying("proj-app"));
+        assert_eq!(
+            app.pending_update_restart,
+            Some(("0.10.7".to_string(), PathBuf::from("mock/path/shiply.exe")))
+        );
+        let banner = app.status_banner.as_ref().unwrap();
+        assert!(banner.0.contains("Active deployments will continue running uninterrupted before restart."));
+
+        // 4. When the deployment finishes, the deferred restart is automatically triggered
+        let finished_record = DeploymentRecord {
+            id: "dep-99".to_string(),
+            project_id: "proj-app".to_string(),
+            project_name: "App Service".to_string(),
+            environment: "prod".to_string(),
+            app_name: "app-prod".to_string(),
+            version: "1.0.0".to_string(),
+            git_branch: Some("main".to_string()),
+            git_commit: Some("c1".to_string()),
+            git_changes: vec![],
+            is_rollback: false,
+            servers: vec!["10.0.0.1".to_string()],
+            status: DeploymentStatus::Succeeded,
+            started_at: chrono::Utc::now(),
+            finished_at: Some(chrono::Utc::now()),
+            duration_ms: Some(1000),
+            step_logs: vec![],
+            executed_steps: vec![],
+        };
+        let (exec_tx, exec_rx) = mpsc::channel();
+        exec_tx.send(ExecutorEvent::Finished(finished_record)).unwrap();
+        app.event_rx = exec_rx;
+        app.poll_executor_events(&ctx);
+
+        // 5. Active deployments is now empty and pending_update_restart has been consumed
+        assert!(!app.has_active_deployments());
+        assert!(app.pending_update_restart.is_none());
+        // Since mock exe does not exist, update_error safely records the error without crash
+        assert!(app.update_error.is_some());
     }
 }
