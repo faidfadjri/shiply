@@ -424,6 +424,46 @@ fn build_scp_command(
     cmd
 }
 
+/// RAII guard that restores `package.json` to its original state if a deployment fails or panics.
+pub struct PackageJsonRevertGuard {
+    pub path: PathBuf,
+    pub original_content: String,
+    pub armed: bool,
+}
+
+impl PackageJsonRevertGuard {
+    pub fn new(path: PathBuf, original_content: String) -> Self {
+        Self {
+            path,
+            original_content,
+            armed: false,
+        }
+    }
+
+    pub fn arm(&mut self) {
+        self.armed = true;
+    }
+
+    pub fn disarm(&mut self) {
+        self.armed = false;
+    }
+
+    pub fn revert_now(&mut self) {
+        if self.armed {
+            let _ = std::fs::write(&self.path, &self.original_content);
+            self.armed = false;
+        }
+    }
+}
+
+impl Drop for PackageJsonRevertGuard {
+    fn drop(&mut self) {
+        if self.armed {
+            let _ = std::fs::write(&self.path, &self.original_content);
+        }
+    }
+}
+
 /// Runs the deployment pipeline synchronously (intended to be called on a background thread)
 /// and sends live updates through `tx` if provided.
 pub fn run_deployment(
@@ -489,6 +529,28 @@ pub fn run_deployment(
         }
     }
 
+    let pkg_path = req.local_path.join("package.json");
+    let mut pkg_guard: Option<PackageJsonRevertGuard> = if req.bump_package_json && pkg_path.exists() {
+        std::fs::read_to_string(&pkg_path)
+            .ok()
+            .map(|content| PackageJsonRevertGuard::new(pkg_path.clone(), content))
+    } else {
+        None
+    };
+
+    macro_rules! finalize {
+        ($rec:expr, $status:expr) => {
+            return finalize_record(
+                $rec,
+                $status,
+                started_instant,
+                tx,
+                &secrets_to_redact,
+                pkg_guard.as_mut(),
+            )
+        };
+    }
+
     if let Err(val_err) = validate_deployment_request(&req) {
         record.step_logs.push(StepExecutionLog {
             step_name: "Validate Deployment Parameters".to_string(),
@@ -497,13 +559,7 @@ pub fn run_deployment(
             output: val_err,
             duration_ms: 0,
         });
-        return finalize_record(
-            record,
-            DeploymentStatus::Failed,
-            started_instant,
-            tx,
-            &secrets_to_redact,
-        );
+        finalize!(record, DeploymentStatus::Failed);
     }
 
     let push_log = |rec: &mut DeploymentRecord, mut log: StepExecutionLog| {
@@ -590,13 +646,7 @@ pub fn run_deployment(
                             duration_ms: step_start.elapsed().as_millis() as u64,
                         },
                     );
-                    return finalize_record(
-                        record,
-                        DeploymentStatus::Failed,
-                        started_instant,
-                        tx,
-                        &secrets_to_redact,
-                    );
+                    finalize!(record, DeploymentStatus::Failed);
                 }
             }
         }
@@ -607,6 +657,9 @@ pub fn run_deployment(
         let step_start = Instant::now();
         match update_package_json_version(&req.local_path, &req.version) {
             Ok(()) => {
+                if let Some(guard) = &mut pkg_guard {
+                    guard.arm();
+                }
                 push_log(
                     &mut record,
                     StepExecutionLog {
@@ -633,13 +686,7 @@ pub fn run_deployment(
                         duration_ms: step_start.elapsed().as_millis() as u64,
                     },
                 );
-                return finalize_record(
-                    record,
-                    DeploymentStatus::Failed,
-                    started_instant,
-                    tx,
-                    &secrets_to_redact,
-                );
+                finalize!(record, DeploymentStatus::Failed);
             }
         }
     }
@@ -669,13 +716,7 @@ pub fn run_deployment(
                         duration_ms: 0,
                     },
                 );
-                return finalize_record(
-                    record,
-                    DeploymentStatus::Failed,
-                    started_instant,
-                    tx,
-                    &secrets_to_redact,
-                );
+                finalize!(record, DeploymentStatus::Failed);
             }
         }
     } else {
@@ -696,13 +737,7 @@ pub fn run_deployment(
                     duration_ms: 0,
                 },
             );
-            return finalize_record(
-                record,
-                DeploymentStatus::Failed,
-                started_instant,
-                tx,
-                &secrets_to_redact,
-            );
+            finalize!(record, DeploymentStatus::Failed);
         }
 
         let mut preflight_log = format!(
@@ -744,13 +779,7 @@ pub fn run_deployment(
                             duration_ms: step_start.elapsed().as_millis() as u64,
                         },
                     );
-                    return finalize_record(
-                        record,
-                        DeploymentStatus::Failed,
-                        started_instant,
-                        tx,
-                        &secrets_to_redact,
-                    );
+                    finalize!(record, DeploymentStatus::Failed);
                 }
                 Err(err) => {
                     preflight_log.push_str(&format!("\n  [ERROR] {server}: {err}"));
@@ -764,13 +793,7 @@ pub fn run_deployment(
                             duration_ms: step_start.elapsed().as_millis() as u64,
                         },
                     );
-                    return finalize_record(
-                        record,
-                        DeploymentStatus::Failed,
-                        started_instant,
-                        tx,
-                        &secrets_to_redact,
-                    );
+                    finalize!(record, DeploymentStatus::Failed);
                 }
             }
         }
@@ -826,13 +849,7 @@ pub fn run_deployment(
                             duration_ms: step_start.elapsed().as_millis() as u64,
                         },
                     );
-                    return finalize_record(
-                        record,
-                        DeploymentStatus::Failed,
-                        started_instant,
-                        tx,
-                        &secrets_to_redact,
-                    );
+                    finalize!(record, DeploymentStatus::Failed);
                 }
             }
 
@@ -890,13 +907,7 @@ pub fn run_deployment(
                                 duration_ms: step_start.elapsed().as_millis() as u64,
                             },
                         );
-                        return finalize_record(
-                            record,
-                            DeploymentStatus::Failed,
-                            started_instant,
-                            tx,
-                            &secrets_to_redact,
-                        );
+                        finalize!(record, DeploymentStatus::Failed);
                     }
                     Err(err) => {
                         push_log(
@@ -909,13 +920,7 @@ pub fn run_deployment(
                                 duration_ms: step_start.elapsed().as_millis() as u64,
                             },
                         );
-                        return finalize_record(
-                            record,
-                            DeploymentStatus::Failed,
-                            started_instant,
-                            tx,
-                            &secrets_to_redact,
-                        );
+                        finalize!(record, DeploymentStatus::Failed);
                     }
                 }
             }
@@ -943,13 +948,7 @@ pub fn run_deployment(
                                     duration_ms: step_start.elapsed().as_millis() as u64,
                                 },
                             );
-                            return finalize_record(
-                                record,
-                                DeploymentStatus::Failed,
-                                started_instant,
-                                tx,
-                                &secrets_to_redact,
-                            );
+                            finalize!(record, DeploymentStatus::Failed);
                         }
                     };
 
@@ -968,13 +967,7 @@ pub fn run_deployment(
                                 duration_ms: step_start.elapsed().as_millis() as u64,
                             },
                         );
-                        return finalize_record(
-                            record,
-                            DeploymentStatus::Failed,
-                            started_instant,
-                            tx,
-                            &secrets_to_redact,
-                        );
+                        finalize!(record, DeploymentStatus::Failed);
                     };
 
                     let env_src_path = req.local_path.join(env_src_rel);
@@ -994,13 +987,7 @@ pub fn run_deployment(
                                     duration_ms: step_start.elapsed().as_millis() as u64,
                                 },
                             );
-                            return finalize_record(
-                                record,
-                                DeploymentStatus::Failed,
-                                started_instant,
-                                tx,
-                                &secrets_to_redact,
-                            );
+                            finalize!(record, DeploymentStatus::Failed);
                         }
                     }
                 }
@@ -1041,13 +1028,7 @@ pub fn run_deployment(
                                     duration_ms: step_start.elapsed().as_millis() as u64,
                                 },
                             );
-                            return finalize_record(
-                                record,
-                                DeploymentStatus::Failed,
-                                started_instant,
-                                tx,
-                                &secrets_to_redact,
-                            );
+                            finalize!(record, DeploymentStatus::Failed);
                         }
                         Err(err) => {
                             transfer_output.push_str(&format!("[{server}] Error: {err}"));
@@ -1061,13 +1042,7 @@ pub fn run_deployment(
                                     duration_ms: step_start.elapsed().as_millis() as u64,
                                 },
                             );
-                            return finalize_record(
-                                record,
-                                DeploymentStatus::Failed,
-                                started_instant,
-                                tx,
-                                &secrets_to_redact,
-                            );
+                            finalize!(record, DeploymentStatus::Failed);
                         }
                     }
                 }
@@ -1115,13 +1090,7 @@ pub fn run_deployment(
                                     duration_ms: step_start.elapsed().as_millis() as u64,
                                 },
                             );
-                            return finalize_record(
-                                record,
-                                DeploymentStatus::Failed,
-                                started_instant,
-                                tx,
-                                &secrets_to_redact,
-                            );
+                            finalize!(record, DeploymentStatus::Failed);
                         }
                         Err(err) => {
                             remote_output.push_str(&format!("[{server}] Error: {err}"));
@@ -1135,13 +1104,7 @@ pub fn run_deployment(
                                     duration_ms: step_start.elapsed().as_millis() as u64,
                                 },
                             );
-                            return finalize_record(
-                                record,
-                                DeploymentStatus::Failed,
-                                started_instant,
-                                tx,
-                                &secrets_to_redact,
-                            );
+                            finalize!(record, DeploymentStatus::Failed);
                         }
                     }
                 }
@@ -1187,15 +1150,13 @@ pub fn run_deployment(
                         duration_ms: step_start.elapsed().as_millis() as u64,
                     },
                 );
-                return finalize_record(
-                    record,
-                    DeploymentStatus::Failed,
-                    started_instant,
-                    tx,
-                    &secrets_to_redact,
-                );
+                finalize!(record, DeploymentStatus::Failed);
             }
         }
+    }
+
+    if let Some(guard) = &mut pkg_guard {
+        guard.disarm();
     }
 
     finalize_record(
@@ -1204,6 +1165,7 @@ pub fn run_deployment(
         started_instant,
         tx,
         &secrets_to_redact,
+        None,
     )
 }
 
@@ -1213,7 +1175,22 @@ fn finalize_record(
     started_instant: Instant,
     tx: Option<&Sender<ExecutorEvent>>,
     secrets: &[&str],
+    pkg_guard: Option<&mut PackageJsonRevertGuard>,
 ) -> DeploymentRecord {
+    if status != DeploymentStatus::Succeeded {
+        if let Some(guard) = pkg_guard {
+            if guard.armed {
+                guard.revert_now();
+                record.step_logs.push(StepExecutionLog {
+                    step_name: "Revert package.json Version".to_string(),
+                    command_summary: "Revert package.json due to deployment failure".to_string(),
+                    status: DeploymentStatus::Succeeded,
+                    output: "Deployment failed. package.json was reverted back to its previous version.".to_string(),
+                    duration_ms: 0,
+                });
+            }
+        }
+    }
     record.status = status;
     record.finished_at = Some(Utc::now());
     record.duration_ms = Some(started_instant.elapsed().as_millis() as u64);
@@ -1332,6 +1309,68 @@ mod tests {
         assert_eq!(
             crate::version::read_package_json_version(tmp.path()).as_deref(),
             Some("1.0.0")
+        );
+    }
+
+    #[test]
+    fn test_failed_deployment_does_not_bump_package_json() {
+        let tmp = TempDir::new().expect("tempdir");
+        fs::write(
+            tmp.path().join("package.json"),
+            "{\n  \"name\": \"fail-demo\",\n  \"version\": \"2.0.0\"\n}\n",
+        )
+        .expect("write pkg");
+
+        let env_config = EnvironmentConfig {
+            key: "prod".to_string(),
+            name: "Production".to_string(),
+            app_name: "fail-demo-prod".to_string(),
+            servers: vec![],
+            remote_user: "appndq".to_string(),
+            vault_target: "indyserver".to_string(),
+            remote_dir: "/data/demo".to_string(),
+            env_source: None,
+            http_proxy: None,
+            steps: vec![
+                PipelineStep::new(
+                    "Failing Verification",
+                    StepKind::VerifyLocalPath {
+                        path: "./does_not_exist/binary.exe".to_string(),
+                    },
+                ),
+            ],
+        };
+
+        let req = DeploymentRequest {
+            deployment_id: "test-dep-failed".to_string(),
+            project_id: "fail-demo".to_string(),
+            project_name: "Fail Demo".to_string(),
+            local_path: tmp.path().to_path_buf(),
+            env_config,
+            version: "2.1.0".to_string(),
+            bump_package_json: true,
+            create_git_tag_on_success: false,
+            manual_password: None,
+            skip_ssh_preflight: true,
+            target_git_branch: None,
+            rollback_commit: None,
+            previous_commit: None,
+            is_rollback: false,
+        };
+
+        let record = run_deployment(req, None);
+        // Deployment failed!
+        assert_eq!(record.status, DeploymentStatus::Failed);
+
+        // package.json MUST NOT be bumped to 2.1.0; it must remain at 2.0.0!
+        assert_eq!(
+            crate::version::read_package_json_version(tmp.path()).as_deref(),
+            Some("2.0.0")
+        );
+
+        // Verify revert log step was appended
+        assert!(
+            record.step_logs.iter().any(|log| log.step_name == "Revert package.json Version")
         );
     }
 

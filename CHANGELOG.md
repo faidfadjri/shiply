@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.10.9] - 2026-10-29
+
+### Fixed
+- Versioning: if a deployment fails at any step during execution, `package.json` is automatically reverted to its exact original version via RAII rollback guards, preventing failed runs from leaving behind a dirty git working directory or premature version bumps.
+- Auto-Bumping: `next_auto_bumped_version` now strictly computes the next version from succeeded deployments only, ensuring failed deployments do not bump the auto-suggested patch version on subsequent retries.
+
 ## [0.10.8] - 2026-10-29
 
 ### Added

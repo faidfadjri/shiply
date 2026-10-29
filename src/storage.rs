@@ -969,22 +969,24 @@ impl AppStorage {
     }
 
     /// Computes the next auto-bumped version for the Version input field based on the
-    /// latest deployment history for `(project_id, env_key)` (or any environment in `project_id`),
-    /// falling back to `package.json` or `"1.0.0"` if no deployment history exists yet.
+    /// last succeeded deployment history for `(project_id, env_key)` (or any environment in `project_id`),
+    /// falling back to `package.json` or `"1.0.0"` if no succeeded deployment history exists yet.
+    /// Failed deployments do NOT bump the version.
     pub fn next_auto_bumped_version(
         &self,
         project_id: &str,
         env_key: &str,
         fallback_pkg_version: Option<&str>,
     ) -> String {
-        if let Some(dep) = self
-            .latest_deployment(project_id, env_key)
-            .or_else(|| self.last_succeeded_deployment(project_id, env_key))
-        {
+        if let Some(dep) = self.last_succeeded_deployment(project_id, env_key) {
             return bump_semver(&dep.version, VersionBump::Patch);
         }
 
-        if let Some(dep) = self.deployments.iter().find(|d| d.project_id == project_id) {
+        if let Some(dep) = self
+            .deployments
+            .iter()
+            .find(|d| d.project_id == project_id && d.status == DeploymentStatus::Succeeded)
+        {
             return bump_semver(&dep.version, VersionBump::Patch);
         }
 
@@ -1203,13 +1205,26 @@ mod tests {
             "1.0.0"
         );
 
-        // With deployment history, auto-bumps the latest deployment version
+        // With deployment history, auto-bumps the latest succeeded deployment version
         storage.upsert_deployment(dummy_record(
             "d1",
             "web-api",
             "development",
             "1.4.2",
             DeploymentStatus::Succeeded,
+        ));
+        assert_eq!(
+            storage.next_auto_bumped_version("web-api", "development", Some("1.4.2")),
+            "1.4.3"
+        );
+
+        // A failed deployment MUST NOT bump the auto-suggested version
+        storage.upsert_deployment(dummy_record(
+            "d2",
+            "web-api",
+            "development",
+            "1.4.3",
+            DeploymentStatus::Failed,
         ));
         assert_eq!(
             storage.next_auto_bumped_version("web-api", "development", Some("1.4.2")),
