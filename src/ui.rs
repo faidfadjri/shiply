@@ -34,23 +34,70 @@ use std::time::{Duration, Instant};
 use uuid::Uuid;
 
 // =============================================================================
-// Structured Typography Scale (Single Unified Proportional Font Family)
+// DESIGN TOKENS (Single Source of Truth for Sidebar & Modals)
+// =============================================================================
+
+// Typography: ONLY these 5 sizes allowed in sidebar & modals!
+pub const FS_TITLE: f32 = 18.0; // Modal title (18px / 24px, weight 600)
+pub const FS_BRAND: f32 = 16.0; // "Shiply" brand name (16px / 24px, weight 600)
+pub const FS_BASE: f32 = 14.0;  // Nav items, project names, input text, buttons (14px / 20px, weight 500)
+pub const FS_SMALL: f32 = 13.0; // Footer actions, modal description, helper text (13px / 20px, weight 400)
+pub const FS_MICRO: f32 = 11.0; // "PROJECTS" label, env badges, version badge, status text (11px / 16px, weight 600)
+
+// Spacing scale: ONLY 4, 8, 12, 16, 20, 24 px
+pub const SP_4: f32 = 4.0;
+pub const SP_8: f32 = 8.0;
+pub const SP_12: f32 = 12.0;
+pub const SP_16: f32 = 16.0;
+pub const SP_20: f32 = 20.0;
+pub const SP_24: f32 = 24.0;
+
+// Radius scale
+pub const R_SM: f32 = 6.0;  // badges, small buttons
+pub const R_MD: f32 = 8.0;  // nav, inputs, buttons, cards
+pub const R_LG: f32 = 12.0; // inner panels
+pub const R_XL: f32 = 16.0; // modal
+
+// Sidebar colors (dark)
+pub const SB_BG: Color32 = Color32::from_rgb(11, 18, 32);                          // #0B1220
+pub const SB_SURFACE: Color32 = Color32::from_rgb(17, 26, 46);                     // #111A2E
+pub const SB_SURFACE_HOVER: Color32 = Color32::from_rgb(22, 33, 58);               // #16213A
+pub const SB_BORDER: Color32 = Color32::from_rgba_premultiplied(15, 15, 15, 15);    // rgba(255,255,255,0.06)
+pub const SB_TEXT: Color32 = Color32::from_rgb(230, 234, 242);                     // #E6EAF2
+pub const SB_TEXT_MUTED: Color32 = Color32::from_rgb(139, 150, 173);               // #8B96AD
+pub const SB_TEXT_FAINT: Color32 = Color32::from_rgb(100, 112, 138);               // #64708A
+pub const ACCENT: Color32 = Color32::from_rgb(59, 130, 246);                       // #3B82F6
+pub const ACCENT_SOFT: Color32 = Color32::from_rgba_premultiplied(8, 18, 35, 36);   // rgba(59,130,246,0.14)
+pub const SUCCESS: Color32 = Color32::from_rgb(34, 197, 94);                       // #22C55E
+
+pub const BADGE_DEV_BG: Color32 = Color32::from_rgba_premultiplied(9, 21, 40, 41);  // rgba(59,130,246,0.16)
+pub const BADGE_DEV_TEXT: Color32 = Color32::from_rgb(125, 178, 255);              // #7DB2FF
+pub const BADGE_PROD_BG: Color32 = Color32::from_rgba_premultiplied(27, 14, 40, 41); // rgba(168,85,247,0.16)
+pub const BADGE_PROD_TEXT: Color32 = Color32::from_rgb(196, 161, 255);             // #C4A1FF
+
+// Modal colors (light)
+pub const MD_OVERLAY: Color32 = Color32::from_rgba_premultiplied(1, 3, 13, 140);    // rgba(2,6,23,0.55)
+pub const MD_BG: Color32 = Color32::WHITE;                                         // #FFFFFF
+pub const MD_BORDER: Color32 = Color32::from_rgb(226, 232, 240);                   // #E2E8F0
+pub const MD_TEXT: Color32 = Color32::from_rgb(15, 23, 42);                       // #0F172A
+pub const MD_TEXT_MUTED: Color32 = Color32::from_rgb(100, 116, 139);               // #64748B
+pub const MD_INPUT_BG: Color32 = Color32::from_rgb(248, 250, 252);                 // #F8FAFC
+pub const MD_PANEL_BG: Color32 = Color32::from_rgb(241, 245, 249);                 // #F1F5F9
+pub const MD_FOCUS_RING_COLOR: Color32 = Color32::from_rgba_premultiplied(18, 39, 73, 76); // rgba(59,130,246,0.30)
+
+// =============================================================================
+// Structured Typography Scale (Preserved for Main Content Area)
 // =============================================================================
 const FONT_XL: f32 = 20.0; // Page & Project Headers
-const FONT_LG: f32 = 15.0; // Card Primary Values & Modal Titles
+const FONT_LG: f32 = 15.0; // Card Primary Values
 const FONT_MD: f32 = 13.0; // Standard UI Text, Inputs, Buttons, Table Values
 const FONT_SM: f32 = 11.5; // Secondary Metadata, Subtitles, Compact Buttons
 const FONT_XS: f32 = 10.5; // Section Labels, Table Headers, Pill Badges
+const POPUP_FONT_SIZE: f32 = 13.0; // Options popup menu typography (FS_SMALL)
 
 // =============================================================================
 // High-Contrast Professional SaaS Color Palette
 // =============================================================================
-const SIDEBAR_BG: Color32 = Color32::from_rgb(15, 23, 42); // #0f172a
-const SIDEBAR_CARD_ACTIVE: Color32 = Color32::from_rgb(20, 33, 68);
-const SIDEBAR_CARD_HOVER: Color32 = Color32::from_rgb(30, 41, 59); // #1e293b
-const SIDEBAR_BORDER_ACTIVE: Color32 = Color32::from_rgb(59, 130, 246); // #3b82f6
-const SIDEBAR_PILL_BG: Color32 = Color32::from_rgb(30, 41, 59); // #1e293b
-const SIDEBAR_DIVIDER: Color32 = Color32::from_rgb(30, 41, 59); // #1e293b
 const SIDEBAR_TEXT_MUTED: Color32 = Color32::from_rgb(148, 163, 184); // #94a3b8
 
 const CANVAS_BG: Color32 = Color32::from_rgb(241, 245, 249); // #f1f5f9
@@ -259,6 +306,7 @@ pub struct ShiplyApp {
     logo_texture: Option<egui::TextureHandle>,
     project_switch_loading_id: Option<String>,
     project_switch_loading_start: Option<Instant>,
+    sidebar_refreshing_until: Option<Instant>,
 }
 
 impl ShiplyApp {
@@ -373,6 +421,7 @@ impl ShiplyApp {
             logo_texture: None,
             project_switch_loading_id: None,
             project_switch_loading_start: None,
+            sidebar_refreshing_until: None,
             git_inspect_tx,
             git_inspect_rx,
         };
@@ -1601,886 +1650,174 @@ impl ShiplyApp {
     }
 
     fn render_sidebar(&mut self, ctx: &egui::Context, anim_t: f32) {
-        let width = 248.0 * anim_t;
+        let width = 288.0 * anim_t;
         let pad_x = ((16.0 * anim_t).round() as i8).max(0);
         egui::SidePanel::left("shiply_sidebar")
             .resizable(false)
             .exact_width(width)
             .frame(
                 egui::Frame::new()
-                    .fill(SIDEBAR_BG)
-                    .inner_margin(Margin::symmetric(pad_x, 18))
-                    .stroke(Stroke::new(1.0_f32, SIDEBAR_DIVIDER)),
+                    .fill(SB_BG)
+                    .inner_margin(Margin::symmetric(pad_x, 0))
+                    .stroke(Stroke::new(1.0_f32, SB_BORDER)),
             )
             .show(ctx, |ui| {
                 if anim_t < 0.25 {
                     return;
                 }
-                ui.visuals_mut().override_text_color = Some(Color32::from_rgb(241, 245, 249));
-                let full_w = ui.available_width();
+                ui.visuals_mut().override_text_color = Some(SB_TEXT);
+                let inner_rect = ui.available_rect_before_wrap();
+                let full_w = inner_rect.width();
 
-                // 1. Top Brand Bar (Fixed 32px height)
-                let (brand_rect, _) =
-                    ui.allocate_exact_size(Vec2::new(full_w, 32.0), Sense::hover());
-                let logo_rect = Rect::from_min_size(
-                    Pos2::new(brand_rect.left(), brand_rect.center().y - 14.0),
-                    Vec2::new(28.0, 28.0),
-                );
-                draw_shiply_logo(
-                    ui.painter(),
-                    logo_rect,
-                    6,
-                    FONT_LG,
-                    self.logo_texture.as_ref(),
-                );
-                ui.painter().text(
-                    Pos2::new(logo_rect.right() + 10.0, brand_rect.center().y),
-                    Align2::LEFT_CENTER,
-                    "Shiply",
-                    FontId::proportional(FONT_XL),
-                    Color32::WHITE,
-                );
-                paint_pill_right_aligned(
-                    ui.painter(),
-                    Pos2::new(brand_rect.right(), brand_rect.center().y),
-                    &format!("V{APP_VERSION}"),
-                    SIDEBAR_PILL_BG,
-                    SIDEBAR_TEXT_MUTED,
-                );
-
-                ui.add_space(12.0);
-                draw_divider(ui, SIDEBAR_DIVIDER);
-                ui.add_space(10.0);
-
-                // 2. All Deployments Navigation Button (Fixed 38px height)
-                let is_overview = matches!(self.selection, SidebarSelection::AllDeployments);
-                let (nav_rect, nav_resp) =
-                    ui.allocate_exact_size(Vec2::new(full_w, 38.0), Sense::click());
-                let nav_resp = nav_resp.on_hover_cursor(egui::CursorIcon::PointingHand);
-                let nav_bg = if is_overview {
-                    SIDEBAR_CARD_ACTIVE
-                } else if nav_resp.hovered() {
-                    SIDEBAR_CARD_HOVER
-                } else {
-                    Color32::TRANSPARENT
-                };
-                ui.painter()
-                    .rect_filled(nav_rect, CornerRadius::same(7), nav_bg);
-                if is_overview {
-                    ui.painter().rect_stroke(
-                        nav_rect,
-                        CornerRadius::same(7),
-                        Stroke::new(1.0_f32, SIDEBAR_BORDER_ACTIVE),
-                        StrokeKind::Inside,
+                // 1. Brand Header (Pinned top, height 64px, bottom border 1px SB_BORDER)
+                let brand_rect = Rect::from_min_size(inner_rect.min, Vec2::new(full_w, 64.0));
+                let brand_ui = ui.new_child(egui::UiBuilder::new().max_rect(brand_rect));
+                {
+                    let logo_rect = Rect::from_min_size(
+                        Pos2::new(brand_rect.left(), brand_rect.center().y - 14.0),
+                        Vec2::new(28.0, 28.0),
                     );
-                }
-                draw_icon_layers(
-                    ui.painter(),
-                    Pos2::new(nav_rect.left() + 16.0, nav_rect.center().y),
-                    if is_overview {
-                        Color32::from_rgb(96, 165, 250)
-                    } else {
-                        SIDEBAR_TEXT_MUTED
-                    },
-                );
-                ui.painter().text(
-                    Pos2::new(nav_rect.left() + 34.0, nav_rect.center().y),
-                    Align2::LEFT_CENTER,
-                    "All Deployments",
-                    FontId::proportional(FONT_MD),
-                    if is_overview {
-                        Color32::WHITE
-                    } else {
-                        Color32::from_rgb(226, 232, 240)
-                    },
-                );
-                if nav_resp.clicked() {
-                    self.selection = SidebarSelection::AllDeployments;
-                }
-
-                if !self.storage.projects.is_empty() {
-                    ui.add_space(4.0);
-                    let (bulk_nav_rect, bulk_nav_resp) =
-                        ui.allocate_exact_size(Vec2::new(full_w, 34.0), Sense::click());
-                    let bulk_nav_resp =
-                        bulk_nav_resp.on_hover_cursor(egui::CursorIcon::PointingHand);
-                    let bulk_nav_bg = if self.show_bulk_deploy_modal {
-                        SIDEBAR_CARD_ACTIVE
-                    } else if bulk_nav_resp.hovered() {
-                        SIDEBAR_CARD_HOVER
-                    } else {
-                        Color32::TRANSPARENT
-                    };
-                    ui.painter()
-                        .rect_filled(bulk_nav_rect, CornerRadius::same(7), bulk_nav_bg);
-                    draw_icon_send(
-                        ui.painter(),
-                        Pos2::new(bulk_nav_rect.left() + 16.0, bulk_nav_rect.center().y),
-                        Color32::from_rgb(96, 165, 250),
+                    draw_shiply_logo(
+                        brand_ui.painter(),
+                        logo_rect,
+                        6,
+                        FS_TITLE,
+                        self.logo_texture.as_ref(),
                     );
-                    ui.painter().text(
-                        Pos2::new(bulk_nav_rect.left() + 34.0, bulk_nav_rect.center().y),
+                    brand_ui.painter().text(
+                        Pos2::new(logo_rect.right() + 10.0, brand_rect.center().y),
                         Align2::LEFT_CENTER,
-                        "Bulk Deploy...",
-                        FontId::proportional(FONT_MD),
-                        Color32::from_rgb(226, 232, 240),
+                        "Shiply",
+                        FontId::proportional(FS_BRAND),
+                        SB_TEXT,
                     );
-                    if bulk_nav_resp
-                        .on_hover_text("Select multiple projects to deploy sequentially")
-                        .clicked()
-                    {
-                        self.open_bulk_deploy_modal();
-                    }
+
+                    // Version badge (--fs-micro, bg --sb-surface, radius --r-sm, padding 2px 8px, color --sb-text-muted), aligned right
+                    let ver_text = format!("v{APP_VERSION}");
+                    let ver_galley = brand_ui.painter().layout_no_wrap(
+                        ver_text,
+                        FontId::proportional(FS_MICRO),
+                        SB_TEXT_MUTED,
+                    );
+                    let badge_pad_x = 8.0_f32;
+                    let badge_h = 20.0_f32;
+                    let badge_w = ver_galley.size().x + badge_pad_x * 2.0;
+                    let badge_rect = Rect::from_min_size(
+                        Pos2::new(brand_rect.right() - badge_w, brand_rect.center().y - badge_h / 2.0),
+                        Vec2::new(badge_w, badge_h),
+                    );
+                    brand_ui.painter().rect_filled(badge_rect, CornerRadius::same(R_SM as u8), SB_SURFACE);
+                    brand_ui.painter().galley(
+                        Pos2::new(badge_rect.left() + badge_pad_x, badge_rect.center().y - ver_galley.size().y / 2.0),
+                        ver_galley,
+                        SB_TEXT_MUTED,
+                    );
+
+                    // Bottom border 1px SB_BORDER
+                    brand_ui.painter().line_segment(
+                        [
+                            Pos2::new(brand_rect.left() - 16.0, brand_rect.bottom()),
+                            Pos2::new(brand_rect.right() + 16.0, brand_rect.bottom()),
+                        ],
+                        Stroke::new(1.0_f32, SB_BORDER),
+                    );
                 }
 
-                ui.add_space(16.0);
-
-                // 3. PROJECTS Section Header + Sort Selector + "+ ADD" button
-                let (hdr_rect, _) =
-                    ui.allocate_exact_size(Vec2::new(full_w, 26.0), Sense::hover());
-                ui.painter().text(
-                    Pos2::new(hdr_rect.left() + 2.0, hdr_rect.center().y),
-                    Align2::LEFT_CENTER,
-                    "PROJECTS",
-                    FontId::proportional(FONT_XS),
-                    SIDEBAR_TEXT_MUTED,
+                // 2. Footer (Pinned bottom, top border 1px SB_BORDER, padding-top 12px)
+                let footer_h = 160.0_f32;
+                let footer_rect = Rect::from_min_size(
+                    Pos2::new(inner_rect.left(), inner_rect.bottom() - footer_h),
+                    Vec2::new(full_w, footer_h),
                 );
-
-                let add_w = 48.0;
-                let sort_w = 82.0;
-
-                let add_btn_rect = Rect::from_min_size(
-                    Pos2::new(hdr_rect.right() - add_w, hdr_rect.center().y - 11.0),
-                    Vec2::new(add_w, 22.0),
-                );
-                let add_btn_resp = ui
-                    .interact(
-                        add_btn_rect,
-                        egui::Id::new("sidebar_add_proj_btn"),
-                        Sense::click(),
-                    )
-                    .on_hover_cursor(egui::CursorIcon::PointingHand);
-                ui.painter().rect_filled(
-                    add_btn_rect,
-                    CornerRadius::same(5),
-                    if add_btn_resp.hovered() {
-                        PRIMARY_BLUE
-                    } else {
-                        SIDEBAR_PILL_BG
-                    },
-                );
-                ui.painter().rect_stroke(
-                    add_btn_rect,
-                    CornerRadius::same(5),
-                    Stroke::new(1.0_f32, Color32::from_rgb(51, 65, 85)),
-                    StrokeKind::Inside,
-                );
-                ui.painter().text(
-                    add_btn_rect.center(),
-                    Align2::CENTER_CENTER,
-                    "+ ADD",
-                    FontId::proportional(FONT_XS),
-                    Color32::WHITE,
-                );
-                if add_btn_resp.clicked() {
-                    self.new_project_group.clear();
-                    self.show_new_project_modal = true;
-                }
-
-                // Sort Dropdown
-                let sort_area_rect = Rect::from_min_size(
-                    Pos2::new(hdr_rect.right() - add_w - 6.0 - sort_w, hdr_rect.center().y - 11.0),
-                    Vec2::new(sort_w, 22.0),
-                );
-                let mut sort_ui = ui.new_child(egui::UiBuilder::new().max_rect(sort_area_rect));
-                sort_ui.spacing_mut().button_padding = Vec2::new(4.0, 2.0);
-                let sort_label = match self.project_sort_mode {
-                    ProjectSortMode::Custom => "⇅ Custom",
-                    ProjectSortMode::NameAsc => "⇅ A-Z",
-                    ProjectSortMode::NameDesc => "⇅ Z-A",
-                    ProjectSortMode::RecentDeploy => "⇅ Recent",
-                };
-                egui::ComboBox::from_id_salt("sidebar_project_sort_selector")
-                    .selected_text(
-                        RichText::new(sort_label)
-                            .size(FONT_XS)
-                            .color(Color32::from_rgb(203, 213, 225)),
-                    )
-                    .width(sort_w)
-                    .show_ui(&mut sort_ui, |ui| {
-                        ui.visuals_mut().override_text_color = Some(TEXT_PRIMARY);
-                        if ui
-                            .selectable_label(
-                                self.project_sort_mode == ProjectSortMode::Custom,
-                                "Custom / Drag",
-                            )
-                            .clicked()
-                        {
-                            self.project_sort_mode = ProjectSortMode::Custom;
-                            self.storage.sort_projects(ProjectSortMode::Custom);
-                        }
-                        if ui
-                            .selectable_label(
-                                self.project_sort_mode == ProjectSortMode::NameAsc,
-                                "Name (A-Z)",
-                            )
-                            .clicked()
-                        {
-                            self.project_sort_mode = ProjectSortMode::NameAsc;
-                            self.storage.sort_projects(ProjectSortMode::NameAsc);
-                        }
-                        if ui
-                            .selectable_label(
-                                self.project_sort_mode == ProjectSortMode::NameDesc,
-                                "Name (Z-A)",
-                            )
-                            .clicked()
-                        {
-                            self.project_sort_mode = ProjectSortMode::NameDesc;
-                            self.storage.sort_projects(ProjectSortMode::NameDesc);
-                        }
-                        if ui
-                            .selectable_label(
-                                self.project_sort_mode == ProjectSortMode::RecentDeploy,
-                                "Recently Deployed",
-                            )
-                            .clicked()
-                        {
-                            self.project_sort_mode = ProjectSortMode::RecentDeploy;
-                            self.storage.sort_projects(ProjectSortMode::RecentDeploy);
-                        }
-                    });
-
-                ui.add_space(8.0);
-
-                // 4. Project Cards List
-                if self.storage.projects.is_empty() {
-                    let (empty_rect, _) =
-                        ui.allocate_exact_size(Vec2::new(full_w, 60.0), Sense::hover());
-                    ui.painter().rect_stroke(
-                        empty_rect,
-                        CornerRadius::same(8),
-                        Stroke::new(1.0_f32, SIDEBAR_DIVIDER),
-                        StrokeKind::Inside,
+                let mut footer_ui = ui.new_child(egui::UiBuilder::new().max_rect(footer_rect));
+                {
+                    // Top border 1px SB_BORDER
+                    footer_ui.painter().line_segment(
+                        [
+                            Pos2::new(footer_rect.left() - 16.0, footer_rect.top()),
+                            Pos2::new(footer_rect.right() + 16.0, footer_rect.top()),
+                        ],
+                        Stroke::new(1.0_f32, SB_BORDER),
                     );
-                    ui.painter().text(
-                        empty_rect.center(),
-                        Align2::CENTER_CENTER,
-                        "No projects yet.\nClick '+ ADD' or import .ps1",
-                        FontId::proportional(FONT_SM),
-                        SIDEBAR_TEXT_MUTED,
+
+                    footer_ui.add_space(SP_12);
+
+                    // Actions: Sync, Open App Folder, Check for Updates
+                    // Action 1: Sync App Directory Files
+                    let (sync_rect, sync_resp) = footer_ui.allocate_exact_size(Vec2::new(full_w, 32.0), Sense::click());
+                    let sync_resp = sync_resp.on_hover_cursor(egui::CursorIcon::PointingHand);
+                    let sync_bg = if sync_resp.hovered() { SB_SURFACE } else { Color32::TRANSPARENT };
+                    let sync_fg = if sync_resp.hovered() { SB_TEXT } else { SB_TEXT_MUTED };
+                    footer_ui.painter().rect_filled(sync_rect, CornerRadius::same(R_MD as u8), sync_bg);
+                    draw_icon_refresh(footer_ui.painter(), Pos2::new(sync_rect.left() + 16.0, sync_rect.center().y), sync_fg);
+                    footer_ui.painter().text(
+                        Pos2::new(sync_rect.left() + 32.0, sync_rect.center().y),
+                        Align2::LEFT_CENTER,
+                        "Sync App Directory Files",
+                        FontId::proportional(FS_SMALL),
+                        sync_fg,
                     );
-                } else {
-                    let is_pointer_released = ui.input(|i| i.pointer.any_released());
-                    let pointer_pos = ui.input(|i| i.pointer.hover_pos());
-
-                    if self.dragged_project_idx.is_some() {
-                        ui.ctx().request_repaint();
-                    }
-
-                    let has_groups = self.storage.projects.iter().any(|p| {
-                        p.group
-                            .as_ref()
-                            .is_some_and(|g| !g.trim().is_empty())
-                    });
-
-                    // Build grouped sections: Vec<(Option<String>, Vec<usize>)>
-                    let mut group_sections: Vec<(Option<String>, Vec<usize>)> = Vec::new();
-                    if has_groups {
-                        for (idx, p) in self.storage.projects.iter().enumerate() {
-                            let grp = p
-                                .group
-                                .as_ref()
-                                .map(|g| g.trim().to_string())
-                                .filter(|g| !g.is_empty());
-                            if let Some(pos) = group_sections
-                                .iter()
-                                .position(|(g, _)| g.as_ref() == grp.as_ref())
-                            {
-                                group_sections[pos].1.push(idx);
-                            } else {
-                                group_sections.push((grp, vec![idx]));
-                            }
-                        }
-                        group_sections.sort_by(|(g1, _), (g2, _)| match (g1, g2) {
-                            (Some(a), Some(b)) => a.to_lowercase().cmp(&b.to_lowercase()),
-                            (Some(_), None) => std::cmp::Ordering::Less,
-                            (None, Some(_)) => std::cmp::Ordering::Greater,
-                            (None, None) => std::cmp::Ordering::Equal,
-                        });
-                    } else {
-                        group_sections.push((None, (0..self.storage.projects.len()).collect()));
-                    }
-
-                    let mut clicked_project_id = None;
-                    let mut action_edit_proj_idx = None;
-                    let mut action_duplicate_proj_id = None;
-                    let mut action_refresh_proj_id = None;
-                    let mut action_delete_proj = None;
-                    let mut action_move_up_idx = None;
-                    let mut action_move_down_idx = None;
-                    let mut action_set_group = None;
-                    let mut drag_reorder = None;
-
-                    for (grp_opt, proj_indices) in group_sections {
-                        if has_groups {
-                            let group_title = grp_opt.as_deref().unwrap_or("General");
-                            let group_key = grp_opt.clone().unwrap_or_else(|| "_general".to_string());
-                            let is_collapsed = self.collapsed_project_groups.contains(&group_key);
-
-                            let (grp_rect, grp_resp) = ui.allocate_exact_size(
-                                Vec2::new(full_w, 24.0),
-                                Sense::click(),
-                            );
-                            let grp_resp = grp_resp.on_hover_cursor(egui::CursorIcon::PointingHand);
-                            if grp_resp.hovered() {
-                                ui.painter().rect_filled(
-                                    grp_rect,
-                                    CornerRadius::same(5),
-                                    Color32::from_rgb(26, 38, 62),
-                                );
-                            }
-
-                            let arrow = if is_collapsed { "▶" } else { "▼" };
-                            let title_text = format!("{arrow}  {}", group_title.to_uppercase());
-                            ui.painter().text(
-                                Pos2::new(grp_rect.left() + 6.0, grp_rect.center().y),
-                                Align2::LEFT_CENTER,
-                                title_text,
-                                FontId::proportional(FONT_XS),
-                                Color32::from_rgb(148, 163, 184),
-                            );
-
-                            paint_pill_right_aligned(
-                                ui.painter(),
-                                Pos2::new(grp_rect.right() - 4.0, grp_rect.center().y),
-                                &format!("{}", proj_indices.len()),
-                                SIDEBAR_PILL_BG,
-                                SIDEBAR_TEXT_MUTED,
-                            );
-
-                            if grp_resp.clicked() {
-                                if is_collapsed {
-                                    self.collapsed_project_groups.remove(&group_key);
-                                } else {
-                                    self.collapsed_project_groups.insert(group_key.clone());
-                                }
-                            }
-
-                            ui.add_space(3.0);
-
-                            if is_collapsed {
-                                continue;
-                            }
-                        }
-
-                        for proj_idx in proj_indices {
-                            let project = &self.storage.projects[proj_idx];
-                            let is_selected = matches!(
-                                &self.selection,
-                                SidebarSelection::Project(id) if id == &project.id
-                            );
-                            let is_being_dragged = self.dragged_project_idx == Some(proj_idx);
-
-                            let (p_rect, p_resp) =
-                                ui.allocate_exact_size(Vec2::new(full_w, 66.0), Sense::click());
-                            let p_resp = p_resp.on_hover_cursor(egui::CursorIcon::PointingHand);
-
-                            let fill = if is_selected {
-                                SIDEBAR_CARD_ACTIVE
-                            } else if p_resp.hovered() {
-                                Color32::from_rgb(22, 32, 52)
-                            } else {
-                                Color32::TRANSPARENT
-                            };
-                            ui.painter().rect_filled(p_rect, CornerRadius::same(8), fill);
-
-                            // Left vertical grip handle for dragging & reordering
-                            let grip_rect = Rect::from_min_size(
-                                Pos2::new(p_rect.left() + 2.0, p_rect.top() + 8.0),
-                                Vec2::new(16.0, 50.0),
-                            );
-                            let grip_resp = ui.interact(
-                                grip_rect,
-                                egui::Id::new(("sidebar_proj_grip", &project.id)),
-                                Sense::drag(),
-                            ).on_hover_cursor(egui::CursorIcon::Grab);
-
-                            if grip_resp.drag_started() || grip_resp.dragged() {
-                                self.dragged_project_idx = Some(proj_idx);
-                                ui.ctx().set_cursor_icon(egui::CursorIcon::Grabbing);
-                            }
-
-                            let grip_color = if is_being_dragged || grip_resp.hovered() {
-                                PRIMARY_BLUE
-                            } else {
-                                Color32::from_rgb(71, 85, 105)
-                            };
-                            draw_outline_icon(
-                                ui.painter(),
-                                grip_rect.center(),
-                                OutlineIcon::GripVertical,
-                                grip_color,
-                            );
-
-                            // Check if pointer is hovering this card as drop target
-                            if let Some(from_idx) = self.dragged_project_idx {
-                                if from_idx != proj_idx {
-                                    if let Some(pos) = pointer_pos {
-                                        if p_rect.contains(pos) {
-                                            ui.painter().rect_stroke(
-                                                p_rect,
-                                                CornerRadius::same(8),
-                                                Stroke::new(2.0_f32, PRIMARY_BLUE),
-                                                StrokeKind::Inside,
-                                            );
-                                            if is_pointer_released {
-                                                drag_reorder = Some((from_idx, proj_idx));
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-
-                            if is_selected {
-                                ui.painter().rect_stroke(
-                                    p_rect,
-                                    CornerRadius::same(8),
-                                    Stroke::new(1.5_f32, SIDEBAR_BORDER_ACTIVE),
-                                    StrokeKind::Inside,
-                                );
-                            }
-
-                            // Check if this project is currently running an active deployment process
-                            let is_deploying = self.active_deployment_id.as_ref().is_some_and(|dep_id| {
-                                self.storage
-                                    .deployments
-                                    .iter()
-                                    .any(|d| &d.id == dep_id && d.project_id == project.id)
-                            }) || self
-                                .storage
-                                .deployments
-                                .iter()
-                                .any(|d| d.project_id == project.id && d.status == DeploymentStatus::Running);
-
-                            let is_switching =
-                                self.project_switch_loading_id.as_deref() == Some(&project.id);
-
-                            // Project Title (constrained width so it doesn't collide with spinner)
-                            let title_color = if is_selected {
-                                Color32::from_rgb(96, 165, 250)
-                            } else {
-                                Color32::WHITE
-                            };
-                            let max_title_w = if is_deploying || is_switching {
-                                full_w - 64.0
-                            } else {
-                                full_w - 32.0
-                            };
-                            let title_galley = ui.painter().layout(
-                                project.name.clone(),
-                                FontId::proportional(FONT_MD),
-                                title_color,
-                                max_title_w,
-                            );
-                            ui.painter().galley(
-                                Pos2::new(
-                                    p_rect.left() + 20.0,
-                                    p_rect.top() + 20.0 - title_galley.size().y / 2.0,
-                                ),
-                                title_galley,
-                                title_color,
-                            );
-
-                            // Circle loading indicator spinner on the right side if running deployment or changing active project
-                            if is_deploying || is_switching {
-                                ui.ctx().request_repaint();
-                                let spinner_center =
-                                    Pos2::new(p_rect.right() - 20.0, p_rect.top() + 20.0);
-                                let spinner_color = if is_deploying {
-                                    Color32::from_rgb(96, 165, 250) // Bright Blue for active running deployment
-                                } else {
-                                    Color32::from_rgb(148, 163, 184) // Muted Slate for project metadata load
-                                };
-                                draw_circle_loading_spinner(
-                                    ui.painter(),
-                                    spinner_center,
-                                    7.0,
-                                    spinner_color,
-                                    ui.input(|i| i.time),
-                                );
-                            }
-
-                            let p_resp = if is_deploying {
-                                p_resp.on_hover_text("A deployment is currently running for this project")
-                            } else {
-                                p_resp
-                            };
-
-                            // Right-click context popup menu for Project options (Move Up, Move Down, Set Group, Edit, Duplicate, Refresh, Delete)
-                            p_resp.context_menu(|ui| {
-                                ui.set_min_width(185.0);
-                                ui.spacing_mut().item_spacing = Vec2::new(0.0, 3.0);
-                                ui.spacing_mut().button_padding = Vec2::new(10.0, 6.0);
-
-                                if proj_idx > 0
-                                    && ui
-                                        .add(
-                                            egui::Button::new(
-                                                RichText::new("▲ Move Up")
-                                                    .size(FONT_SM)
-                                                    .color(TEXT_PRIMARY),
-                                            )
-                                            .fill(CARD_BG),
-                                        )
-                                        .on_hover_text("Move this project up in the list")
-                                        .clicked()
-                                {
-                                    action_move_up_idx = Some(proj_idx);
-                                    ui.close_menu();
-                                }
-
-                                if proj_idx + 1 < self.storage.projects.len()
-                                    && ui
-                                        .add(
-                                            egui::Button::new(
-                                                RichText::new("▼ Move Down")
-                                                    .size(FONT_SM)
-                                                    .color(TEXT_PRIMARY),
-                                            )
-                                            .fill(CARD_BG),
-                                        )
-                                        .on_hover_text("Move this project down in the list")
-                                        .clicked()
-                                {
-                                    action_move_down_idx = Some(proj_idx);
-                                    ui.close_menu();
-                                }
-
-                                if proj_idx > 0 || proj_idx + 1 < self.storage.projects.len() {
-                                    ui.separator();
-                                }
-
-                                if ui
-                                    .add(
-                                        egui::Button::new(
-                                            RichText::new("Edit Project")
-                                                .size(FONT_SM)
-                                                .color(TEXT_PRIMARY),
-                                        )
-                                        .fill(CARD_BG),
-                                    )
-                                    .on_hover_text("Edit project name, local directory path, group, or description")
-                                    .clicked()
-                                {
-                                    action_edit_proj_idx = Some(proj_idx);
-                                    ui.close_menu();
-                                }
-
-                                ui.menu_button("Set Group...", |ui| {
-                                    ui.set_min_width(160.0);
-                                    let existing_groups = self.storage.existing_project_groups();
-                                    for grp in existing_groups {
-                                        let is_cur = project.group.as_deref() == Some(&grp);
-                                        let label = if is_cur {
-                                            format!("✓ {grp}")
-                                        } else {
-                                            grp.clone()
-                                        };
-                                        if ui
-                                            .add(
-                                                egui::Button::new(
-                                                    RichText::new(label).size(FONT_SM).color(
-                                                        if is_cur {
-                                                            PRIMARY_BLUE
-                                                        } else {
-                                                            TEXT_PRIMARY
-                                                        },
-                                                    ),
-                                                )
-                                                .fill(CARD_BG),
-                                            )
-                                            .clicked()
-                                        {
-                                            action_set_group =
-                                                Some((project.id.clone(), Some(grp)));
-                                            ui.close_menu();
-                                        }
-                                    }
-                                    if project.group.is_some() {
-                                        ui.separator();
-                                        if ui
-                                            .add(
-                                                egui::Button::new(
-                                                    RichText::new("Remove from Group")
-                                                        .size(FONT_SM)
-                                                        .color(TEXT_MUTED),
-                                                )
-                                                .fill(CARD_BG),
-                                            )
-                                            .clicked()
-                                        {
-                                            action_set_group =
-                                                Some((project.id.clone(), None));
-                                            ui.close_menu();
-                                        }
-                                    }
-                                });
-
-                                if ui
-                                    .add(
-                                        egui::Button::new(
-                                            RichText::new("Duplicate Project")
-                                                .size(FONT_SM)
-                                                .color(TEXT_PRIMARY),
-                                        )
-                                        .fill(CARD_BG),
-                                    )
-                                    .on_hover_text("Duplicate this project and all its environments")
-                                    .clicked()
-                                {
-                                    action_duplicate_proj_id = Some(project.id.clone());
-                                    ui.close_menu();
-                                }
-
-                                if ui
-                                    .add(
-                                        egui::Button::new(
-                                            RichText::new("Refresh Metadata")
-                                                .size(FONT_SM)
-                                                .color(TEXT_SECONDARY),
-                                        )
-                                        .fill(CARD_BG),
-                                    )
-                                    .on_hover_text("Refresh Git branches, commits, and package.json version")
-                                    .clicked()
-                                {
-                                    action_refresh_proj_id = Some(project.id.clone());
-                                    ui.close_menu();
-                                }
-
-                                ui.separator();
-
-                                if ui
-                                    .add(
-                                        egui::Button::new(
-                                            RichText::new("Delete Project")
-                                                .size(FONT_SM)
-                                                .color(FAIL_PILL_TEXT),
-                                        )
-                                        .fill(CARD_BG),
-                                    )
-                                    .on_hover_text("Delete this project")
-                                    .clicked()
-                                {
-                                    action_delete_proj = Some((project.id.clone(), project.name.clone()));
-                                    ui.close_menu();
-                                }
-                            });
-
-                            // Environment version pills row inside project card
-                            let mut pill_x = p_rect.left() + 20.0;
-                            let pill_y = p_rect.top() + 45.0;
-                            if project.environments.is_empty() {
-                                paint_small_sidebar_pill(
-                                    ui.painter(),
-                                    Pos2::new(pill_x, pill_y),
-                                    "NO ENVIRONMENTS",
-                                    SIDEBAR_PILL_BG,
-                                    SIDEBAR_TEXT_MUTED,
-                                );
-                            } else {
-                                for env in project.environments.iter().take(3) {
-                                    let badge = env.badge_label();
-                                    let is_env_running = self.storage.deployments.iter().any(|d| {
-                                        d.project_id == project.id
-                                            && d.environment == env.key
-                                            && (d.status == DeploymentStatus::Running
-                                                || self.active_deployment_id.as_deref() == Some(&d.id))
-                                    });
-                                    let (label, bg, fg) = if is_env_running {
-                                        (
-                                            format!("{badge} Deploying..."),
-                                            Color32::from_rgb(30, 58, 138),
-                                            Color32::from_rgb(96, 165, 250),
-                                        )
-                                    } else if let Some(ok_dep) =
-                                        self.storage.last_succeeded_deployment(&project.id, &env.key)
-                                    {
-                                        (
-                                            format!("{badge} v{}", ok_dep.version),
-                                            Color32::from_rgb(23, 37, 84),
-                                            Color32::from_rgb(96, 165, 250),
-                                        )
-                                    } else {
-                                        (
-                                            format!("{badge} —"),
-                                            SIDEBAR_PILL_BG,
-                                            SIDEBAR_TEXT_MUTED,
-                                        )
-                                    };
-                                    let w = paint_small_sidebar_pill(
-                                        ui.painter(),
-                                        Pos2::new(pill_x, pill_y),
-                                        &label,
-                                        bg,
-                                        fg,
-                                    );
-                                    pill_x += w + 5.0;
-                                }
-                            }
-
-                            if p_resp.clicked() {
-                                clicked_project_id = Some(project.id.clone());
-                            }
-                            ui.add_space(4.0);
-                        }
-                    }
-
-                    if let Some((from, to)) = drag_reorder {
-                        self.storage.reorder_project(from, to);
-                        self.project_sort_mode = ProjectSortMode::Custom;
-                        self.dragged_project_idx = None;
-                    } else if is_pointer_released {
-                        self.dragged_project_idx = None;
-                    }
-
-                    if let Some(idx) = action_move_up_idx {
-                        self.storage.move_project_up(idx);
-                        self.project_sort_mode = ProjectSortMode::Custom;
-                    }
-                    if let Some(idx) = action_move_down_idx {
-                        self.storage.move_project_down(idx);
-                        self.project_sort_mode = ProjectSortMode::Custom;
-                    }
-                    if let Some((pid, grp)) = action_set_group {
-                        self.storage.set_project_group(&pid, grp);
-                    }
-                    if let Some(idx) = action_edit_proj_idx {
-                        self.open_edit_project_modal(idx);
-                    }
-                    if let Some(proj_id) = action_duplicate_proj_id {
-                        if let Some(new_proj) = self.storage.duplicate_project(&proj_id) {
-                            self.selection = SidebarSelection::Project(new_proj.id.clone());
+                    if sync_resp.clicked() {
+                        self.sidebar_refreshing_until = Some(Instant::now() + Duration::from_millis(400));
+                        self.storage.reset_sync_cache();
+                        if let Some(msg) = self.storage.sync_from_app_directory() {
                             self.refresh_selected_project_metadata(true);
+                            self.status_banner = Some((msg, true));
+                        } else {
                             self.status_banner = Some((
-                                format!("Duplicated project successfully as '{}'", new_proj.name),
+                                format!("Synced app directory ({})", self.storage.app_data_dir().display()),
                                 true,
                             ));
                         }
                     }
-                    if let Some(proj_id) = action_refresh_proj_id {
-                        self.selection = SidebarSelection::Project(proj_id);
-                        self.refresh_selected_project_metadata(true);
-                    }
-                    if let Some((pid, pname)) = action_delete_proj {
-                        self.pending_delete_confirm = Some(ConfirmDeleteAction::Project {
-                            project_id: pid,
-                            project_name: pname,
-                        });
-                    }
 
-                    if let Some(pid) = clicked_project_id {
-                        let was_different = match &self.selection {
-                            SidebarSelection::Project(cur) => cur != &pid,
-                            SidebarSelection::AllDeployments => true,
-                        };
-                        self.selection = SidebarSelection::Project(pid.clone());
-                        if was_different {
-                            self.project_switch_loading_id = Some(pid);
-                            self.project_switch_loading_start = Some(Instant::now());
-                        }
-                        self.refresh_selected_project_metadata(true);
-                    }
-                }
+                    footer_ui.add_space(SP_4);
 
-                // 5. Bottom Sidebar Footer (App Install + GitHub Auto-Update + Open Data Dir + Sync)
-                ui.with_layout(Layout::bottom_up(Align::LEFT), |ui| {
-                    let install_state = check_install_state(&default_install_dir(), APP_VERSION);
-                    let (install_label, install_color) = match &install_state {
-                        InstallState::NotInstalled => (
-                            "Install Desktop App (.exe)".to_string(),
-                            Color32::from_rgb(96, 165, 250),
-                        ),
-                        InstallState::InstalledCurrent { version, .. } => (
-                            format!("Installed v{version} (Reinstall)"),
-                            TERM_GREEN,
-                        ),
-                        InstallState::UpdateReady {
-                            installed_version,
-                            running_version,
-                            ..
-                        } => (
-                            format!("Update App (v{installed_version} -> v{running_version})"),
-                            TERM_YELLOW,
-                        ),
-                    };
-
-                    let (inst_rect, inst_resp) =
-                        ui.allocate_exact_size(Vec2::new(full_w, 24.0), Sense::click());
-                    let inst_resp = inst_resp.on_hover_cursor(egui::CursorIcon::PointingHand);
-                    ui.painter().circle_filled(
-                        Pos2::new(inst_rect.left() + 6.0, inst_rect.center().y),
-                        4.0,
-                        install_color,
-                    );
-                    ui.painter().text(
-                        Pos2::new(inst_rect.left() + 16.0, inst_rect.center().y),
+                    // Action 2: Open App Folder (JSON / .ps1)
+                    let (dir_rect, dir_resp) = footer_ui.allocate_exact_size(Vec2::new(full_w, 32.0), Sense::click());
+                    let dir_resp = dir_resp.on_hover_cursor(egui::CursorIcon::PointingHand);
+                    let dir_bg = if dir_resp.hovered() { SB_SURFACE } else { Color32::TRANSPARENT };
+                    let dir_fg = if dir_resp.hovered() { SB_TEXT } else { SB_TEXT_MUTED };
+                    footer_ui.painter().rect_filled(dir_rect, CornerRadius::same(R_MD as u8), dir_bg);
+                    draw_icon_folder(footer_ui.painter(), Pos2::new(dir_rect.left() + 16.0, dir_rect.center().y), dir_fg);
+                    footer_ui.painter().text(
+                        Pos2::new(dir_rect.left() + 32.0, dir_rect.center().y),
                         Align2::LEFT_CENTER,
-                        install_label,
-                        FontId::proportional(FONT_SM),
-                        install_color,
+                        "Open App Folder (JSON / .ps1)",
+                        FontId::proportional(FS_SMALL),
+                        dir_fg,
                     );
-                    if inst_resp.clicked() {
-                        match install_or_update_self() {
-                            Ok(msg) => self.status_banner = Some((msg, true)),
-                            Err(err) => self.status_banner = Some((err, false)),
-                        }
+                    if dir_resp.on_hover_text("Open the app folder where you can paste shiply_state.json or deploy-*.ps1 files").clicked() {
+                        let dir = self.storage.app_data_dir();
+                        let _ = fs::create_dir_all(&dir);
+                        open_directory_in_os(&dir);
                     }
 
-                    // GitHub Releases Auto-Update Check / Notification Button
-                    ui.add_space(4.0);
-                    let (upd_rect, upd_resp) =
-                        ui.allocate_exact_size(Vec2::new(full_w, 24.0), Sense::click());
+                    footer_ui.add_space(SP_4);
+
+                    // Action 3: Check for Updates
+                    let (upd_rect, upd_resp) = footer_ui.allocate_exact_size(Vec2::new(full_w, 32.0), Sense::click());
                     let upd_resp = upd_resp.on_hover_cursor(egui::CursorIcon::PointingHand);
-                    let (upd_label, upd_color) = if let Some(rel) = &self.available_update {
-                        (
-                            format!("Update Available: {}!", rel.tag_name),
-                            TERM_YELLOW,
-                        )
+                    let (upd_label, upd_fg) = if let Some(rel) = &self.available_update {
+                        (format!("Update Available: {}!", rel.tag_name), Color32::from_rgb(250, 204, 21))
                     } else if self.update_checking {
-                        (
-                            "Checking GitHub Releases...".to_string(),
-                            Color32::from_rgb(96, 165, 250),
-                        )
+                        ("Checking GitHub Releases...".to_string(), ACCENT)
+                    } else if upd_resp.hovered() {
+                        ("Check for Updates (GitHub)".to_string(), SB_TEXT)
                     } else {
-                        (
-                            "Check for Updates (GitHub)".to_string(),
-                            if upd_resp.hovered() {
-                                Color32::WHITE
-                            } else {
-                                SIDEBAR_TEXT_MUTED
-                            },
-                        )
+                        ("Check for Updates (GitHub)".to_string(), SB_TEXT_MUTED)
                     };
-                    draw_icon_refresh(
-                        ui.painter(),
-                        Pos2::new(upd_rect.left() + 6.0, upd_rect.center().y),
-                        upd_color,
-                    );
-                    ui.painter().text(
-                        Pos2::new(upd_rect.left() + 18.0, upd_rect.center().y),
+                    let upd_bg = if upd_resp.hovered() { SB_SURFACE } else { Color32::TRANSPARENT };
+                    footer_ui.painter().rect_filled(upd_rect, CornerRadius::same(R_MD as u8), upd_bg);
+                    draw_icon_refresh(footer_ui.painter(), Pos2::new(upd_rect.left() + 16.0, upd_rect.center().y), upd_fg);
+                    footer_ui.painter().text(
+                        Pos2::new(upd_rect.left() + 32.0, upd_rect.center().y),
                         Align2::LEFT_CENTER,
                         upd_label,
-                        FontId::proportional(FONT_SM),
-                        upd_color,
+                        FontId::proportional(FS_SMALL),
+                        upd_fg,
                     );
-                    if upd_resp
-                        .on_hover_text(format!(
-                            "Check GitHub Releases ({GITHUB_REPO}) for a newer version of Shiply"
-                        ))
-                        .clicked()
-                    {
+                    if upd_resp.on_hover_text(format!("Check GitHub Releases ({GITHUB_REPO}) for a newer version of Shiply")).clicked() {
                         if self.available_update.is_some() {
                             self.show_update_modal = true;
                         } else if !self.update_checking {
@@ -2488,76 +1825,713 @@ impl ShiplyApp {
                         }
                     }
 
-                    ui.add_space(4.0);
-                    let (dir_rect, dir_resp) =
-                        ui.allocate_exact_size(Vec2::new(full_w, 24.0), Sense::click());
-                    let dir_resp = dir_resp.on_hover_cursor(egui::CursorIcon::PointingHand);
-                    draw_icon_folder(
-                        ui.painter(),
-                        Pos2::new(dir_rect.left() + 6.0, dir_rect.center().y),
-                        SIDEBAR_TEXT_MUTED,
-                    );
-                    ui.painter().text(
-                        Pos2::new(dir_rect.left() + 18.0, dir_rect.center().y),
-                        Align2::LEFT_CENTER,
-                        "Open App Folder (JSON / .ps1)",
-                        FontId::proportional(FONT_SM),
-                        if dir_resp.hovered() {
-                            Color32::WHITE
-                        } else {
-                            SIDEBAR_TEXT_MUTED
-                        },
-                    );
-                    if dir_resp
-                        .on_hover_text(
-                            "Open the app folder where you can paste shiply_state.json or deploy-*.ps1 files",
-                        )
-                        .clicked()
-                    {
-                        let dir = self.storage.app_data_dir();
-                        let _ = fs::create_dir_all(&dir);
-                        open_directory_in_os(&dir);
-                    }
+                    footer_ui.add_space(SP_8);
 
-                    ui.add_space(4.0);
-                    let (sync_rect, sync_resp) =
-                        ui.allocate_exact_size(Vec2::new(full_w, 24.0), Sense::click());
-                    let sync_resp = sync_resp.on_hover_cursor(egui::CursorIcon::PointingHand);
-                    draw_icon_refresh(
-                        ui.painter(),
-                        Pos2::new(sync_rect.left() + 6.0, sync_rect.center().y),
-                        SIDEBAR_TEXT_MUTED,
+                    // Installed status row: dot 8px --success + "Installed v0.10.4" (--fs-micro, --sb-text-muted) + "Reinstall" as a small text link (--sb-text-faint, hover --accent). Keep it on one line.
+                    let (stat_rect, _) = footer_ui.allocate_exact_size(Vec2::new(full_w, 24.0), Sense::hover());
+                    let install_state = check_install_state(&default_install_dir(), APP_VERSION);
+                    let (dot_color, status_text, action_text) = match &install_state {
+                        InstallState::NotInstalled => (ACCENT, "Not installed".to_string(), "Install (.exe)"),
+                        InstallState::InstalledCurrent { version, .. } => (SUCCESS, format!("Installed v{version}"), "Reinstall"),
+                        InstallState::UpdateReady { running_version, .. } => (Color32::from_rgb(250, 204, 21), format!("Update to v{running_version}"), "Apply"),
+                    };
+
+                    // Dot 8px
+                    footer_ui.painter().circle_filled(
+                        Pos2::new(stat_rect.left() + 12.0, stat_rect.center().y),
+                        4.0,
+                        dot_color,
                     );
-                    ui.painter().text(
-                        Pos2::new(sync_rect.left() + 18.0, sync_rect.center().y),
-                        Align2::LEFT_CENTER,
-                        "Sync App Directory Files",
-                        FontId::proportional(FONT_SM),
-                        if sync_resp.hovered() {
-                            Color32::WHITE
-                        } else {
-                            SIDEBAR_TEXT_MUTED
-                        },
+
+                    // Status text
+                    let st_galley = footer_ui.painter().layout_no_wrap(
+                        status_text,
+                        FontId::proportional(FS_MICRO),
+                        SB_TEXT_MUTED,
                     );
-                    if sync_resp.clicked() {
-                        self.storage.reset_sync_cache();
-                        if let Some(msg) = self.storage.sync_from_app_directory() {
-                            self.refresh_selected_project_metadata(true);
-                            self.status_banner = Some((msg, true));
-                        } else {
-                            self.status_banner = Some((
-                                format!(
-                                    "Synced app directory ({})",
-                                    self.storage.app_data_dir().display()
-                                ),
-                                true,
-                            ));
+                    footer_ui.painter().galley(
+                        Pos2::new(stat_rect.left() + 22.0, stat_rect.center().y - st_galley.size().y / 2.0),
+                        st_galley.clone(),
+                        SB_TEXT_MUTED,
+                    );
+
+                    // Action link on the same line
+                    let link_x = stat_rect.left() + 22.0 + st_galley.size().x + 8.0;
+                    let link_galley = footer_ui.painter().layout_no_wrap(
+                        action_text.to_string(),
+                        FontId::proportional(FS_MICRO),
+                        SB_TEXT_FAINT,
+                    );
+                    let link_rect = Rect::from_min_size(
+                        Pos2::new(link_x, stat_rect.center().y - link_galley.size().y / 2.0),
+                        link_galley.size(),
+                    );
+                    let link_resp = footer_ui.interact(link_rect, egui::Id::new("sidebar_reinstall_link"), Sense::click())
+                        .on_hover_cursor(egui::CursorIcon::PointingHand);
+                    let link_color = if link_resp.hovered() { ACCENT } else { SB_TEXT_FAINT };
+                    footer_ui.painter().galley(link_rect.min, link_galley, link_color);
+
+                    if link_resp.clicked() {
+                        match install_or_update_self() {
+                            Ok(msg) => self.status_banner = Some((msg, true)),
+                            Err(err) => self.status_banner = Some((err, false)),
                         }
                     }
+                }
 
-                    ui.add_space(6.0);
-                    draw_divider(ui, SIDEBAR_DIVIDER);
-                });
+                // 3. Middle Section: Scrollable (nav items + projects header + projects list)
+                let middle_rect = Rect::from_min_max(
+                    Pos2::new(inner_rect.left(), brand_rect.bottom() + SP_16),
+                    Pos2::new(inner_rect.right(), footer_rect.top() - SP_8),
+                );
+                let mut middle_ui = ui.new_child(egui::UiBuilder::new().max_rect(middle_rect));
+                middle_ui.spacing_mut().scroll.bar_width = 6.0;
+                middle_ui.spacing_mut().scroll.bar_inner_margin = 2.0;
+
+                ScrollArea::vertical()
+                    .id_salt("sidebar_scrollable_middle")
+                    .auto_shrink([false, false])
+                    .show(&mut middle_ui, |ui| {
+                        let full_w = ui.available_width();
+
+                        // Nav items: All Deployments (height 40px, padding 0 12px, icon 18px, gap 12px, --fs-base, radius --r-md)
+                        let is_overview = matches!(self.selection, SidebarSelection::AllDeployments);
+                        let (nav_rect, nav_resp) = ui.allocate_exact_size(Vec2::new(full_w, 40.0), Sense::click());
+                        let nav_resp = nav_resp.on_hover_cursor(egui::CursorIcon::PointingHand);
+                        let nav_bg = if is_overview {
+                            ACCENT_SOFT
+                        } else if nav_resp.hovered() {
+                            SB_SURFACE_HOVER
+                        } else {
+                            Color32::TRANSPARENT
+                        };
+                        let nav_fg = if is_overview || nav_resp.hovered() {
+                            SB_TEXT
+                        } else {
+                            SB_TEXT_MUTED
+                        };
+                        ui.painter().rect_filled(nav_rect, CornerRadius::same(R_MD as u8), nav_bg);
+                        if is_overview {
+                            ui.painter().rect_filled(
+                                Rect::from_min_max(
+                                    Pos2::new(nav_rect.left(), nav_rect.top() + 8.0),
+                                    Pos2::new(nav_rect.left() + 3.0, nav_rect.bottom() - 8.0),
+                                ),
+                                CornerRadius { nw: 0, ne: 3, se: 3, sw: 0 },
+                                ACCENT,
+                            );
+                        }
+                        draw_icon_layers(
+                            ui.painter(),
+                            Pos2::new(nav_rect.left() + 18.0, nav_rect.center().y),
+                            if is_overview { ACCENT } else { nav_fg },
+                        );
+                        ui.painter().text(
+                            Pos2::new(nav_rect.left() + 38.0, nav_rect.center().y),
+                            Align2::LEFT_CENTER,
+                            "All Deployments",
+                            FontId::proportional(FS_BASE),
+                            nav_fg,
+                        );
+                        if nav_resp.clicked() {
+                            self.selection = SidebarSelection::AllDeployments;
+                        }
+
+                        // Bulk Deploy button (if projects exist)
+                        if !self.storage.projects.is_empty() {
+                            ui.add_space(SP_4);
+                            let is_bulk_active = self.show_bulk_deploy_modal;
+                            let (bulk_rect, bulk_resp) = ui.allocate_exact_size(Vec2::new(full_w, 40.0), Sense::click());
+                            let bulk_resp = bulk_resp.on_hover_cursor(egui::CursorIcon::PointingHand);
+                            let bulk_bg = if is_bulk_active {
+                                ACCENT_SOFT
+                            } else if bulk_resp.hovered() {
+                                SB_SURFACE_HOVER
+                            } else {
+                                Color32::TRANSPARENT
+                            };
+                            let bulk_fg = if is_bulk_active || bulk_resp.hovered() {
+                                SB_TEXT
+                            } else {
+                                SB_TEXT_MUTED
+                            };
+                            ui.painter().rect_filled(bulk_rect, CornerRadius::same(R_MD as u8), bulk_bg);
+                            if is_bulk_active {
+                                ui.painter().rect_filled(
+                                    Rect::from_min_max(
+                                        Pos2::new(bulk_rect.left(), bulk_rect.top() + 8.0),
+                                        Pos2::new(bulk_rect.left() + 3.0, bulk_rect.bottom() - 8.0),
+                                    ),
+                                    CornerRadius { nw: 0, ne: 3, se: 3, sw: 0 },
+                                    ACCENT,
+                                );
+                            }
+                            draw_icon_send(
+                                ui.painter(),
+                                Pos2::new(bulk_rect.left() + 18.0, bulk_rect.center().y),
+                                if is_bulk_active { ACCENT } else { bulk_fg },
+                            );
+                            ui.painter().text(
+                                Pos2::new(bulk_rect.left() + 38.0, bulk_rect.center().y),
+                                Align2::LEFT_CENTER,
+                                "Bulk Deploy...",
+                                FontId::proportional(FS_BASE),
+                                bulk_fg,
+                            );
+                            if bulk_resp.on_hover_text("Select multiple projects to deploy sequentially").clicked() {
+                                self.open_bulk_deploy_modal();
+                            }
+                        }
+
+                        ui.add_space(SP_16);
+
+                        // Projects header row: row height 32px, gap 8px
+                        let (hdr_rect, _) = ui.allocate_exact_size(Vec2::new(full_w, 32.0), Sense::hover());
+                        ui.painter().text(
+                            Pos2::new(hdr_rect.left() + 4.0, hdr_rect.center().y),
+                            Align2::LEFT_CENTER,
+                            "PROJECTS",
+                            FontId::proportional(FS_MICRO),
+                            SB_TEXT_FAINT,
+                        );
+
+                        let add_w = 54.0_f32;
+                        let sort_w = 96.0_f32;
+
+                        // "+ ADD" button: height 28px, padding 0 10px, --fs-micro, bg --sb-surface, border 1px --sb-border, radius --r-sm, hover bg --sb-surface-hover
+                        let add_btn_rect = Rect::from_min_size(
+                            Pos2::new(hdr_rect.right() - add_w, hdr_rect.center().y - 14.0),
+                            Vec2::new(add_w, 28.0),
+                        );
+                        let add_btn_resp = ui.interact(add_btn_rect, egui::Id::new("sidebar_add_proj_btn"), Sense::click())
+                            .on_hover_cursor(egui::CursorIcon::PointingHand);
+                        let add_bg = if add_btn_resp.hovered() { SB_SURFACE_HOVER } else { SB_SURFACE };
+                        ui.painter().rect_filled(add_btn_rect, CornerRadius::same(R_SM as u8), add_bg);
+                        ui.painter().rect_stroke(add_btn_rect, CornerRadius::same(R_SM as u8), Stroke::new(1.0_f32, SB_BORDER), StrokeKind::Inside);
+                        ui.painter().text(
+                            add_btn_rect.center(),
+                            Align2::CENTER_CENTER,
+                            "+ ADD",
+                            FontId::proportional(FS_MICRO),
+                            SB_TEXT,
+                        );
+                        if add_btn_resp.clicked() {
+                            self.new_project_group.clear();
+                            self.show_new_project_modal = true;
+                        }
+
+                        // Sort control: height 28px, --fs-micro style but weight 500, bg --sb-surface, border 1px --sb-border, radius --r-sm, text color --sb-text
+                        let sort_area_rect = Rect::from_min_size(
+                            Pos2::new(hdr_rect.right() - add_w - 8.0 - sort_w, hdr_rect.center().y - 14.0),
+                            Vec2::new(sort_w, 28.0),
+                        );
+                        let mut sort_ui = ui.new_child(egui::UiBuilder::new().max_rect(sort_area_rect));
+                        sort_ui.spacing_mut().button_padding = Vec2::new(6.0, 4.0);
+                        sort_ui.visuals_mut().widgets.inactive.bg_fill = SB_SURFACE;
+                        sort_ui.visuals_mut().widgets.inactive.bg_stroke = Stroke::new(1.0_f32, SB_BORDER);
+                        sort_ui.visuals_mut().widgets.inactive.corner_radius = CornerRadius::same(R_SM as u8);
+                        sort_ui.visuals_mut().widgets.hovered.bg_fill = SB_SURFACE_HOVER;
+                        sort_ui.visuals_mut().widgets.hovered.bg_stroke = Stroke::new(1.0_f32, SB_BORDER);
+                        sort_ui.visuals_mut().widgets.open.bg_fill = SB_SURFACE;
+                        sort_ui.visuals_mut().widgets.open.bg_stroke = Stroke::new(1.0_f32, SB_BORDER);
+
+                        let sort_label = match self.project_sort_mode {
+                            ProjectSortMode::Custom => "⇅ Custom",
+                            ProjectSortMode::NameAsc => "⇅ A-Z",
+                            ProjectSortMode::NameDesc => "⇅ Z-A",
+                            ProjectSortMode::RecentDeploy => "⇅ Recent",
+                        };
+
+                        egui::ComboBox::from_id_salt("sidebar_project_sort_selector")
+                            .selected_text(RichText::new(sort_label).size(FS_MICRO).color(SB_TEXT))
+                            .width(sort_w)
+                            .show_ui(&mut sort_ui, |ui| {
+                                ui.visuals_mut().override_text_color = Some(SB_TEXT);
+                                ui.visuals_mut().widgets.inactive.bg_fill = SB_SURFACE;
+                                ui.visuals_mut().widgets.hovered.bg_fill = SB_SURFACE_HOVER;
+                                ui.spacing_mut().item_spacing = Vec2::new(0.0, 4.0);
+                                ui.spacing_mut().button_padding = Vec2::new(8.0, 6.0);
+
+                                let is_custom = self.project_sort_mode == ProjectSortMode::Custom;
+                                if ui.selectable_label(is_custom, if is_custom { "✓ Custom / Drag" } else { "   Custom / Drag" }).clicked() {
+                                    self.project_sort_mode = ProjectSortMode::Custom;
+                                    self.storage.sort_projects(ProjectSortMode::Custom);
+                                }
+                                let is_asc = self.project_sort_mode == ProjectSortMode::NameAsc;
+                                if ui.selectable_label(is_asc, if is_asc { "✓ Name (A-Z)" } else { "   Name (A-Z)" }).clicked() {
+                                    self.project_sort_mode = ProjectSortMode::NameAsc;
+                                    self.storage.sort_projects(ProjectSortMode::NameAsc);
+                                }
+                                let is_desc = self.project_sort_mode == ProjectSortMode::NameDesc;
+                                if ui.selectable_label(is_desc, if is_desc { "✓ Name (Z-A)" } else { "   Name (Z-A)" }).clicked() {
+                                    self.project_sort_mode = ProjectSortMode::NameDesc;
+                                    self.storage.sort_projects(ProjectSortMode::NameDesc);
+                                }
+                                let is_recent = self.project_sort_mode == ProjectSortMode::RecentDeploy;
+                                if ui.selectable_label(is_recent, if is_recent { "✓ Recently Deployed" } else { "   Recently Deployed" }).clicked() {
+                                    self.project_sort_mode = ProjectSortMode::RecentDeploy;
+                                    self.storage.sort_projects(ProjectSortMode::RecentDeploy);
+                                }
+                            });
+
+                        ui.add_space(SP_8);
+
+                        // Skeleton loading on initial load or refresh:
+                        let is_refreshing = self.sidebar_refreshing_until.as_ref().is_some_and(|t| Instant::now() < *t);
+                        if is_refreshing && self.storage.projects.is_empty() {
+                            ui.ctx().request_repaint();
+                            let time = ui.input(|i| i.time);
+                            for _ in 0..3 {
+                                let (skel_rect, _) = ui.allocate_exact_size(Vec2::new(full_w, 64.0), Sense::hover());
+                                ui.painter().rect_filled(skel_rect, CornerRadius::same(R_MD as u8), SB_SURFACE);
+                                ui.painter().rect_stroke(skel_rect, CornerRadius::same(R_MD as u8), Stroke::new(1.0_f32, SB_BORDER), StrokeKind::Inside);
+
+                                // Name bar: height 14px, width 60%, radius 4px
+                                let name_w = (skel_rect.width() - 34.0) * 0.6;
+                                let name_rect = Rect::from_min_size(Pos2::new(skel_rect.left() + 22.0, skel_rect.top() + 14.0), Vec2::new(name_w, 14.0));
+                                paint_shimmer_rect(ui.painter(), name_rect, 4.0, time);
+
+                                // Two badge pills: 44px x 20px and 52px x 20px, radius --r-sm, gap 6px
+                                let pill1 = Rect::from_min_size(Pos2::new(skel_rect.left() + 22.0, skel_rect.top() + 36.0), Vec2::new(44.0, 20.0));
+                                paint_shimmer_rect(ui.painter(), pill1, R_SM, time);
+                                let pill2 = Rect::from_min_size(Pos2::new(skel_rect.left() + 22.0 + 44.0 + 6.0, skel_rect.top() + 36.0), Vec2::new(52.0, 20.0));
+                                paint_shimmer_rect(ui.painter(), pill2, R_SM, time);
+
+                                ui.add_space(SP_8);
+                            }
+                        } else if self.storage.projects.is_empty() {
+                            let (empty_rect, _) = ui.allocate_exact_size(Vec2::new(full_w, 64.0), Sense::hover());
+                            ui.painter().rect_stroke(
+                                empty_rect,
+                                CornerRadius::same(R_MD as u8),
+                                Stroke::new(1.0_f32, SB_BORDER),
+                                StrokeKind::Inside,
+                            );
+                            ui.painter().text(
+                                empty_rect.center(),
+                                Align2::CENTER_CENTER,
+                                "No projects yet.\nClick '+ ADD' or import .ps1",
+                                FontId::proportional(FS_SMALL),
+                                SB_TEXT_MUTED,
+                            );
+                        } else {
+                            let is_pointer_released = ui.input(|i| i.pointer.any_released());
+                            let pointer_pos = ui.input(|i| i.pointer.hover_pos());
+
+                            if self.dragged_project_idx.is_some() {
+                                ui.ctx().request_repaint();
+                            }
+
+                            let has_groups = self.storage.projects.iter().any(|p| {
+                                p.group.as_ref().is_some_and(|g| !g.trim().is_empty())
+                            });
+
+                            let mut group_sections: Vec<(Option<String>, Vec<usize>)> = Vec::new();
+                            if has_groups {
+                                for (idx, p) in self.storage.projects.iter().enumerate() {
+                                    let grp = p.group.as_ref().map(|g| g.trim().to_string()).filter(|g| !g.is_empty());
+                                    if let Some(pos) = group_sections.iter().position(|(g, _)| g.as_ref() == grp.as_ref()) {
+                                        group_sections[pos].1.push(idx);
+                                    } else {
+                                        group_sections.push((grp, vec![idx]));
+                                    }
+                                }
+                                group_sections.sort_by(|(g1, _), (g2, _)| match (g1, g2) {
+                                    (Some(a), Some(b)) => a.to_lowercase().cmp(&b.to_lowercase()),
+                                    (Some(_), None) => std::cmp::Ordering::Less,
+                                    (None, Some(_)) => std::cmp::Ordering::Greater,
+                                    (None, None) => std::cmp::Ordering::Equal,
+                                });
+                            } else {
+                                group_sections.push((None, (0..self.storage.projects.len()).collect()));
+                            }
+
+                            let mut clicked_project_id = None;
+                            let mut action_edit_proj_idx = None;
+                            let mut action_duplicate_proj_id = None;
+                            let mut action_refresh_proj_id = None;
+                            let mut action_delete_proj = None;
+                            let mut action_move_up_idx = None;
+                            let mut action_move_down_idx = None;
+                            let mut action_set_group = None;
+                            let mut drag_reorder = None;
+
+                            for (grp_opt, proj_indices) in group_sections {
+                                if has_groups {
+                                    let group_title = grp_opt.as_deref().unwrap_or("General");
+                                    let group_key = grp_opt.clone().unwrap_or_else(|| "_general".to_string());
+                                    let is_collapsed = self.collapsed_project_groups.contains(&group_key);
+
+                                    let (grp_rect, grp_resp) = ui.allocate_exact_size(Vec2::new(full_w, 28.0), Sense::click());
+                                    let grp_resp = grp_resp.on_hover_cursor(egui::CursorIcon::PointingHand);
+                                    if grp_resp.hovered() {
+                                        ui.painter().rect_filled(grp_rect, CornerRadius::same(R_SM as u8), SB_SURFACE);
+                                    }
+
+                                    let arrow = if is_collapsed { "▶" } else { "▼" };
+                                    let title_text = format!("{arrow}  {}", group_title.to_uppercase());
+                                    ui.painter().text(
+                                        Pos2::new(grp_rect.left() + 6.0, grp_rect.center().y),
+                                        Align2::LEFT_CENTER,
+                                        title_text,
+                                        FontId::proportional(FS_MICRO),
+                                        SB_TEXT_FAINT,
+                                    );
+
+                                    paint_pill_right_aligned(
+                                        ui.painter(),
+                                        Pos2::new(grp_rect.right() - 4.0, grp_rect.center().y),
+                                        &format!("{}", proj_indices.len()),
+                                        SB_SURFACE,
+                                        SB_TEXT_MUTED,
+                                    );
+
+                                    if grp_resp.clicked() {
+                                        if is_collapsed {
+                                            self.collapsed_project_groups.remove(&group_key);
+                                        } else {
+                                            self.collapsed_project_groups.insert(group_key.clone());
+                                        }
+                                    }
+
+                                    ui.add_space(SP_4);
+
+                                    if is_collapsed {
+                                        continue;
+                                    }
+                                }
+
+                                for proj_idx in proj_indices {
+                                    let project = &self.storage.projects[proj_idx];
+                                    let is_selected = matches!(&self.selection, SidebarSelection::Project(id) if id == &project.id);
+                                    let is_being_dragged = self.dragged_project_idx == Some(proj_idx);
+                                    let is_switching = self.project_switch_loading_id.as_deref() == Some(&project.id);
+
+                                    // Project Card: min-height 64px, padding 12px 12px 12px 8px, radius --r-md, bg transparent, border 1px transparent. Gap between cards: 8px.
+                                    let (p_rect, p_resp) = ui.allocate_exact_size(Vec2::new(full_w, 64.0), Sense::click());
+                                    let p_resp = p_resp.on_hover_cursor(egui::CursorIcon::PointingHand);
+
+                                    let fill = if is_selected || is_switching {
+                                        ACCENT_SOFT
+                                    } else if p_resp.hovered() {
+                                        SB_SURFACE
+                                    } else {
+                                        Color32::TRANSPARENT
+                                    };
+                                    ui.painter().rect_filled(p_rect, CornerRadius::same(R_MD as u8), fill);
+
+                                    // Left vertical grip handle for dragging & reordering (16px slot always reserved)
+                                    let grip_rect = Rect::from_min_size(
+                                        Pos2::new(p_rect.left() + 2.0, p_rect.top() + 7.0),
+                                        Vec2::new(16.0, 50.0),
+                                    );
+                                    let grip_resp = ui.interact(
+                                        grip_rect,
+                                        egui::Id::new(("sidebar_proj_grip", &project.id)),
+                                        Sense::drag(),
+                                    ).on_hover_cursor(egui::CursorIcon::Grab);
+
+                                    if grip_resp.drag_started() || grip_resp.dragged() {
+                                        self.dragged_project_idx = Some(proj_idx);
+                                        ui.ctx().set_cursor_icon(egui::CursorIcon::Grabbing);
+                                    }
+
+                                    // Drag handle opacity: 0 by default, 0.5 on card hover, 1 on handle hover
+                                    let grip_color = if is_being_dragged || grip_resp.hovered() {
+                                        ACCENT
+                                    } else if p_resp.hovered() {
+                                        Color32::from_rgba_premultiplied(45, 50, 65, 128)
+                                    } else {
+                                        Color32::TRANSPARENT
+                                    };
+                                    draw_outline_icon(
+                                        ui.painter(),
+                                        grip_rect.center(),
+                                        OutlineIcon::GripVertical,
+                                        grip_color,
+                                    );
+
+                                    // Drop target hover highlight
+                                    if let Some(from_idx) = self.dragged_project_idx {
+                                        if from_idx != proj_idx {
+                                            if let Some(pos) = pointer_pos {
+                                                if p_rect.contains(pos) {
+                                                    ui.painter().rect_stroke(
+                                                        p_rect,
+                                                        CornerRadius::same(R_MD as u8),
+                                                        Stroke::new(2.0_f32, ACCENT),
+                                                        StrokeKind::Inside,
+                                                    );
+                                                    if is_pointer_released {
+                                                        drag_reorder = Some((from_idx, proj_idx));
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+
+                                    // Active (selected): bg --accent-soft, border 1px rgba(59,130,246,0.35), plus a 3px accent bar on the left (radius 0 3px 3px 0, vertically inset 12px)
+                                    if is_selected || is_switching {
+                                        let border_color = Color32::from_rgba_premultiplied(20, 45, 86, 89);
+                                        ui.painter().rect_stroke(
+                                            p_rect,
+                                            CornerRadius::same(R_MD as u8),
+                                            Stroke::new(1.0_f32, border_color),
+                                            StrokeKind::Inside,
+                                        );
+                                        let bar_rect = Rect::from_min_max(
+                                            Pos2::new(p_rect.left(), p_rect.top() + 12.0),
+                                            Pos2::new(p_rect.left() + 3.0, p_rect.bottom() - 12.0),
+                                        );
+                                        ui.painter().rect_filled(
+                                            bar_rect,
+                                            CornerRadius { nw: 0, ne: 3, se: 3, sw: 0 },
+                                            ACCENT,
+                                        );
+                                    }
+
+                                    // Content layout: [drag handle 16px wide] [content]. Content = row 1: project name, row 2: env badges. Gap between rows: 6px.
+                                    let content_x = p_rect.left() + 22.0;
+
+                                    // Check if this project is currently running an active deployment process
+                                    let is_deploying = self.active_deployment_id.as_ref().is_some_and(|dep_id| {
+                                        self.storage.deployments.iter().any(|d| &d.id == dep_id && d.project_id == project.id)
+                                    }) || self.storage.deployments.iter().any(|d| d.project_id == project.id && d.status == DeploymentStatus::Running);
+
+                                    // Row 1: Project Name (--fs-base, color --sb-text, SINGLE LINE ONLY, never wraps)
+                                    let name_color = if is_selected || is_switching {
+                                        Color32::WHITE
+                                    } else {
+                                        SB_TEXT
+                                    };
+                                    let avail_name_w = (p_rect.right() - 28.0 - content_x).max(20.0);
+                                    let mut job = egui::text::LayoutJob::simple_singleline(
+                                        project.name.clone(),
+                                        FontId::proportional(FS_BASE),
+                                        name_color,
+                                    );
+                                    job.wrap.max_width = avail_name_w;
+                                    job.wrap.max_rows = 1;
+                                    job.wrap.break_anywhere = false;
+                                    let name_galley = ui.painter().layout_job(job);
+                                    ui.painter().galley(
+                                        Pos2::new(content_x, p_rect.top() + 12.0),
+                                        name_galley,
+                                        name_color,
+                                    );
+
+                                    // Spinner slot absolutely positioned (right 12px, vertically centered, 16px) taking zero layout space
+                                    if is_deploying || is_switching {
+                                        ui.ctx().request_repaint();
+                                        let spinner_center = Pos2::new(p_rect.right() - 18.0, p_rect.center().y);
+                                        let spinner_color = if is_deploying {
+                                            ACCENT
+                                        } else {
+                                            Color32::from_rgb(148, 163, 184)
+                                        };
+                                        draw_circle_loading_spinner(
+                                            ui.painter(),
+                                            spinner_center,
+                                            7.0,
+                                            spinner_color,
+                                            ui.input(|i| i.time),
+                                        );
+                                    }
+
+                                    let p_resp = if is_deploying {
+                                        p_resp.on_hover_text(format!("{}\n(A deployment is currently running)", project.name))
+                                    } else {
+                                        p_resp.on_hover_text(&project.name)
+                                    };
+
+                                    // Right-click context popup menu for Project options (modern & consistent tokens)
+                                    p_resp.context_menu(|ui| {
+                                        ui.set_min_width(180.0);
+                                        ui.spacing_mut().item_spacing = Vec2::new(0.0, 2.0);
+                                        ui.spacing_mut().button_padding = Vec2::new(10.0, 6.0);
+
+                                        if proj_idx > 0 && ui.add(egui::Button::new(RichText::new("↑  Move Up").size(FS_SMALL).color(SB_TEXT)).fill(SB_SURFACE)).clicked() {
+                                            action_move_up_idx = Some(proj_idx);
+                                            ui.close_menu();
+                                        }
+
+                                        if proj_idx + 1 < self.storage.projects.len() && ui.add(egui::Button::new(RichText::new("↓  Move Down").size(FS_SMALL).color(SB_TEXT)).fill(SB_SURFACE)).clicked() {
+                                            action_move_down_idx = Some(proj_idx);
+                                            ui.close_menu();
+                                        }
+
+                                        if proj_idx > 0 || proj_idx + 1 < self.storage.projects.len() {
+                                            ui.separator();
+                                        }
+
+                                        if ui.add(egui::Button::new(RichText::new("✎  Edit Project").size(FS_SMALL).color(SB_TEXT)).fill(SB_SURFACE)).clicked() {
+                                            action_edit_proj_idx = Some(proj_idx);
+                                            ui.close_menu();
+                                        }
+
+                                        ui.menu_button(RichText::new("📁  Set Group...").size(FS_SMALL).color(SB_TEXT), |ui| {
+                                            ui.set_min_width(170.0);
+                                            ui.spacing_mut().item_spacing = Vec2::new(0.0, 2.0);
+                                            ui.spacing_mut().button_padding = Vec2::new(10.0, 6.0);
+                                            let existing_groups = self.storage.existing_project_groups();
+                                            for grp in existing_groups {
+                                                let is_cur = project.group.as_deref() == Some(&grp);
+                                                let label = if is_cur { format!("✓  {grp}") } else { format!("    {grp}") };
+                                                let color = if is_cur { ACCENT } else { SB_TEXT };
+                                                if ui.add(egui::Button::new(RichText::new(label).size(FS_SMALL).color(color)).fill(SB_SURFACE)).clicked() {
+                                                    action_set_group = Some((project.id.clone(), Some(grp)));
+                                                    ui.close_menu();
+                                                }
+                                            }
+                                            if project.group.is_some() {
+                                                ui.separator();
+                                                if ui.add(egui::Button::new(RichText::new("✕  Remove from Group").size(FS_SMALL).color(SB_TEXT_MUTED)).fill(SB_SURFACE)).clicked() {
+                                                    action_set_group = Some((project.id.clone(), None));
+                                                    ui.close_menu();
+                                                }
+                                            }
+                                        });
+
+                                        if ui.add(egui::Button::new(RichText::new("⧉  Duplicate Project").size(FS_SMALL).color(SB_TEXT)).fill(SB_SURFACE)).clicked() {
+                                            action_duplicate_proj_id = Some(project.id.clone());
+                                            ui.close_menu();
+                                        }
+
+                                        if ui.add(egui::Button::new(RichText::new("↻  Refresh Metadata").size(FS_SMALL).color(SB_TEXT_MUTED)).fill(SB_SURFACE)).clicked() {
+                                            action_refresh_proj_id = Some(project.id.clone());
+                                            ui.close_menu();
+                                        }
+
+                                        ui.separator();
+
+                                        if ui.add(egui::Button::new(RichText::new("🗑  Delete Project").size(FS_SMALL).color(Color32::from_rgb(248, 113, 113))).fill(SB_SURFACE)).clicked() {
+                                            action_delete_proj = Some((project.id.clone(), project.name.clone()));
+                                            ui.close_menu();
+                                        }
+                                    });
+
+                                    // Row 2: Env Badges (height 20px, padding 0 8px, --fs-micro, radius --r-sm, gap 6px)
+                                    let row2_y = p_rect.top() + 36.0;
+
+                                    if is_switching {
+                                        // While switching: the env badge row of that card shows shimmer skeleton pills
+                                        ui.ctx().request_repaint();
+                                        let time = ui.input(|i| i.time);
+                                        let pill1 = Rect::from_min_size(Pos2::new(content_x, row2_y), Vec2::new(44.0, 20.0));
+                                        paint_shimmer_rect(ui.painter(), pill1, R_SM, time);
+                                        let pill2 = Rect::from_min_size(Pos2::new(content_x + 50.0, row2_y), Vec2::new(52.0, 20.0));
+                                        paint_shimmer_rect(ui.painter(), pill2, R_SM, time);
+                                    } else if project.environments.is_empty() {
+                                        paint_sidebar_env_badge(
+                                            ui.painter(),
+                                            Pos2::new(content_x, row2_y),
+                                            "NO ENVS",
+                                            SB_SURFACE,
+                                            SB_TEXT_FAINT,
+                                        );
+                                    } else {
+                                        let mut pill_x = content_x;
+                                        for env in project.environments.iter().take(3) {
+                                            let badge = env.badge_label();
+                                            let is_env_running = self.storage.deployments.iter().any(|d| {
+                                                d.project_id == project.id
+                                                    && d.environment == env.key
+                                                    && (d.status == DeploymentStatus::Running
+                                                        || self.active_deployment_id.as_deref() == Some(&d.id))
+                                            });
+                                            let key_lower = env.key.to_lowercase();
+                                            let is_prod = key_lower.contains("prod");
+
+                                            let (bg, fg) = if is_prod {
+                                                (BADGE_PROD_BG, BADGE_PROD_TEXT)
+                                            } else {
+                                                (BADGE_DEV_BG, BADGE_DEV_TEXT)
+                                            };
+
+                                            let label = if is_env_running {
+                                                format!("{badge} Deploying...")
+                                            } else if let Some(ok_dep) = self.storage.last_succeeded_deployment(&project.id, &env.key) {
+                                                format!("{badge} v{}", ok_dep.version)
+                                            } else {
+                                                format!("{badge} —")
+                                            };
+
+                                            let w = paint_sidebar_env_badge(
+                                                ui.painter(),
+                                                Pos2::new(pill_x, row2_y),
+                                                &label,
+                                                bg,
+                                                fg,
+                                            );
+                                            pill_x += w + 6.0;
+                                        }
+                                    }
+
+                                    if p_resp.clicked() {
+                                        clicked_project_id = Some(project.id.clone());
+                                    }
+
+                                    ui.add_space(SP_8);
+                                }
+                            }
+
+                            if let Some((from, to)) = drag_reorder {
+                                self.storage.reorder_project(from, to);
+                                self.project_sort_mode = ProjectSortMode::Custom;
+                                self.dragged_project_idx = None;
+                            } else if is_pointer_released {
+                                self.dragged_project_idx = None;
+                            }
+
+                            if let Some(idx) = action_move_up_idx {
+                                self.storage.move_project_up(idx);
+                                self.project_sort_mode = ProjectSortMode::Custom;
+                            }
+                            if let Some(idx) = action_move_down_idx {
+                                self.storage.move_project_down(idx);
+                                self.project_sort_mode = ProjectSortMode::Custom;
+                            }
+                            if let Some((pid, grp)) = action_set_group {
+                                self.storage.set_project_group(&pid, grp);
+                            }
+                            if let Some(idx) = action_edit_proj_idx {
+                                self.open_edit_project_modal(idx);
+                            }
+                            if let Some(proj_id) = action_duplicate_proj_id {
+                                if let Some(new_proj) = self.storage.duplicate_project(&proj_id) {
+                                    self.selection = SidebarSelection::Project(new_proj.id.clone());
+                                    self.refresh_selected_project_metadata(true);
+                                    self.status_banner = Some((
+                                        format!("Duplicated project successfully as '{}'", new_proj.name),
+                                        true,
+                                    ));
+                                }
+                            }
+                            if let Some(proj_id) = action_refresh_proj_id {
+                                self.selection = SidebarSelection::Project(proj_id);
+                                self.refresh_selected_project_metadata(true);
+                            }
+                            if let Some((pid, pname)) = action_delete_proj {
+                                self.pending_delete_confirm = Some(ConfirmDeleteAction::Project {
+                                    project_id: pid,
+                                    project_name: pname,
+                                });
+                            }
+
+                            if let Some(pid) = clicked_project_id {
+                                let was_different = match &self.selection {
+                                    SidebarSelection::Project(cur) => cur != &pid,
+                                    SidebarSelection::AllDeployments => true,
+                                };
+                                self.selection = SidebarSelection::Project(pid.clone());
+                                if was_different {
+                                    self.project_switch_loading_id = Some(pid);
+                                    self.project_switch_loading_start = Some(Instant::now());
+                                }
+                                self.refresh_selected_project_metadata(true);
+                            }
+                        }
+                    });
             });
     }
 
@@ -2672,17 +2646,23 @@ impl ShiplyApp {
             return;
         }
 
-        // Dimmed backdrop
+        // Close on Escape key
+        if ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
+            self.show_new_project_modal = false;
+            return;
+        }
+
+        // Dimmed backdrop with click-to-dismiss
         egui::Area::new(egui::Id::new("modal_backdrop_new_project"))
             .order(egui::Order::Middle)
             .fixed_pos(Pos2::ZERO)
             .show(ctx, |ui| {
                 let screen_rect = ctx.screen_rect();
-                ui.painter().rect_filled(
-                    screen_rect,
-                    CornerRadius::ZERO,
-                    Color32::from_black_alpha(95),
-                );
+                let resp = ui.allocate_rect(screen_rect, Sense::click());
+                ui.painter().rect_filled(screen_rect, CornerRadius::ZERO, MD_OVERLAY);
+                if resp.clicked() {
+                    self.show_new_project_modal = false;
+                }
             });
 
         egui::Window::new("Add Project")
@@ -2692,24 +2672,7 @@ impl ShiplyApp {
             .resizable(false)
             .anchor(Align2::CENTER_CENTER, Vec2::ZERO)
             .fixed_size(Vec2::new(560.0, 0.0))
-            .frame(
-                egui::Frame::new()
-                    .fill(CARD_BG)
-                    .stroke(Stroke::new(1.0_f32, CARD_BORDER))
-                    .corner_radius(12.0)
-                    .shadow(Shadow {
-                        offset: [0, 8],
-                        blur: 24,
-                        spread: 0,
-                        color: Color32::from_black_alpha(45),
-                    })
-                    .inner_margin(Margin {
-                        left: 24,
-                        right: 24,
-                        top: 18,
-                        bottom: 22,
-                    }),
-            )
+            .frame(modal_dialog_frame())
             .show(ctx, |ui| {
                 ui.set_width(512.0);
 
@@ -2722,70 +2685,55 @@ impl ShiplyApp {
                     self.show_new_project_modal = false;
                 }
 
-                ui.add_space(12.0);
+                ui.add_space(SP_16);
 
                 // Auto-Import .ps1 Card Box
                 egui::Frame::new()
-                    .fill(SUBTLE_BG)
-                    .stroke(Stroke::new(1.0_f32, Color32::from_rgb(191, 219, 254)))
-                    .corner_radius(8.0)
-                    .inner_margin(Margin::symmetric(14, 12))
+                    .fill(MD_PANEL_BG)
+                    .stroke(Stroke::new(1.0_f32, MD_BORDER))
+                    .corner_radius(R_LG)
+                    .inner_margin(Margin::same(16))
                     .show(ui, |ui| {
                         ui.label(
                             RichText::new("AUTO-IMPORT FROM POWERSHELL SCRIPT (.PS1)")
-                                .size(FONT_XS)
+                                .size(FS_MICRO)
                                 .strong()
-                                .color(PRIMARY_BLUE),
+                                .color(ACCENT),
                         );
-                        ui.add_space(6.0);
-                        horizontal_row(ui, 34.0, |ui| {
-                            styled_text_edit(
+                        ui.add_space(SP_8);
+                        horizontal_row(ui, 40.0, |ui| {
+                            modal_text_input(
                                 ui,
                                 &mut self.new_project_ps1_path,
-                                285.0,
+                                264.0,
                                 Some(r"e.g. C:\Projects\my-app\deploy-dev.ps1"),
                             );
-                            let browse_btn = egui::Button::new(
-                                RichText::new("Browse .ps1...")
-                                    .size(FONT_SM)
-                                    .strong()
-                                    .color(TEXT_PRIMARY),
-                            )
-                            .fill(CARD_BG)
-                            .stroke(Stroke::new(1.0_f32, CARD_BORDER))
-                            .min_size(Vec2::new(95.0, 32.0));
+                            ui.add_space(SP_8);
+                            let browse_btn = modal_secondary_button("Browse .ps1...");
                             if ui.add(browse_btn).clicked() {
                                 if let Some(picked) = pick_ps1_file_dialog() {
                                     self.new_project_ps1_path = picked.clone();
                                     self.apply_ps1_auto_import_to_modal(&picked);
                                 }
                             }
-
-                            let parse_btn = egui::Button::new(
-                                RichText::new("Auto-Fill")
-                                    .size(FONT_SM)
-                                    .strong()
-                                    .color(Color32::WHITE),
-                            )
-                            .fill(PRIMARY_BLUE)
-                            .min_size(Vec2::new(80.0, 32.0));
-                            if ui.add(parse_btn).clicked()
-                                && !self.new_project_ps1_path.trim().is_empty()
-                            {
+                            ui.add_space(SP_8);
+                            let can_autofill = !self.new_project_ps1_path.trim().is_empty();
+                            let parse_btn = modal_primary_button("Auto-Fill", can_autofill);
+                            if ui.add_enabled(can_autofill, parse_btn).clicked() && can_autofill {
                                 let path_copy = self.new_project_ps1_path.clone();
                                 self.apply_ps1_auto_import_to_modal(&path_copy);
                             }
                         });
 
-                        ui.add_space(4.0);
+                        ui.add_space(SP_8);
                         if ui
                             .checkbox(
                                 &mut self.new_project_import_siblings,
                                 RichText::new(
                                     "Also auto-import sibling deploy-*.ps1 scripts in the same project folder",
                                 )
-                                .size(FONT_SM)
-                                .color(TEXT_SECONDARY),
+                                .size(FS_SMALL)
+                                .color(MD_TEXT_MUTED),
                             )
                             .changed()
                             && !self.new_project_ps1_path.trim().is_empty()
@@ -2795,11 +2743,11 @@ impl ShiplyApp {
                         }
 
                         if let Some(notice) = &self.new_project_import_notice {
-                            ui.add_space(4.0);
+                            ui.add_space(SP_8);
                             let is_err = notice.starts_with("Import error:");
                             ui.label(
                                 RichText::new(notice)
-                                    .size(FONT_SM)
+                                    .size(FS_SMALL)
                                     .strong()
                                     .color(if is_err {
                                         FAIL_PILL_TEXT
@@ -2810,47 +2758,40 @@ impl ShiplyApp {
                         }
                     });
 
-                ui.add_space(14.0);
+                ui.add_space(SP_16);
 
-                // Project Form Fields
+                // Project Form Fields (vertical gap 16px, label FS_BASE weight 500, margin-bottom 8px)
                 ui.label(
                     RichText::new("Project Name")
-                        .size(FONT_SM)
+                        .size(FS_BASE)
                         .strong()
-                        .color(TEXT_SECONDARY),
+                        .color(MD_TEXT),
                 );
-                ui.add_space(3.0);
-                styled_text_edit(
+                ui.add_space(SP_8);
+                modal_text_input(
                     ui,
                     &mut self.new_project_name,
-                    492.0,
+                    512.0,
                     Some("e.g. my-web-service"),
                 );
 
-                ui.add_space(10.0);
+                ui.add_space(SP_16);
                 ui.label(
                     RichText::new("Local Project Directory")
-                        .size(FONT_SM)
+                        .size(FS_BASE)
                         .strong()
-                        .color(TEXT_SECONDARY),
+                        .color(MD_TEXT),
                 );
-                ui.add_space(3.0);
-                horizontal_row(ui, 34.0, |ui| {
-                    styled_text_edit(
+                ui.add_space(SP_8);
+                horizontal_row(ui, 40.0, |ui| {
+                    modal_text_input(
                         ui,
                         &mut self.new_project_path,
-                        380.0,
+                        360.0,
                         Some(r"e.g. C:\Projects\my-web-service"),
                     );
-                    let folder_btn = egui::Button::new(
-                        RichText::new("Browse Folder...")
-                            .size(FONT_SM)
-                            .strong()
-                            .color(TEXT_PRIMARY),
-                    )
-                    .fill(SUBTLE_BG)
-                    .stroke(Stroke::new(1.0_f32, CARD_BORDER))
-                    .min_size(Vec2::new(108.0, 32.0));
+                    ui.add_space(SP_8);
+                    let folder_btn = modal_secondary_button("Browse Folder...");
                     if ui.add(folder_btn).clicked() {
                         if let Some(folder) = pick_folder_dialog() {
                             self.new_project_path = folder.clone();
@@ -2861,54 +2802,54 @@ impl ShiplyApp {
                     }
                 });
 
-                ui.add_space(10.0);
+                ui.add_space(SP_16);
                 ui.label(
                     RichText::new("Description")
-                        .size(FONT_SM)
+                        .size(FS_BASE)
                         .strong()
-                        .color(TEXT_SECONDARY),
+                        .color(MD_TEXT),
                 );
-                ui.add_space(3.0);
-                styled_text_edit(
+                ui.add_space(SP_8);
+                modal_text_input(
                     ui,
                     &mut self.new_project_desc,
-                    492.0,
+                    512.0,
                     Some("e.g. Backend API service (Node.js / PM2)"),
                 );
 
-                ui.add_space(10.0);
+                ui.add_space(SP_16);
                 ui.label(
                     RichText::new("Group (Optional)")
-                        .size(FONT_SM)
+                        .size(FS_BASE)
                         .strong()
-                        .color(TEXT_SECONDARY),
+                        .color(MD_TEXT),
                 );
-                ui.add_space(3.0);
-                styled_text_edit(
+                ui.add_space(SP_8);
+                modal_text_input(
                     ui,
                     &mut self.new_project_group,
-                    492.0,
+                    512.0,
                     Some("e.g. Backend, Frontend, Microservices..."),
                 );
                 let existing_groups = self.storage.existing_project_groups();
                 if !existing_groups.is_empty() {
-                    ui.add_space(4.0);
+                    ui.add_space(SP_8);
                     horizontal_row(ui, 24.0, |ui| {
-                        ui.label(RichText::new("Quick Select:").size(FONT_XS).color(TEXT_MUTED));
+                        ui.label(RichText::new("Quick Select:").size(FS_MICRO).color(MD_TEXT_MUTED));
                         for grp in existing_groups {
                             let is_sel = self.new_project_group == grp;
                             if ui
                                 .add(
                                     egui::Button::new(
-                                        RichText::new(&grp).size(FONT_XS).color(if is_sel {
+                                        RichText::new(&grp).size(FS_MICRO).strong().color(if is_sel {
                                             Color32::WHITE
                                         } else {
-                                            TEXT_SECONDARY
+                                            MD_TEXT
                                         }),
                                     )
-                                    .fill(if is_sel { PRIMARY_BLUE } else { SUBTLE_BG })
-                                    .stroke(Stroke::new(1.0_f32, CARD_BORDER))
-                                    .corner_radius(4.0),
+                                    .fill(if is_sel { ACCENT } else { MD_PANEL_BG })
+                                    .stroke(Stroke::new(1.0_f32, if is_sel { ACCENT } else { MD_BORDER }))
+                                    .corner_radius(R_SM),
                                 )
                                 .on_hover_cursor(egui::CursorIcon::PointingHand)
                                 .clicked()
@@ -2919,11 +2860,12 @@ impl ShiplyApp {
                     });
                 }
 
-                ui.add_space(18.0);
-                draw_divider(ui, CARD_BORDER);
-                ui.add_space(12.0);
+                // Footer (top border 1px MD_BORDER, padding-top 16px, margin-top 24px)
+                ui.add_space(SP_24);
+                draw_divider(ui, MD_BORDER);
+                ui.add_space(SP_16);
 
-                horizontal_row(ui, 36.0, |ui| {
+                horizontal_row(ui, 40.0, |ui| {
                     let env_count = self.new_project_imported_envs.len();
                     ui.label(
                         RichText::new(if env_count > 0 {
@@ -2931,24 +2873,17 @@ impl ShiplyApp {
                         } else {
                             "Starts empty (you can add or import environments anytime)".to_string()
                         })
-                        .size(FONT_SM)
-                        .color(TEXT_MUTED),
+                        .size(FS_MICRO)
+                        .color(MD_TEXT_MUTED),
                     );
 
                     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                         let can_create = !self.new_project_name.trim().is_empty()
                             && !self.new_project_path.trim().is_empty();
-                        let create_btn = egui::Button::new(
-                            RichText::new("Create Project")
-                                .size(FONT_MD)
-                                .strong()
-                                .color(Color32::WHITE),
-                        )
-                        .fill(if can_create { PRIMARY_BLUE } else { TEXT_MUTED })
-                        .corner_radius(7.0)
-                        .min_size(Vec2::new(135.0, 34.0));
+                        let create_btn = modal_primary_button("Create Project", can_create);
 
-                        if ui.add(create_btn).clicked() && can_create {
+                        let enter_submitted = can_create && ctx.input(|i| i.key_pressed(egui::Key::Enter));
+                        if (ui.add_enabled(can_create, create_btn).clicked() || enter_submitted) && can_create {
                             let slug = crate::domain::normalize_env_key(&self.new_project_name);
                             let proj = Project {
                                 id: if slug.is_empty() {
@@ -2993,16 +2928,8 @@ impl ShiplyApp {
                             self.show_new_project_modal = false;
                         }
 
-                        let cancel_btn = egui::Button::new(
-                            RichText::new("Cancel")
-                                .size(FONT_MD)
-                                .strong()
-                                .color(TEXT_SECONDARY),
-                        )
-                        .fill(SUBTLE_BG)
-                        .stroke(Stroke::new(1.0_f32, CARD_BORDER))
-                        .corner_radius(7.0)
-                        .min_size(Vec2::new(84.0, 34.0));
+                        ui.add_space(SP_8);
+                        let cancel_btn = modal_secondary_button("Cancel");
                         if ui.add(cancel_btn).clicked() {
                             self.show_new_project_modal = false;
                         }
@@ -3029,6 +2956,12 @@ impl ShiplyApp {
             return;
         }
 
+        // Close on Escape key
+        if ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
+            self.show_edit_project_modal = false;
+            return;
+        }
+
         let Some(proj_idx) = self
             .storage
             .projects
@@ -3039,15 +2972,17 @@ impl ShiplyApp {
             return;
         };
 
+        // Dimmed backdrop with click-to-dismiss
         egui::Area::new(egui::Id::new("modal_backdrop_edit_project"))
             .order(egui::Order::Middle)
             .fixed_pos(Pos2::ZERO)
             .show(ctx, |ui| {
-                ui.painter().rect_filled(
-                    ctx.screen_rect(),
-                    CornerRadius::ZERO,
-                    Color32::from_black_alpha(95),
-                );
+                let screen_rect = ctx.screen_rect();
+                let resp = ui.allocate_rect(screen_rect, Sense::click());
+                ui.painter().rect_filled(screen_rect, CornerRadius::ZERO, MD_OVERLAY);
+                if resp.clicked() {
+                    self.show_edit_project_modal = false;
+                }
             });
 
         egui::Window::new("Edit Project")
@@ -3057,24 +2992,7 @@ impl ShiplyApp {
             .resizable(false)
             .anchor(Align2::CENTER_CENTER, Vec2::ZERO)
             .fixed_size(Vec2::new(560.0, 0.0))
-            .frame(
-                egui::Frame::new()
-                    .fill(CARD_BG)
-                    .stroke(Stroke::new(1.0_f32, CARD_BORDER))
-                    .corner_radius(12.0)
-                    .shadow(Shadow {
-                        offset: [0, 8],
-                        blur: 24,
-                        spread: 0,
-                        color: Color32::from_black_alpha(45),
-                    })
-                    .inner_margin(Margin {
-                        left: 24,
-                        right: 24,
-                        top: 18,
-                        bottom: 22,
-                    }),
-            )
+            .frame(modal_dialog_frame())
             .show(ctx, |ui| {
                 ui.set_width(512.0);
 
@@ -3087,160 +3005,40 @@ impl ShiplyApp {
                     self.show_edit_project_modal = false;
                 }
 
-                ui.add_space(14.0);
-
-                ui.label(
-                    RichText::new("Project Name")
-                        .size(FONT_SM)
-                        .strong()
-                        .color(TEXT_SECONDARY),
-                );
-                ui.add_space(3.0);
-                styled_text_edit(
-                    ui,
-                    &mut self.edit_project_name,
-                    492.0,
-                    Some("e.g. my-web-service"),
-                );
-
-                ui.add_space(10.0);
-                ui.label(
-                    RichText::new("Local Project Directory")
-                        .size(FONT_SM)
-                        .strong()
-                        .color(TEXT_SECONDARY),
-                );
-                ui.add_space(3.0);
-                horizontal_row(ui, 34.0, |ui| {
-                    styled_text_edit(
-                        ui,
-                        &mut self.edit_project_path,
-                        380.0,
-                        Some(r"e.g. C:\Projects\my-web-service"),
-                    );
-                    let folder_btn = egui::Button::new(
-                        RichText::new("Browse Folder...")
-                            .size(FONT_SM)
-                            .strong()
-                            .color(TEXT_PRIMARY),
-                    )
-                    .fill(SUBTLE_BG)
-                    .stroke(Stroke::new(1.0_f32, CARD_BORDER))
-                    .min_size(Vec2::new(108.0, 32.0));
-                    if ui.add(folder_btn).clicked() {
-                        if let Some(folder) = pick_folder_dialog() {
-                            self.edit_project_path = folder;
-                        }
-                    }
-                });
-
-                ui.add_space(10.0);
-                ui.label(
-                    RichText::new("Description")
-                        .size(FONT_SM)
-                        .strong()
-                        .color(TEXT_SECONDARY),
-                );
-                ui.add_space(3.0);
-                styled_text_edit(
-                    ui,
-                    &mut self.edit_project_desc,
-                    492.0,
-                    Some("e.g. Backend API service (Node.js / PM2)"),
-                );
-
-                ui.add_space(10.0);
-                ui.label(
-                    RichText::new("Group (Optional)")
-                        .size(FONT_SM)
-                        .strong()
-                        .color(TEXT_SECONDARY),
-                );
-                ui.add_space(3.0);
-                styled_text_edit(
-                    ui,
-                    &mut self.edit_project_group,
-                    492.0,
-                    Some("e.g. Backend, Frontend, Microservices..."),
-                );
-                let existing_groups = self.storage.existing_project_groups();
-                if !existing_groups.is_empty() {
-                    ui.add_space(4.0);
-                    horizontal_row(ui, 24.0, |ui| {
-                        ui.label(RichText::new("Quick Select:").size(FONT_XS).color(TEXT_MUTED));
-                        for grp in existing_groups {
-                            let is_sel = self.edit_project_group == grp;
-                            if ui
-                                .add(
-                                    egui::Button::new(
-                                        RichText::new(&grp).size(FONT_XS).color(if is_sel {
-                                            Color32::WHITE
-                                        } else {
-                                            TEXT_SECONDARY
-                                        }),
-                                    )
-                                    .fill(if is_sel { PRIMARY_BLUE } else { SUBTLE_BG })
-                                    .stroke(Stroke::new(1.0_f32, CARD_BORDER))
-                                    .corner_radius(4.0),
-                                )
-                                .on_hover_cursor(egui::CursorIcon::PointingHand)
-                                .clicked()
-                            {
-                                self.edit_project_group = grp;
-                            }
-                        }
-                    });
-                }
-
-                ui.add_space(14.0);
+                ui.add_space(SP_16);
 
                 // Optional: Import/Sync additional .ps1 script into this project
                 egui::Frame::new()
-                    .fill(SUBTLE_BG)
-                    .stroke(Stroke::new(1.0_f32, Color32::from_rgb(191, 219, 254)))
-                    .corner_radius(8.0)
-                    .inner_margin(Margin::symmetric(14, 10))
+                    .fill(MD_PANEL_BG)
+                    .stroke(Stroke::new(1.0_f32, MD_BORDER))
+                    .corner_radius(R_LG)
+                    .inner_margin(Margin::same(16))
                     .show(ui, |ui| {
                         ui.label(
                             RichText::new("SYNC / IMPORT ENVIRONMENT FROM .PS1 SCRIPT")
-                                .size(FONT_XS)
+                                .size(FS_MICRO)
                                 .strong()
-                                .color(PRIMARY_BLUE),
+                                .color(ACCENT),
                         );
-                        ui.add_space(4.0);
-                        horizontal_row(ui, 34.0, |ui| {
-                            styled_text_edit(
+                        ui.add_space(SP_8);
+                        horizontal_row(ui, 40.0, |ui| {
+                            modal_text_input(
                                 ui,
                                 &mut self.edit_project_ps1_path,
-                                285.0,
+                                272.0,
                                 Some(r"e.g. C:\Projects\my-app\deploy-prod.ps1"),
                             );
-                            let browse_btn = egui::Button::new(
-                                RichText::new("Browse .ps1...")
-                                    .size(FONT_SM)
-                                    .strong()
-                                    .color(TEXT_PRIMARY),
-                            )
-                            .fill(CARD_BG)
-                            .stroke(Stroke::new(1.0_f32, CARD_BORDER))
-                            .min_size(Vec2::new(95.0, 32.0));
+                            ui.add_space(SP_8);
+                            let browse_btn = modal_secondary_button("Browse .ps1...");
                             if ui.add(browse_btn).clicked() {
                                 if let Some(picked) = pick_ps1_file_dialog() {
                                     self.edit_project_ps1_path = picked;
                                 }
                             }
-
-                            let imp_btn = egui::Button::new(
-                                RichText::new("Import")
-                                    .size(FONT_SM)
-                                    .strong()
-                                    .color(Color32::WHITE),
-                            )
-                            .fill(PRIMARY_BLUE)
-                            .min_size(Vec2::new(80.0, 32.0));
-                            if ui.add(imp_btn).clicked()
-                                && !self.edit_project_ps1_path.trim().is_empty()
-                            {
+                            ui.add_space(SP_8);
+                            let can_import = !self.edit_project_ps1_path.trim().is_empty();
+                            let imp_btn = modal_primary_button("Import", can_import);
+                            if ui.add_enabled(can_import, imp_btn).clicked() && can_import {
                                 let p = PathBuf::from(
                                     self.edit_project_ps1_path.trim().trim_matches('"'),
                                 );
@@ -3266,11 +3064,11 @@ impl ShiplyApp {
                             }
                         });
                         if let Some(notice) = &self.edit_project_import_notice {
-                            ui.add_space(4.0);
+                            ui.add_space(SP_8);
                             let is_err = notice.starts_with("Import error:");
                             ui.label(
                                 RichText::new(notice)
-                                    .size(FONT_SM)
+                                    .size(FS_SMALL)
                                     .strong()
                                     .color(if is_err {
                                         FAIL_PILL_TEXT
@@ -3281,25 +3079,129 @@ impl ShiplyApp {
                         }
                     });
 
-                ui.add_space(16.0);
-                draw_divider(ui, CARD_BORDER);
-                ui.add_space(12.0);
+                ui.add_space(SP_16);
 
-                horizontal_row(ui, 36.0, |ui| {
+                // Project Form Fields (vertical gap 16px, label FS_BASE weight 500, margin-bottom 8px)
+                ui.label(
+                    RichText::new("Project Name")
+                        .size(FS_BASE)
+                        .strong()
+                        .color(MD_TEXT),
+                );
+                ui.add_space(SP_8);
+                modal_text_input(
+                    ui,
+                    &mut self.edit_project_name,
+                    512.0,
+                    Some("e.g. my-web-service"),
+                );
+
+                ui.add_space(SP_16);
+                ui.label(
+                    RichText::new("Local Project Directory")
+                        .size(FS_BASE)
+                        .strong()
+                        .color(MD_TEXT),
+                );
+                ui.add_space(SP_8);
+                horizontal_row(ui, 40.0, |ui| {
+                    modal_text_input(
+                        ui,
+                        &mut self.edit_project_path,
+                        360.0,
+                        Some(r"e.g. C:\Projects\my-web-service"),
+                    );
+                    ui.add_space(SP_8);
+                    let folder_btn = modal_secondary_button("Browse Folder...");
+                    if ui.add(folder_btn).clicked() {
+                        if let Some(folder) = pick_folder_dialog() {
+                            self.edit_project_path = folder;
+                        }
+                    }
+                });
+
+                ui.add_space(SP_16);
+                ui.label(
+                    RichText::new("Description")
+                        .size(FS_BASE)
+                        .strong()
+                        .color(MD_TEXT),
+                );
+                ui.add_space(SP_8);
+                modal_text_input(
+                    ui,
+                    &mut self.edit_project_desc,
+                    512.0,
+                    Some("e.g. Backend API service (Node.js / PM2)"),
+                );
+
+                ui.add_space(SP_16);
+                ui.label(
+                    RichText::new("Group (Optional)")
+                        .size(FS_BASE)
+                        .strong()
+                        .color(MD_TEXT),
+                );
+                ui.add_space(SP_8);
+                modal_text_input(
+                    ui,
+                    &mut self.edit_project_group,
+                    512.0,
+                    Some("e.g. Backend, Frontend, Microservices..."),
+                );
+                let existing_groups = self.storage.existing_project_groups();
+                if !existing_groups.is_empty() {
+                    ui.add_space(SP_8);
+                    horizontal_row(ui, 24.0, |ui| {
+                        ui.label(RichText::new("Quick Select:").size(FS_MICRO).color(MD_TEXT_MUTED));
+                        for grp in existing_groups {
+                            let is_sel = self.edit_project_group == grp;
+                            if ui
+                                .add(
+                                    egui::Button::new(
+                                        RichText::new(&grp).size(FS_MICRO).strong().color(if is_sel {
+                                            Color32::WHITE
+                                        } else {
+                                            MD_TEXT
+                                        }),
+                                    )
+                                    .fill(if is_sel { ACCENT } else { MD_PANEL_BG })
+                                    .stroke(Stroke::new(
+                                        1.0_f32,
+                                        if is_sel { ACCENT } else { MD_BORDER },
+                                    ))
+                                    .corner_radius(R_SM),
+                                )
+                                .on_hover_cursor(egui::CursorIcon::PointingHand)
+                                .clicked()
+                            {
+                                self.edit_project_group = grp;
+                            }
+                        }
+                    });
+                }
+
+                // Footer (top border 1px MD_BORDER, padding-top 16px, margin-top 24px)
+                ui.add_space(SP_24);
+                draw_divider(ui, MD_BORDER);
+                ui.add_space(SP_16);
+
+                let enter_pressed = ctx.input(|i| i.key_pressed(egui::Key::Enter));
+                horizontal_row(ui, 40.0, |ui| {
+                    ui.label(
+                        RichText::new("Changes are saved to local database")
+                            .size(FS_MICRO)
+                            .color(MD_TEXT_MUTED),
+                    );
+
                     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                         let can_save = !self.edit_project_name.trim().is_empty()
                             && !self.edit_project_path.trim().is_empty();
-                        let save_btn = egui::Button::new(
-                            RichText::new("Save Changes")
-                                .size(FONT_MD)
-                                .strong()
-                                .color(Color32::WHITE),
-                        )
-                        .fill(if can_save { PRIMARY_BLUE } else { TEXT_MUTED })
-                        .corner_radius(7.0)
-                        .min_size(Vec2::new(135.0, 34.0));
+                        let save_btn = modal_primary_button("Save Changes", can_save);
 
-                        if ui.add(save_btn).clicked() && can_save {
+                        if (ui.add_enabled(can_save, save_btn).clicked() || enter_pressed)
+                            && can_save
+                        {
                             let proj = &mut self.storage.projects[proj_idx];
                             proj.name = self.edit_project_name.trim().to_string();
                             proj.local_path = self.edit_project_path.trim().to_string();
@@ -3320,16 +3222,8 @@ impl ShiplyApp {
                             self.show_edit_project_modal = false;
                         }
 
-                        let cancel_btn = egui::Button::new(
-                            RichText::new("Cancel")
-                                .size(FONT_MD)
-                                .strong()
-                                .color(TEXT_SECONDARY),
-                        )
-                        .fill(SUBTLE_BG)
-                        .stroke(Stroke::new(1.0_f32, CARD_BORDER))
-                        .corner_radius(7.0)
-                        .min_size(Vec2::new(84.0, 34.0));
+                        ui.add_space(SP_8);
+                        let cancel_btn = modal_secondary_button("Cancel");
                         if ui.add(cancel_btn).clicked() {
                             self.show_edit_project_modal = false;
                         }
@@ -3342,6 +3236,13 @@ impl ShiplyApp {
         if !self.show_new_env_modal {
             return;
         }
+
+        // Close on Escape key
+        if ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
+            self.show_new_env_modal = false;
+            return;
+        }
+
         let SidebarSelection::Project(proj_id) = self.selection.clone() else {
             self.show_new_env_modal = false;
             return;
@@ -3357,15 +3258,17 @@ impl ShiplyApp {
             .map(|e| (e.key.clone(), e.name.clone()))
             .collect();
 
+        // Dimmed backdrop with click-to-dismiss
         egui::Area::new(egui::Id::new("modal_backdrop_new_env"))
             .order(egui::Order::Middle)
             .fixed_pos(Pos2::ZERO)
             .show(ctx, |ui| {
-                ui.painter().rect_filled(
-                    ctx.screen_rect(),
-                    CornerRadius::ZERO,
-                    Color32::from_black_alpha(95),
-                );
+                let screen_rect = ctx.screen_rect();
+                let resp = ui.allocate_rect(screen_rect, Sense::click());
+                ui.painter().rect_filled(screen_rect, CornerRadius::ZERO, MD_OVERLAY);
+                if resp.clicked() {
+                    self.show_new_env_modal = false;
+                }
             });
 
         egui::Window::new("Add Environment Level")
@@ -3374,27 +3277,10 @@ impl ShiplyApp {
             .collapsible(false)
             .resizable(false)
             .anchor(Align2::CENTER_CENTER, Vec2::ZERO)
-            .fixed_size(Vec2::new(500.0, 0.0))
-            .frame(
-                egui::Frame::new()
-                    .fill(CARD_BG)
-                    .stroke(Stroke::new(1.0_f32, CARD_BORDER))
-                    .corner_radius(12.0)
-                    .shadow(Shadow {
-                        offset: [0, 8],
-                        blur: 24,
-                        spread: 0,
-                        color: Color32::from_black_alpha(45),
-                    })
-                    .inner_margin(Margin {
-                        left: 24,
-                        right: 24,
-                        top: 18,
-                        bottom: 22,
-                    }),
-            )
+            .fixed_size(Vec2::new(560.0, 0.0))
+            .frame(modal_dialog_frame())
             .show(ctx, |ui| {
-                ui.set_width(452.0);
+                ui.set_width(512.0);
                 if render_modal_header(
                     ui,
                     "close_new_env_modal",
@@ -3403,54 +3289,40 @@ impl ShiplyApp {
                 ) {
                     self.show_new_env_modal = false;
                 }
-                ui.add_space(12.0);
+                ui.add_space(SP_16);
 
                 // Option 1: Import from .ps1 script
                 egui::Frame::new()
-                    .fill(SUBTLE_BG)
-                    .stroke(Stroke::new(1.0_f32, Color32::from_rgb(191, 219, 254)))
-                    .corner_radius(8.0)
-                    .inner_margin(Margin::symmetric(12, 10))
+                    .fill(MD_PANEL_BG)
+                    .stroke(Stroke::new(1.0_f32, MD_BORDER))
+                    .corner_radius(R_LG)
+                    .inner_margin(Margin::same(16))
                     .show(ui, |ui| {
                         ui.label(
                             RichText::new("IMPORT ENVIRONMENT FROM .PS1 SCRIPT")
-                                .size(FONT_XS)
+                                .size(FS_MICRO)
                                 .strong()
-                                .color(PRIMARY_BLUE),
+                                .color(ACCENT),
                         );
-                        ui.add_space(4.0);
-                        horizontal_row(ui, 34.0, |ui| {
-                            styled_text_edit(
+                        ui.add_space(SP_8);
+                        horizontal_row(ui, 40.0, |ui| {
+                            modal_text_input(
                                 ui,
                                 &mut self.new_env_ps1_path,
-                                235.0,
+                                272.0,
                                 Some(r"e.g. C:\Projects\my-app\deploy-staging.ps1"),
                             );
-                            let browse_btn = egui::Button::new(
-                                RichText::new("Browse .ps1...")
-                                    .size(FONT_SM)
-                                    .strong()
-                                    .color(TEXT_PRIMARY),
-                            )
-                            .fill(CARD_BG)
-                            .stroke(Stroke::new(1.0_f32, CARD_BORDER))
-                            .min_size(Vec2::new(92.0, 32.0));
+                            ui.add_space(SP_8);
+                            let browse_btn = modal_secondary_button("Browse .ps1...");
                             if ui.add(browse_btn).clicked() {
                                 if let Some(picked) = pick_ps1_file_dialog() {
                                     self.new_env_ps1_path = picked;
                                 }
                             }
-                            let imp_btn = egui::Button::new(
-                                RichText::new("Import")
-                                    .size(FONT_SM)
-                                    .strong()
-                                    .color(Color32::WHITE),
-                            )
-                            .fill(PRIMARY_BLUE)
-                            .min_size(Vec2::new(72.0, 32.0));
-                            if ui.add(imp_btn).clicked()
-                                && !self.new_env_ps1_path.trim().is_empty()
-                            {
+                            ui.add_space(SP_8);
+                            let can_import = !self.new_env_ps1_path.trim().is_empty();
+                            let imp_btn = modal_primary_button("Import", can_import);
+                            if ui.add_enabled(can_import, imp_btn).clicked() && can_import {
                                 let path = PathBuf::from(
                                     self.new_env_ps1_path.trim().trim_matches('"'),
                                 );
@@ -3485,47 +3357,48 @@ impl ShiplyApp {
                         });
                     });
 
-                ui.add_space(12.0);
+                ui.add_space(SP_16);
 
                 // Option 2: Create by Name
                 ui.label(
                     RichText::new("Or Create Custom Environment Name")
-                        .size(FONT_SM)
+                        .size(FS_BASE)
                         .strong()
-                        .color(TEXT_SECONDARY),
+                        .color(MD_TEXT),
                 );
-                ui.add_space(4.0);
-                styled_text_edit(
+                ui.add_space(SP_8);
+                modal_text_input(
                     ui,
                     &mut self.new_env_name,
-                    432.0,
+                    512.0,
                     Some("e.g. Development, Staging, Production, UAT, QA"),
                 );
 
                 if !existing_envs.is_empty() {
-                    ui.add_space(10.0);
+                    ui.add_space(SP_16);
                     ui.label(
                         RichText::new("Clone Pipeline Template From:")
-                            .size(FONT_SM)
+                            .size(FS_BASE)
                             .strong()
-                            .color(TEXT_SECONDARY),
+                            .color(MD_TEXT),
                     );
-                    ui.add_space(4.0);
+                    ui.add_space(SP_8);
                     ui.horizontal_wrapped(|ui| {
                         for (key, name) in &existing_envs {
                             let selected = self.new_env_clone_from == *key;
                             let btn = egui::Button::new(
-                                RichText::new(name).size(FONT_SM).strong().color(if selected {
-                                    BLUE_PILL_TEXT
+                                RichText::new(name).size(FS_MICRO).strong().color(if selected {
+                                    Color32::WHITE
                                 } else {
-                                    TEXT_SECONDARY
+                                    MD_TEXT
                                 }),
                             )
-                            .fill(if selected { BLUE_PILL_BG } else { SUBTLE_BG })
+                            .fill(if selected { ACCENT } else { MD_PANEL_BG })
                             .stroke(Stroke::new(
                                 1.0_f32,
-                                if selected { PRIMARY_BLUE } else { CARD_BORDER },
-                            ));
+                                if selected { ACCENT } else { MD_BORDER },
+                            ))
+                            .corner_radius(R_SM);
                             if ui.add(btn).clicked() {
                                 self.new_env_clone_from = key.clone();
                             }
@@ -3533,23 +3406,26 @@ impl ShiplyApp {
                     });
                 }
 
-                ui.add_space(16.0);
-                draw_divider(ui, CARD_BORDER);
-                ui.add_space(12.0);
+                // Footer (top border 1px MD_BORDER, padding-top 16px, margin-top 24px)
+                ui.add_space(SP_24);
+                draw_divider(ui, MD_BORDER);
+                ui.add_space(SP_16);
 
-                horizontal_row(ui, 34.0, |ui| {
+                let enter_pressed = ctx.input(|i| i.key_pressed(egui::Key::Enter));
+                horizontal_row(ui, 40.0, |ui| {
+                    ui.label(
+                        RichText::new("New environments inherit active deployment settings")
+                            .size(FS_MICRO)
+                            .color(MD_TEXT_MUTED),
+                    );
+
                     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                        let create_btn = egui::Button::new(
-                            RichText::new("Add Environment")
-                                .size(FONT_MD)
-                                .strong()
-                                .color(Color32::WHITE),
-                        )
-                        .fill(PRIMARY_BLUE)
-                        .corner_radius(7.0)
-                        .min_size(Vec2::new(135.0, 34.0));
+                        let can_create = !self.new_env_name.trim().is_empty();
+                        let create_btn = modal_primary_button("Add Environment", can_create);
 
-                        if ui.add(create_btn).clicked() {
+                        if (ui.add_enabled(can_create, create_btn).clicked() || enter_pressed)
+                            && can_create
+                        {
                             let clone_src = if self.new_env_clone_from.is_empty() {
                                 None
                             } else {
@@ -3578,16 +3454,8 @@ impl ShiplyApp {
                             }
                         }
 
-                        let cancel_btn = egui::Button::new(
-                            RichText::new("Cancel")
-                                .size(FONT_MD)
-                                .strong()
-                                .color(TEXT_SECONDARY),
-                        )
-                        .fill(SUBTLE_BG)
-                        .stroke(Stroke::new(1.0_f32, CARD_BORDER))
-                        .corner_radius(7.0)
-                        .min_size(Vec2::new(84.0, 34.0));
+                        ui.add_space(SP_8);
+                        let cancel_btn = modal_secondary_button("Cancel");
                         if ui.add(cancel_btn).clicked() {
                             self.show_new_env_modal = false;
                         }
@@ -3601,15 +3469,23 @@ impl ShiplyApp {
             return;
         }
 
+        // Close on Escape key if not downloading
+        if ctx.input(|i| i.key_pressed(egui::Key::Escape)) && !self.update_downloading {
+            self.show_update_modal = false;
+            return;
+        }
+
+        // Dimmed backdrop with click-to-dismiss
         egui::Area::new(egui::Id::new("modal_backdrop_github_update"))
             .order(egui::Order::Middle)
             .fixed_pos(Pos2::ZERO)
             .show(ctx, |ui| {
-                ui.painter().rect_filled(
-                    ctx.screen_rect(),
-                    CornerRadius::ZERO,
-                    Color32::from_black_alpha(95),
-                );
+                let screen_rect = ctx.screen_rect();
+                let resp = ui.allocate_rect(screen_rect, Sense::click());
+                ui.painter().rect_filled(screen_rect, CornerRadius::ZERO, MD_OVERLAY);
+                if resp.clicked() && !self.update_downloading {
+                    self.show_update_modal = false;
+                }
             });
 
         if let Some(release) = self.available_update.clone() {
@@ -3620,24 +3496,7 @@ impl ShiplyApp {
                 .resizable(false)
                 .anchor(Align2::CENTER_CENTER, Vec2::ZERO)
                 .fixed_size(Vec2::new(560.0, 0.0))
-                .frame(
-                    egui::Frame::new()
-                        .fill(CARD_BG)
-                        .stroke(Stroke::new(1.0_f32, CARD_BORDER))
-                        .corner_radius(12.0)
-                        .shadow(Shadow {
-                            offset: [0, 8],
-                            blur: 24,
-                            spread: 0,
-                            color: Color32::from_black_alpha(45),
-                        })
-                        .inner_margin(Margin {
-                            left: 24,
-                            right: 24,
-                            top: 18,
-                            bottom: 22,
-                        }),
-                )
+                .frame(modal_dialog_frame())
                 .show(ctx, |ui| {
                     ui.set_width(512.0);
                     if render_modal_header(
@@ -3652,73 +3511,71 @@ impl ShiplyApp {
                         self.show_update_modal = false;
                     }
 
-                    ui.add_space(12.0);
+                    ui.add_space(SP_12);
 
                     // Version Comparison Card (Current Version vs. New Version Tag)
                     egui::Frame::new()
-                        .fill(SUBTLE_BG)
-                        .stroke(Stroke::new(1.0_f32, Color32::from_rgb(191, 219, 254)))
-                        .corner_radius(8.0)
+                        .fill(MD_PANEL_BG)
+                        .stroke(Stroke::new(1.0_f32, MD_BORDER))
+                        .corner_radius(R_LG)
                         .inner_margin(Margin::symmetric(14, 12))
                         .show(ui, |ui| {
                             ui.set_width(ui.available_width());
                             horizontal_row(ui, 26.0, |ui| {
                                 ui.label(
                                     RichText::new("Current Version:")
-                                        .size(FONT_SM)
-                                        .strong()
-                                        .color(TEXT_SECONDARY),
+                                        .size(FS_SMALL)
+                                        .color(MD_TEXT_MUTED),
                                 );
                                 render_pill(
                                     ui,
                                     &format!("v{APP_VERSION}"),
-                                    PILL_CONTAINER_BG,
-                                    TEXT_SECONDARY,
+                                    MD_INPUT_BG,
+                                    MD_TEXT_MUTED,
                                 );
                                 ui.label(
                                     RichText::new("→")
-                                        .size(FONT_LG)
+                                        .size(FS_BASE)
                                         .strong()
-                                        .color(PRIMARY_BLUE),
+                                        .color(ACCENT),
                                 );
                                 ui.label(
                                     RichText::new("New Release:")
-                                        .size(FONT_SM)
-                                        .strong()
-                                        .color(TEXT_SECONDARY),
+                                        .size(FS_SMALL)
+                                        .color(MD_TEXT_MUTED),
                                 );
                                 render_pill(
                                     ui,
                                     &release.tag_name,
-                                    SUCCESS_PILL_BG,
-                                    SUCCESS_PILL_TEXT,
+                                    BADGE_DEV_BG,
+                                    BADGE_DEV_TEXT,
                                 );
                             });
-                            ui.add_space(4.0);
+                            ui.add_space(SP_4);
                             ui.label(
                                 RichText::new(format!(
                                     "{}  •  Published: {}",
                                     release.name, release.published_at
                                 ))
-                                .size(FONT_XS)
-                                .color(TEXT_MUTED),
+                                .size(FS_MICRO)
+                                .color(MD_TEXT_MUTED),
                             );
                         });
 
-                    ui.add_space(12.0);
+                    ui.add_space(SP_12);
 
                     // Release Notes / Changelog section
                     ui.label(
                         RichText::new("RELEASE NOTES / CHANGELOG")
-                            .size(FONT_XS)
+                            .size(FS_MICRO)
                             .strong()
-                            .color(TEXT_MUTED),
+                            .color(MD_TEXT_MUTED),
                     );
-                    ui.add_space(4.0);
+                    ui.add_space(SP_4);
                     egui::Frame::new()
-                        .fill(INPUT_BG)
-                        .stroke(Stroke::new(1.0_f32, CARD_BORDER))
-                        .corner_radius(8.0)
+                        .fill(MD_INPUT_BG)
+                        .stroke(Stroke::new(1.0_f32, MD_BORDER))
+                        .corner_radius(R_MD)
                         .inner_margin(Margin::symmetric(14, 10))
                         .show(ui, |ui| {
                             ui.set_width(ui.available_width());
@@ -3730,26 +3587,26 @@ impl ShiplyApp {
                                     for line in release.body.lines() {
                                         let trimmed = line.trim();
                                         if let Some(h) = trimmed.strip_prefix("### ") {
-                                            ui.add_space(4.0);
+                                            ui.add_space(SP_4);
                                             ui.label(
                                                 RichText::new(h)
-                                                    .size(FONT_MD)
+                                                    .size(FS_BASE)
                                                     .strong()
-                                                    .color(TEXT_PRIMARY),
+                                                    .color(MD_TEXT),
                                             );
                                         } else if let Some(h) = trimmed.strip_prefix("## ") {
-                                            ui.add_space(4.0);
+                                            ui.add_space(SP_4);
                                             ui.label(
                                                 RichText::new(h)
-                                                    .size(FONT_MD)
+                                                    .size(FS_BASE)
                                                     .strong()
-                                                    .color(PRIMARY_BLUE),
+                                                    .color(ACCENT),
                                             );
                                         } else {
                                             ui.label(
                                                 RichText::new(line)
-                                                    .size(FONT_SM)
-                                                    .color(TEXT_SECONDARY),
+                                                    .size(FS_SMALL)
+                                                    .color(MD_TEXT_MUTED),
                                             );
                                         }
                                     }
@@ -3758,7 +3615,7 @@ impl ShiplyApp {
 
                     // Download Progress Bar / Status Indicator
                     if self.update_downloading || self.update_progress > 0.0 {
-                        ui.add_space(12.0);
+                        ui.add_space(SP_12);
                         let pct = (self.update_progress * 100.0).clamp(0.0, 100.0);
                         ui.label(
                             RichText::new(format!(
@@ -3769,55 +3626,44 @@ impl ShiplyApp {
                                     &self.update_status_text
                                 }
                             ))
-                            .size(FONT_SM)
+                            .size(FS_SMALL)
                             .strong()
-                            .color(PRIMARY_BLUE),
+                            .color(ACCENT),
                         );
-                        ui.add_space(4.0);
+                        ui.add_space(SP_4);
                         let bar_w = ui.available_width();
                         let (bar_rect, _) =
-                            ui.allocate_exact_size(Vec2::new(bar_w, 10.0), Sense::hover());
+                            ui.allocate_exact_size(Vec2::new(bar_w, 8.0), Sense::hover());
                         ui.painter()
-                            .rect_filled(bar_rect, CornerRadius::same(5), PILL_CONTAINER_BG);
+                            .rect_filled(bar_rect, CornerRadius::same(4), MD_PANEL_BG);
                         let fill_w = (bar_w * self.update_progress.clamp(0.02, 1.0)).min(bar_w);
-                        let fill_rect = Rect::from_min_size(bar_rect.min, Vec2::new(fill_w, 10.0));
+                        let fill_rect = Rect::from_min_size(bar_rect.min, Vec2::new(fill_w, 8.0));
                         ui.painter()
-                            .rect_filled(fill_rect, CornerRadius::same(5), PRIMARY_BLUE);
+                            .rect_filled(fill_rect, CornerRadius::same(4), ACCENT);
                     }
 
                     if let Some(err) = &self.update_error {
-                        ui.add_space(10.0);
+                        ui.add_space(SP_8);
                         egui::Frame::new()
                             .fill(FAIL_PILL_BG)
                             .stroke(Stroke::new(1.0_f32, Color32::from_rgb(252, 165, 165)))
-                            .corner_radius(6.0)
+                            .corner_radius(R_SM)
                             .inner_margin(Margin::symmetric(12, 8))
                             .show(ui, |ui| {
                                 ui.label(
                                     RichText::new(err)
-                                        .size(FONT_SM)
-                                        .strong()
+                                        .size(FS_SMALL)
                                         .color(FAIL_PILL_TEXT),
                                 );
                             });
                     }
 
-                    ui.add_space(16.0);
-                    draw_divider(ui, CARD_BORDER);
-                    ui.add_space(12.0);
+                    ui.add_space(SP_16);
+                    draw_divider(ui, MD_BORDER);
+                    ui.add_space(SP_12);
 
-                    horizontal_row(ui, 36.0, |ui| {
-                        let view_gh_btn = egui::Button::new(
-                            RichText::new("View on GitHub")
-                                .size(FONT_SM)
-                                .strong()
-                                .color(TEXT_SECONDARY),
-                        )
-                        .fill(SUBTLE_BG)
-                        .stroke(Stroke::new(1.0_f32, CARD_BORDER))
-                        .corner_radius(7.0)
-                        .min_size(Vec2::new(115.0, 34.0));
-                        if ui.add(view_gh_btn).clicked() {
+                    horizontal_row(ui, 40.0, |ui| {
+                        if ui.add(modal_secondary_button("View on GitHub")).clicked() {
                             let url = if release.html_url.is_empty() {
                                 GITHUB_RELEASES_PAGE_URL
                             } else {
@@ -3828,28 +3674,14 @@ impl ShiplyApp {
 
                         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                             let update_btn_label = if self.update_downloading {
-                                "Updating...".to_string()
+                                "Updating..."
                             } else {
-                                "Update & Restart".to_string()
+                                "Update & Restart"
                             };
-                            let update_btn = egui::Button::new(
-                                RichText::new(update_btn_label)
-                                    .size(FONT_MD)
-                                    .strong()
-                                    .color(Color32::WHITE),
-                            )
-                            .fill(if self.update_downloading {
-                                TEXT_MUTED
-                            } else {
-                                PRIMARY_BLUE
-                            })
-                            .corner_radius(7.0)
-                            .min_size(Vec2::new(155.0, 36.0));
 
-                            if ui
-                                .add_enabled(!self.update_downloading, update_btn)
-                                .clicked()
-                            {
+                            let btn_resp = ui.add(modal_primary_button(update_btn_label, !self.update_downloading));
+
+                            if btn_resp.clicked() && !self.update_downloading {
                                 self.update_error = None;
                                 if release.download_url.trim().is_empty() {
                                     let url = if release.html_url.is_empty() {
@@ -3867,21 +3699,7 @@ impl ShiplyApp {
                                 }
                             }
 
-                            let later_btn = egui::Button::new(
-                                RichText::new("Remind Me Later")
-                                    .size(FONT_MD)
-                                    .strong()
-                                    .color(TEXT_SECONDARY),
-                            )
-                            .fill(SUBTLE_BG)
-                            .stroke(Stroke::new(1.0_f32, CARD_BORDER))
-                            .corner_radius(7.0)
-                            .min_size(Vec2::new(130.0, 36.0));
-
-                            if ui
-                                .add_enabled(!self.update_downloading, later_btn)
-                                .clicked()
-                            {
+                            if !self.update_downloading && ui.add(modal_secondary_button("Remind Me Later")).clicked() {
                                 self.show_update_modal = false;
                             }
                         });
@@ -3895,27 +3713,10 @@ impl ShiplyApp {
                 .collapsible(false)
                 .resizable(false)
                 .anchor(Align2::CENTER_CENTER, Vec2::ZERO)
-                .fixed_size(Vec2::new(480.0, 0.0))
-                .frame(
-                    egui::Frame::new()
-                        .fill(CARD_BG)
-                        .stroke(Stroke::new(1.0_f32, CARD_BORDER))
-                        .corner_radius(12.0)
-                        .shadow(Shadow {
-                            offset: [0, 8],
-                            blur: 24,
-                            spread: 0,
-                            color: Color32::from_black_alpha(45),
-                        })
-                        .inner_margin(Margin {
-                            left: 24,
-                            right: 24,
-                            top: 20,
-                            bottom: 22,
-                        }),
-                )
+                .fixed_size(Vec2::new(560.0, 0.0))
+                .frame(modal_dialog_frame())
                 .show(ctx, |ui| {
-                    ui.set_width(432.0);
+                    ui.set_width(512.0);
                     if render_modal_header(
                         ui,
                         "close_update_info_modal",
@@ -3925,92 +3726,63 @@ impl ShiplyApp {
                         self.show_update_modal = false;
                     }
 
-                    ui.add_space(14.0);
+                    ui.add_space(SP_12);
 
                     egui::Frame::new()
                         .fill(SUCCESS_PILL_BG)
                         .stroke(Stroke::new(1.0_f32, Color32::from_rgb(187, 247, 208)))
-                        .corner_radius(8.0)
+                        .corner_radius(R_LG)
                         .inner_margin(Margin::symmetric(14, 12))
                         .show(ui, |ui| {
                             horizontal_row(ui, 24.0, |ui| {
                                 render_pill(
                                     ui,
                                     "UP TO DATE",
-                                    Color32::from_rgb(34, 197, 94),
+                                    SUCCESS,
                                     Color32::WHITE,
                                 );
                                 ui.label(
                                     RichText::new(format!("Shiply v{APP_VERSION}"))
-                                        .size(FONT_MD)
+                                        .size(FS_BASE)
                                         .strong()
                                         .color(SUCCESS_PILL_TEXT),
                                 );
                             });
-                            ui.add_space(6.0);
+                            ui.add_space(SP_4);
                             ui.label(
                                 RichText::new(format!(
                                     "You are running the latest version of Shiply. Update checks query {GITHUB_REPO} on startup."
                                 ))
-                                .size(FONT_SM)
+                                .size(FS_SMALL)
                                 .color(Color32::from_rgb(20, 83, 45)),
                             );
                         });
 
                     if self.update_checking {
-                        ui.add_space(10.0);
+                        ui.add_space(SP_8);
                         ui.label(
                             RichText::new("Checking GitHub Releases...")
-                                .size(FONT_SM)
-                                .color(PRIMARY_BLUE),
+                                .size(FS_SMALL)
+                                .color(ACCENT),
                         );
                     }
 
-                    ui.add_space(18.0);
-                    draw_divider(ui, CARD_BORDER);
-                    ui.add_space(14.0);
+                    ui.add_space(SP_16);
+                    draw_divider(ui, MD_BORDER);
+                    ui.add_space(SP_12);
 
-                    horizontal_row(ui, 36.0, |ui| {
-                        let view_gh_btn = egui::Button::new(
-                            RichText::new("View on GitHub")
-                                .size(FONT_SM)
-                                .strong()
-                                .color(TEXT_SECONDARY),
-                        )
-                        .fill(SUBTLE_BG)
-                        .stroke(Stroke::new(1.0_f32, CARD_BORDER))
-                        .corner_radius(7.0)
-                        .min_size(Vec2::new(115.0, 34.0));
-                        if ui.add(view_gh_btn).clicked() {
+                    horizontal_row(ui, 40.0, |ui| {
+                        if ui.add(modal_secondary_button("View on GitHub")).clicked() {
                             open_url_in_browser(GITHUB_RELEASES_PAGE_URL);
                         }
 
                         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                            let close_btn = egui::Button::new(
-                                RichText::new("Close")
-                                    .size(FONT_MD)
-                                    .strong()
-                                    .color(TEXT_SECONDARY),
-                            )
-                            .fill(SUBTLE_BG)
-                            .stroke(Stroke::new(1.0_f32, CARD_BORDER))
-                            .corner_radius(7.0)
-                            .min_size(Vec2::new(80.0, 36.0));
-                            if ui.add(close_btn).clicked() {
+                            if ui.add(modal_secondary_button("Close")).clicked() {
                                 self.show_update_modal = false;
                             }
 
-                            let check_btn = egui::Button::new(
-                                RichText::new("Check Again")
-                                    .size(FONT_MD)
-                                    .strong()
-                                    .color(Color32::WHITE),
-                            )
-                            .fill(PRIMARY_BLUE)
-                            .corner_radius(7.0)
-                            .min_size(Vec2::new(115.0, 36.0));
                             if ui
-                                .add_enabled(!self.update_checking, check_btn)
+                                .add(modal_primary_button("Check Again", !self.update_checking))
                                 .clicked()
                             {
                                 spawn_update_check(self.updater_tx.clone(), true);
@@ -4027,19 +3799,26 @@ impl ShiplyApp {
             return;
         };
 
+        let mut execute_delete = false;
+        let mut dismiss = false;
+
+        // Close on Escape key
+        if ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
+            dismiss = true;
+        }
+
+        // Dimmed backdrop with click-to-dismiss
         egui::Area::new(egui::Id::new("modal_backdrop_delete_confirm"))
             .order(egui::Order::Middle)
             .fixed_pos(Pos2::ZERO)
             .show(ctx, |ui| {
-                ui.painter().rect_filled(
-                    ctx.screen_rect(),
-                    CornerRadius::ZERO,
-                    Color32::from_black_alpha(110),
-                );
+                let screen_rect = ctx.screen_rect();
+                let resp = ui.allocate_rect(screen_rect, Sense::click());
+                ui.painter().rect_filled(screen_rect, CornerRadius::ZERO, MD_OVERLAY);
+                if resp.clicked() {
+                    dismiss = true;
+                }
             });
-
-        let mut execute_delete = false;
-        let mut dismiss = false;
 
         egui::Window::new("Confirm Deletion")
             .order(egui::Order::Foreground)
@@ -4047,27 +3826,13 @@ impl ShiplyApp {
             .collapsible(false)
             .resizable(false)
             .anchor(Align2::CENTER_CENTER, Vec2::ZERO)
-            .fixed_size(Vec2::new(480.0, 0.0))
+            .fixed_size(Vec2::new(560.0, 0.0))
             .frame(
-                egui::Frame::new()
-                    .fill(CARD_BG)
+                modal_dialog_frame()
                     .stroke(Stroke::new(1.0_f32, Color32::from_rgb(252, 165, 165)))
-                    .corner_radius(12.0)
-                    .shadow(Shadow {
-                        offset: [0, 8],
-                        blur: 24,
-                        spread: 0,
-                        color: Color32::from_black_alpha(45),
-                    })
-                    .inner_margin(Margin {
-                        left: 24,
-                        right: 24,
-                        top: 20,
-                        bottom: 22,
-                    }),
             )
             .show(ctx, |ui| {
-                ui.set_width(432.0);
+                ui.set_width(512.0);
 
                 let (modal_title, modal_subtitle, item_name, warning_text) = match &action {
                     ConfirmDeleteAction::Project { project_name, .. } => (
@@ -4093,13 +3858,13 @@ impl ShiplyApp {
                     dismiss = true;
                 }
 
-                ui.add_space(14.0);
+                ui.add_space(SP_16);
 
                 egui::Frame::new()
                     .fill(FAIL_PILL_BG)
                     .stroke(Stroke::new(1.0_f32, Color32::from_rgb(254, 202, 202)))
-                    .corner_radius(8.0)
-                    .inner_margin(Margin::symmetric(14, 12))
+                    .corner_radius(R_LG)
+                    .inner_margin(Margin::same(16))
                     .show(ui, |ui| {
                         horizontal_row(ui, 24.0, |ui| {
                             render_pill(
@@ -4110,50 +3875,48 @@ impl ShiplyApp {
                             );
                             ui.label(
                                 RichText::new(format!("Target: {item_name}"))
-                                    .size(FONT_MD)
+                                    .size(FS_BASE)
                                     .strong()
                                     .color(FAIL_PILL_TEXT),
                             );
                         });
-                        ui.add_space(6.0);
+                        ui.add_space(SP_8);
                         ui.label(
                             RichText::new(warning_text)
-                                .size(FONT_SM)
+                                .size(FS_SMALL)
                                 .color(Color32::from_rgb(127, 29, 29)),
                         );
                     });
 
-                ui.add_space(18.0);
-                draw_divider(ui, CARD_BORDER);
-                ui.add_space(14.0);
+                // Footer (top border 1px MD_BORDER, padding-top 16px, margin-top 24px)
+                ui.add_space(SP_24);
+                draw_divider(ui, MD_BORDER);
+                ui.add_space(SP_16);
 
-                horizontal_row(ui, 36.0, |ui| {
+                horizontal_row(ui, 40.0, |ui| {
+                    ui.label(
+                        RichText::new("Warning: This action cannot be undone.")
+                            .size(FS_MICRO)
+                            .color(Color32::from_rgb(185, 28, 28)),
+                    );
+
                     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                         let delete_btn = egui::Button::new(
                             RichText::new("Delete Permanently")
-                                .size(FONT_MD)
+                                .size(FS_BASE)
                                 .strong()
                                 .color(Color32::WHITE),
                         )
                         .fill(Color32::from_rgb(220, 38, 38))
-                        .corner_radius(7.0)
-                        .min_size(Vec2::new(155.0, 36.0));
+                        .corner_radius(R_MD)
+                        .min_size(Vec2::new(160.0, 40.0));
 
                         if ui.add(delete_btn).clicked() {
                             execute_delete = true;
                         }
 
-                        let cancel_btn = egui::Button::new(
-                            RichText::new("Cancel")
-                                .size(FONT_MD)
-                                .strong()
-                                .color(TEXT_SECONDARY),
-                        )
-                        .fill(SUBTLE_BG)
-                        .stroke(Stroke::new(1.0_f32, CARD_BORDER))
-                        .corner_radius(7.0)
-                        .min_size(Vec2::new(88.0, 36.0));
-
+                        ui.add_space(SP_8);
+                        let cancel_btn = modal_secondary_button("Cancel");
                         if ui.add(cancel_btn).clicked() {
                             dismiss = true;
                         }
@@ -5000,17 +4763,23 @@ impl ShiplyApp {
             return;
         }
 
-        // Dimmed backdrop
+        // Close on Escape key
+        if ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
+            self.show_bulk_deploy_modal = false;
+            return;
+        }
+
+        // Dimmed backdrop with click-to-dismiss
         egui::Area::new(egui::Id::new("modal_backdrop_bulk_deploy"))
             .order(egui::Order::Middle)
             .fixed_pos(Pos2::ZERO)
             .show(ctx, |ui| {
                 let screen_rect = ctx.screen_rect();
-                ui.painter().rect_filled(
-                    screen_rect,
-                    CornerRadius::ZERO,
-                    Color32::from_black_alpha(95),
-                );
+                let resp = ui.allocate_rect(screen_rect, Sense::click());
+                ui.painter().rect_filled(screen_rect, CornerRadius::ZERO, MD_OVERLAY);
+                if resp.clicked() {
+                    self.show_bulk_deploy_modal = false;
+                }
             });
 
         egui::Window::new("Bulk Deployment")
@@ -5019,27 +4788,10 @@ impl ShiplyApp {
             .collapsible(false)
             .resizable(false)
             .anchor(Align2::CENTER_CENTER, Vec2::ZERO)
-            .fixed_size(Vec2::new(620.0, 0.0))
-            .frame(
-                egui::Frame::new()
-                    .fill(CARD_BG)
-                    .stroke(Stroke::new(1.0_f32, CARD_BORDER))
-                    .corner_radius(12.0)
-                    .shadow(Shadow {
-                        offset: [0, 8],
-                        blur: 24,
-                        spread: 0,
-                        color: Color32::from_black_alpha(45),
-                    })
-                    .inner_margin(Margin {
-                        left: 24,
-                        right: 24,
-                        top: 18,
-                        bottom: 22,
-                    }),
-            )
+            .fixed_size(Vec2::new(560.0, 0.0))
+            .frame(modal_dialog_frame())
             .show(ctx, |ui| {
-                ui.set_width(572.0);
+                ui.set_width(512.0);
 
                 if render_modal_header(
                     ui,
@@ -5049,7 +4801,7 @@ impl ShiplyApp {
                 ) {
                     self.show_bulk_deploy_modal = false;
                 }
-                ui.add_space(12.0);
+                ui.add_space(SP_12);
 
                 // Target Environment Selector + Select All / Clear All
                 let env_tabs = self.storage.existing_environment_tabs(None);
@@ -5062,9 +4814,9 @@ impl ShiplyApp {
                 horizontal_row(ui, 34.0, |ui| {
                     ui.label(
                         RichText::new("Target Environment:")
-                            .size(FONT_SM)
+                            .size(FS_BASE)
                             .strong()
-                            .color(TEXT_SECONDARY),
+                            .color(MD_TEXT),
                     );
                     let current_env_label = available_envs
                         .iter()
@@ -5081,11 +4833,11 @@ impl ShiplyApp {
                     egui::ComboBox::from_id_salt("bulk_target_env_combo")
                         .selected_text(
                             RichText::new(current_env_label)
-                                .size(FONT_SM)
+                                .size(FS_BASE)
                                 .strong()
-                                .color(PRIMARY_BLUE),
+                                .color(ACCENT),
                         )
-                        .width(210.0)
+                        .width(190.0)
                         .show_ui(ui, |ui| {
                             for (env_name, env_key) in &available_envs {
                                 let is_sel = &self.bulk_target_env_key == env_key;
@@ -5103,25 +4855,28 @@ impl ShiplyApp {
                     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                         let clear_btn = egui::Button::new(
                             RichText::new("Clear All")
-                                .size(FONT_XS)
+                                .size(FS_MICRO)
                                 .strong()
-                                .color(TEXT_SECONDARY),
+                                .color(MD_TEXT_MUTED),
                         )
-                        .fill(SUBTLE_BG)
-                        .stroke(Stroke::new(1.0_f32, CARD_BORDER))
+                        .fill(MD_PANEL_BG)
+                        .stroke(Stroke::new(1.0_f32, MD_BORDER))
+                        .corner_radius(R_SM)
                         .min_size(Vec2::new(72.0, 28.0));
                         if ui.add(clear_btn).clicked() {
                             self.bulk_selected_projects.clear();
                         }
 
+                        ui.add_space(SP_8);
                         let all_btn = egui::Button::new(
                             RichText::new("Select All")
-                                .size(FONT_XS)
+                                .size(FS_MICRO)
                                 .strong()
-                                .color(PRIMARY_BLUE),
+                                .color(ACCENT),
                         )
-                        .fill(BLUE_PILL_BG)
-                        .stroke(Stroke::new(1.0_f32, Color32::from_rgb(147, 197, 253)))
+                        .fill(ACCENT_SOFT)
+                        .stroke(Stroke::new(1.0_f32, ACCENT.gamma_multiply(0.4)))
+                        .corner_radius(R_SM)
                         .min_size(Vec2::new(76.0, 28.0));
                         if ui.add(all_btn).clicked() {
                             for proj in &self.storage.projects {
@@ -5137,18 +4892,18 @@ impl ShiplyApp {
                     self.sync_bulk_project_versions();
                 }
 
-                ui.add_space(10.0);
+                ui.add_space(SP_8);
 
                 // Project Checklist Table
                 egui::Frame::new()
-                    .fill(SUBTLE_BG)
-                    .stroke(Stroke::new(1.0_f32, CARD_BORDER))
-                    .corner_radius(8.0)
+                    .fill(MD_PANEL_BG)
+                    .stroke(Stroke::new(1.0_f32, MD_BORDER))
+                    .corner_radius(R_MD)
                     .inner_margin(Margin::symmetric(14, 10))
                     .show(ui, |ui| {
                         ScrollArea::vertical()
                             .id_salt("bulk_projects_list_scroll")
-                            .max_height(240.0)
+                            .max_height(230.0)
                             .show(ui, |ui| {
                                 struct BulkProjectRow {
                                     id: String,
@@ -5186,9 +4941,9 @@ impl ShiplyApp {
                                                 egui::Checkbox::new(
                                                     &mut checked,
                                                     RichText::new(&pname)
-                                                        .size(FONT_MD)
+                                                        .size(FS_BASE)
                                                         .strong()
-                                                        .color(TEXT_PRIMARY),
+                                                        .color(MD_TEXT),
                                                 ),
                                             )
                                             .changed()
@@ -5217,72 +4972,57 @@ impl ShiplyApp {
                                                 .bulk_project_versions
                                                 .entry(pid.clone())
                                                 .or_insert_with(|| "1.0.0".to_string());
-                                            styled_text_edit(
+                                            modal_text_input(
                                                 ui,
                                                 ver_entry,
                                                 90.0,
                                                 Some("1.0.0"),
                                             );
+                                            ui.add_space(SP_4);
                                             ui.label(
                                                 RichText::new("Version:")
-                                                    .size(FONT_XS)
-                                                    .color(TEXT_MUTED),
+                                                    .size(FS_MICRO)
+                                                    .color(MD_TEXT_MUTED),
                                             );
                                         });
                                     });
-                                    draw_divider(ui, CARD_BORDER);
+                                    draw_divider(ui, MD_BORDER);
                                 }
                             });
                     });
 
-                ui.add_space(12.0);
+                ui.add_space(SP_12);
 
-                // Options + Trigger Action Footer
-                horizontal_row(ui, 36.0, |ui| {
+                // Options + Trigger Action Footer (top border 1px MD_BORDER, padding-top 16px, margin-top 24px)
+                ui.add_space(SP_12);
+                draw_divider(ui, MD_BORDER);
+                ui.add_space(SP_16);
+
+                horizontal_row(ui, 40.0, |ui| {
                     ui.checkbox(
                         &mut self.bulk_bump_pkg,
                         RichText::new("Bump package.json")
-                            .size(FONT_SM)
-                            .color(TEXT_SECONDARY),
+                            .size(FS_SMALL)
+                            .color(MD_TEXT_MUTED),
                     );
-                    ui.add_space(8.0);
+                    ui.add_space(SP_8);
                     ui.checkbox(
                         &mut self.bulk_create_tag,
                         RichText::new("Git Tag")
-                            .size(FONT_SM)
-                            .color(TEXT_SECONDARY),
+                            .size(FS_SMALL)
+                            .color(MD_TEXT_MUTED),
                     );
 
                     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                         let sel_count = self.bulk_selected_projects.len();
-                        let run_btn = egui::Button::new(
-                            RichText::new(format!("Deploy {sel_count} Selected Project(s)"))
-                                .size(FONT_MD)
-                                .strong()
-                                .color(Color32::WHITE),
-                        )
-                        .fill(if sel_count > 0 {
-                            PRIMARY_BLUE
-                        } else {
-                            INPUT_BORDER
-                        })
-                        .corner_radius(7.0)
-                        .min_size(Vec2::new(210.0, 36.0));
+                        let run_btn = modal_primary_button(&format!("Deploy {sel_count} Selected"), sel_count > 0);
 
                         if ui.add_enabled(sel_count > 0, run_btn).clicked() {
                             self.trigger_bulk_deployment();
                         }
 
-                        let cancel_btn = egui::Button::new(
-                            RichText::new("Cancel")
-                                .size(FONT_MD)
-                                .strong()
-                                .color(TEXT_SECONDARY),
-                        )
-                        .fill(SUBTLE_BG)
-                        .stroke(Stroke::new(1.0_f32, CARD_BORDER))
-                        .corner_radius(7.0)
-                        .min_size(Vec2::new(84.0, 36.0));
+                        ui.add_space(SP_8);
+                        let cancel_btn = modal_secondary_button("Cancel");
                         if ui.add(cancel_btn).clicked() {
                             self.show_bulk_deploy_modal = false;
                         }
@@ -5308,11 +5048,11 @@ impl ShiplyApp {
 
         let proj_name = self.storage.projects[proj_idx].name.clone();
 
-        // If currently in the loading indicator transition for switching active project:
+        // If currently in the loading skeleton transition for switching active project:
         if self.project_switch_loading_id.as_deref() == Some(project_id) {
             if let Some(start) = self.project_switch_loading_start {
                 if start.elapsed() < Duration::from_millis(300) {
-                    render_project_loading_indicator(ui, &proj_name);
+                    render_project_workspace_skeleton(ui, &proj_name);
                     return;
                 }
             }
@@ -5353,15 +5093,15 @@ impl ShiplyApp {
                 .sense(Sense::click()),
             );
             title_resp.context_menu(|ui| {
-                ui.set_min_width(175.0);
-                ui.spacing_mut().item_spacing = Vec2::new(0.0, 3.0);
+                ui.set_min_width(180.0);
+                ui.spacing_mut().item_spacing = Vec2::new(0.0, 2.0);
                 ui.spacing_mut().button_padding = Vec2::new(10.0, 6.0);
 
                 if ui
                     .add(
                         egui::Button::new(
-                            RichText::new("Edit Project")
-                                .size(FONT_SM)
+                            RichText::new("✎  Edit Project")
+                                .size(POPUP_FONT_SIZE)
                                 .color(TEXT_PRIMARY),
                         )
                         .fill(CARD_BG),
@@ -5375,8 +5115,8 @@ impl ShiplyApp {
                 if ui
                     .add(
                         egui::Button::new(
-                            RichText::new("Duplicate Project")
-                                .size(FONT_SM)
+                            RichText::new("⧉  Duplicate Project")
+                                .size(POPUP_FONT_SIZE)
                                 .color(TEXT_PRIMARY),
                         )
                         .fill(CARD_BG),
@@ -5390,8 +5130,8 @@ impl ShiplyApp {
                 if ui
                     .add(
                         egui::Button::new(
-                            RichText::new("Refresh Metadata")
-                                .size(FONT_SM)
+                            RichText::new("↻  Refresh Metadata")
+                                .size(POPUP_FONT_SIZE)
                                 .color(TEXT_SECONDARY),
                         )
                         .fill(CARD_BG),
@@ -5407,8 +5147,8 @@ impl ShiplyApp {
                 if ui
                     .add(
                         egui::Button::new(
-                            RichText::new("Delete Project")
-                                .size(FONT_SM)
+                            RichText::new("🗑  Delete Project")
+                                .size(POPUP_FONT_SIZE)
                                 .color(FAIL_PILL_TEXT),
                         )
                         .fill(CARD_BG),
@@ -8311,8 +8051,9 @@ pub fn build_pipeline_syntax_layout_job(text: &str) -> egui::text::LayoutJob {
     job
 }
 
-/// Renders a modal header with the title on the top-left, subtitle below, and a crisp
-/// vector `×` close button anchored at the top-right corner of the popup dialog.
+/// Renders a modern modal header according to design tokens:
+/// Title (--fs-title 18px, weight 600, --md-text) + description (--fs-small 13px, --md-text-muted, margin-top 4px)
+/// + anchored 32x32 close button top-right (radius --r-md 8px, hover bg --md-panel-bg).
 fn render_modal_header(
     ui: &mut egui::Ui,
     id_salt: impl std::hash::Hash,
@@ -8322,10 +8063,10 @@ fn render_modal_header(
     let full_w = ui.available_width();
     let top_pos = ui.cursor().min;
 
-    // Position the 28x28 close button right at the top-right corner of the modal card
+    // Position the 32x32 close button within the top-right corner of the modal
     let close_rect = Rect::from_min_size(
-        Pos2::new(top_pos.x + full_w - 22.0, top_pos.y - 4.0),
-        Vec2::new(28.0, 28.0),
+        Pos2::new(top_pos.x + full_w - 32.0, top_pos.y),
+        Vec2::new(32.0, 32.0),
     );
     let close_resp = ui
         .interact(
@@ -8336,39 +8077,28 @@ fn render_modal_header(
         .on_hover_cursor(egui::CursorIcon::PointingHand);
 
     let (title_rect, _) =
-        ui.allocate_exact_size(Vec2::new(full_w - 36.0, 24.0), Sense::hover());
+        ui.allocate_exact_size(Vec2::new(full_w - 40.0, 26.0), Sense::hover());
     ui.painter().text(
         Pos2::new(title_rect.left(), title_rect.center().y),
         Align2::LEFT_CENTER,
         title,
-        FontId::proportional(FONT_LG),
-        TEXT_PRIMARY,
+        FontId::proportional(FS_TITLE),
+        MD_TEXT,
     );
 
     let close_bg = if close_resp.hovered() {
-        FAIL_PILL_BG
+        MD_PANEL_BG
     } else {
-        SUBTLE_BG
-    };
-    let close_border = if close_resp.hovered() {
-        Color32::from_rgb(252, 165, 165)
-    } else {
-        CARD_BORDER
+        Color32::TRANSPARENT
     };
     let close_fg = if close_resp.hovered() {
-        FAIL_PILL_TEXT
+        MD_TEXT
     } else {
-        TEXT_MUTED
+        MD_TEXT_MUTED
     };
 
     ui.painter()
-        .rect_filled(close_rect, CornerRadius::same(6), close_bg);
-    ui.painter().rect_stroke(
-        close_rect,
-        CornerRadius::same(6),
-        Stroke::new(1.0_f32, close_border),
-        StrokeKind::Inside,
-    );
+        .rect_filled(close_rect, CornerRadius::same(R_MD as u8), close_bg);
     let c = close_rect.center();
     let s = Stroke::new(1.6_f32, close_fg);
     ui.painter().line_segment(
@@ -8380,10 +8110,83 @@ fn render_modal_header(
         s,
     );
 
-    ui.add_space(4.0);
-    ui.label(RichText::new(subtitle).size(FONT_SM).color(TEXT_MUTED));
+    ui.add_space(SP_4);
+    ui.label(RichText::new(subtitle).size(FS_SMALL).color(MD_TEXT_MUTED));
 
-    close_resp.on_hover_text("Close dialog").clicked()
+    close_resp.on_hover_text("Close dialog (Esc)").clicked()
+}
+
+/// Standardized dialog window frame adhering to design tokens:
+/// width 560px, bg --md-bg, border 1px --md-border, radius --r-xl (16px), padding 24px, shadow 0 24px 60px rgba(2,6,23,0.35)
+fn modal_dialog_frame() -> egui::Frame {
+    egui::Frame::new()
+        .fill(MD_BG)
+        .stroke(Stroke::new(1.0_f32, MD_BORDER))
+        .corner_radius(R_XL)
+        .shadow(Shadow {
+            offset: [0, 24],
+            blur: 60,
+            spread: 0,
+            color: Color32::from_rgba_unmultiplied(2, 6, 23, 89),
+        })
+        .inner_margin(Margin::same(24))
+}
+
+/// Unified modal text input (height 40px, font --fs-base 14px, bg --md-input-bg, border 1px --md-border, radius --r-md 8px).
+fn modal_text_input(
+    ui: &mut egui::Ui,
+    value: &mut String,
+    width: f32,
+    placeholder: Option<&str>,
+) -> egui::Response {
+    let hint_str = placeholder.unwrap_or("Enter value...");
+    let edit = egui::TextEdit::singleline(value)
+        .font(FontId::proportional(FS_BASE))
+        .background_color(MD_INPUT_BG)
+        .desired_width(width)
+        .min_size(Vec2::new(width, 40.0))
+        .margin(Margin::symmetric(12, 10))
+        .hint_text(
+            RichText::new(hint_str)
+                .size(FS_BASE)
+                .color(MD_TEXT_MUTED.gamma_multiply(0.7)),
+        );
+    ui.add(edit)
+}
+
+/// Unified modal primary action button (height 40px, padding 0 16px, font --fs-base 14px, radius --r-md 8px, bg --accent).
+fn modal_primary_button(text: &str, enabled: bool) -> egui::Button<'static> {
+    egui::Button::new(
+        RichText::new(text.to_string())
+            .size(FS_BASE)
+            .strong()
+            .color(if enabled {
+                Color32::WHITE
+            } else {
+                Color32::from_rgba_unmultiplied(255, 255, 255, 128)
+            }),
+    )
+    .fill(if enabled {
+        ACCENT
+    } else {
+        ACCENT.gamma_multiply(0.5)
+    })
+    .corner_radius(R_MD)
+    .min_size(Vec2::new(0.0, 40.0))
+}
+
+/// Unified modal secondary button (height 40px, padding 0 16px, font --fs-base 14px, radius --r-md 8px, white bg, border 1px --md-border, hover --md-panel-bg).
+fn modal_secondary_button(text: &str) -> egui::Button<'static> {
+    egui::Button::new(
+        RichText::new(text.to_string())
+            .size(FS_BASE)
+            .strong()
+            .color(MD_TEXT),
+    )
+    .fill(Color32::WHITE)
+    .stroke(Stroke::new(1.0_f32, MD_BORDER))
+    .corner_radius(R_MD)
+    .min_size(Vec2::new(0.0, 40.0))
 }
 
 /// Renders a tab button with uniform horizontal padding (`16px` left & right) and consistent
@@ -8542,6 +8345,7 @@ fn paint_pill_right_aligned(
     w
 }
 
+#[allow(dead_code)]
 fn paint_small_sidebar_pill(
     painter: &egui::Painter,
     left_center: Pos2,
@@ -8575,6 +8379,38 @@ fn status_pill_colors(status: DeploymentStatus) -> (Color32, Color32) {
         DeploymentStatus::Running => (WARN_PILL_BG, WARN_PILL_TEXT),
         DeploymentStatus::Cancelled => (PILL_CONTAINER_BG, TEXT_SECONDARY),
     }
+}
+
+/// Paints a shimmering skeleton placeholder with a smooth 1.4s infinite wave.
+fn paint_shimmer_rect(painter: &egui::Painter, rect: Rect, radius: f32, time: f64) {
+    let phase = ((time % 1.4) / 1.4) as f32;
+    let alpha_f = 0.06 + 0.06 * (0.5 + 0.5 * (phase * std::f32::consts::TAU).sin());
+    let a = (alpha_f * 255.0).clamp(15.0, 31.0) as u8;
+    let fill = Color32::from_rgba_premultiplied(a, a, a, a);
+    painter.rect_filled(rect, CornerRadius::same(radius as u8), fill);
+}
+
+/// Paints a 20px environment badge adhering to sidebar tokens (--fs-micro, --r-sm, padding 0 8px).
+fn paint_sidebar_env_badge(
+    painter: &egui::Painter,
+    pos: Pos2,
+    text: &str,
+    bg: Color32,
+    fg: Color32,
+) -> f32 {
+    let font_id = FontId::proportional(FS_MICRO);
+    let galley = painter.layout_no_wrap(text.to_string(), font_id, fg);
+    let pad_x = 8.0_f32;
+    let h = 20.0_f32;
+    let w = galley.size().x + pad_x * 2.0;
+    let rect = Rect::from_min_size(pos, Vec2::new(w, h));
+    painter.rect_filled(rect, CornerRadius::same(R_SM as u8), bg);
+    painter.galley(
+        Pos2::new(rect.left() + pad_x, rect.center().y - galley.size().y / 2.0),
+        galley,
+        fg,
+    );
+    w
 }
 
 /// Draws an animated circular loading spinner with a faint 360-degree background ring
@@ -8691,53 +8527,172 @@ fn paint_running_pill_right_aligned(
     w
 }
 
-/// Renders a centered, polished loading indicator card while switching active project.
-fn render_project_loading_indicator(ui: &mut egui::Ui, proj_name: &str) {
+/// Renders a modern, realistic pulsating loading skeleton while switching active project.
+fn render_project_workspace_skeleton(ui: &mut egui::Ui, proj_name: &str) {
     ui.ctx().request_repaint();
-    let avail_w = ui.available_width();
-    let avail_h = ui.available_height().max(320.0);
     let time = ui.input(|i| i.time);
+    let full_w = ui.available_width();
 
-    ui.allocate_ui_with_layout(
-        Vec2::new(avail_w, avail_h),
-        Layout::top_down(Align::Center),
-        |ui| {
-            ui.add_space(avail_h * 0.22);
-            let card_w = (avail_w * 0.6).clamp(380.0, 520.0);
-            let card_h = 175.0;
-            let (card_rect, _) = ui.allocate_exact_size(Vec2::new(card_w, card_h), Sense::hover());
+    // Subtle pulsating shimmer between light slate tones
+    let pulse = ((time * 4.0).sin() * 0.5 + 0.5) as f32;
+    let r = (226.0 + (242.0 - 226.0) * pulse) as u8;
+    let g = (232.0 + (246.0 - 232.0) * pulse) as u8;
+    let b = (240.0 + (250.0 - 240.0) * pulse) as u8;
+    let skel_fill = Color32::from_rgb(r, g, b);
+    let skel_border = Color32::from_rgb(
+        (215.0 + 12.0 * pulse) as u8,
+        (223.0 + 10.0 * pulse) as u8,
+        (234.0 + 8.0 * pulse) as u8,
+    );
 
-            // Card background & subtle border
-            ui.painter().rect_filled(card_rect, CornerRadius::same(12), CARD_BG);
+    // 1. Top Project Header Bar Skeleton
+    horizontal_row(ui, 36.0, |ui| {
+        let (title_rect, _) = ui.allocate_exact_size(Vec2::new(190.0, 28.0), Sense::hover());
+        ui.painter().rect_filled(title_rect, CornerRadius::same(6), skel_fill);
+        ui.painter().text(
+            Pos2::new(title_rect.left() + 10.0, title_rect.center().y),
+            Align2::LEFT_CENTER,
+            proj_name,
+            FontId::proportional(FONT_MD),
+            Color32::from_rgb(148, 163, 184),
+        );
+
+        ui.add_space(8.0);
+        let (badge_rect, _) = ui.allocate_exact_size(Vec2::new(56.0, 20.0), Sense::hover());
+        ui.painter().rect_filled(badge_rect, CornerRadius::same(4), skel_fill);
+
+        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+            // Action button skeletons
+            for _ in 0..3 {
+                let (btn_rect, _) = ui.allocate_exact_size(Vec2::new(32.0, 32.0), Sense::hover());
+                ui.painter().rect_filled(btn_rect, CornerRadius::same(6), skel_fill);
+                ui.add_space(4.0);
+            }
+            // Branch selector skeleton
+            let (branch_rect, _) = ui.allocate_exact_size(Vec2::new(160.0, 32.0), Sense::hover());
+            ui.painter().rect_filled(branch_rect, CornerRadius::same(6), skel_fill);
+        });
+    });
+
+    ui.add_space(4.0);
+
+    // Subtitle / directory path skeleton line
+    let (sub_rect, _) = ui.allocate_exact_size(Vec2::new(320.0, 14.0), Sense::hover());
+    ui.painter().rect_filled(sub_rect, CornerRadius::same(4), skel_fill);
+
+    ui.add_space(16.0);
+
+    // 2. Environment Cards Row Skeleton
+    let card_w = ((full_w - 24.0) / 3.0).clamp(160.0, 240.0);
+    horizontal_row(ui, ENV_CARD_HEIGHT, |ui| {
+        for i in 0..3 {
+            let (card_rect, _) = ui.allocate_exact_size(Vec2::new(card_w, ENV_CARD_HEIGHT), Sense::hover());
+            ui.painter().rect_filled(card_rect, CornerRadius::same(8), CARD_BG);
             ui.painter().rect_stroke(
                 card_rect,
-                CornerRadius::same(12),
+                CornerRadius::same(8),
                 Stroke::new(1.0_f32, CARD_BORDER),
                 StrokeKind::Inside,
             );
 
-            // Large animated circular loading spinner
-            let spinner_center = Pos2::new(card_rect.center().x, card_rect.top() + 46.0);
-            draw_circle_loading_spinner(ui.painter(), spinner_center, 18.0, PRIMARY_BLUE, time);
-
-            // Project name & status text
-            ui.painter().text(
-                Pos2::new(card_rect.center().x, card_rect.top() + 92.0),
-                Align2::CENTER_CENTER,
-                format!("Switching to {proj_name}..."),
-                FontId::proportional(FONT_LG),
-                TEXT_PRIMARY,
+            // Card title skeleton badge
+            let badge_w = if i == 0 { 80.0 } else if i == 1 { 64.0 } else { 92.0 };
+            let env_badge_rect = Rect::from_min_size(
+                Pos2::new(card_rect.left() + 12.0, card_rect.top() + 12.0),
+                Vec2::new(badge_w, 20.0),
             );
+            ui.painter().rect_filled(env_badge_rect, CornerRadius::same(4), skel_fill);
 
-            ui.painter().text(
-                Pos2::new(card_rect.center().x, card_rect.top() + 124.0),
-                Align2::CENTER_CENTER,
-                "Loading Git repository status, branches & deployment pipelines...",
-                FontId::proportional(FONT_SM),
-                TEXT_SECONDARY,
+            // Version line skeleton
+            let ver_rect = Rect::from_min_size(
+                Pos2::new(card_rect.left() + 12.0, card_rect.top() + 42.0),
+                Vec2::new(card_w * 0.65, 16.0),
             );
-        },
-    );
+            ui.painter().rect_filled(ver_rect, CornerRadius::same(4), skel_fill);
+
+            // Host / server line skeleton
+            let host_rect = Rect::from_min_size(
+                Pos2::new(card_rect.left() + 12.0, card_rect.top() + 68.0),
+                Vec2::new(card_w * 0.45, 12.0),
+            );
+            ui.painter().rect_filled(host_rect, CornerRadius::same(3), skel_fill);
+
+            ui.add_space(10.0);
+        }
+    });
+
+    ui.add_space(16.0);
+
+    // 3. Navigation Tabs Bar Skeleton
+    horizontal_row(ui, 34.0, |ui| {
+        for w in [130.0, 140.0, 120.0] {
+            let (tab_rect, _) = ui.allocate_exact_size(Vec2::new(w, 32.0), Sense::hover());
+            ui.painter().rect_filled(tab_rect, CornerRadius::same(6), skel_fill);
+            ui.add_space(8.0);
+        }
+    });
+
+    ui.add_space(12.0);
+
+    // 4. Large Main Workspace Content Skeleton Card (Pipeline steps preview)
+    egui::Frame::new()
+        .fill(CARD_BG)
+        .stroke(Stroke::new(1.0_f32, CARD_BORDER))
+        .corner_radius(10.0)
+        .inner_margin(Margin::same(18))
+        .show(ui, |ui| {
+            // Header inside card
+            horizontal_row(ui, 28.0, |ui| {
+                let (ch_rect, _) = ui.allocate_exact_size(Vec2::new(200.0, 20.0), Sense::hover());
+                ui.painter().rect_filled(ch_rect, CornerRadius::same(4), skel_fill);
+                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                    let (act_rect, _) = ui.allocate_exact_size(Vec2::new(110.0, 28.0), Sense::hover());
+                    ui.painter().rect_filled(act_rect, CornerRadius::same(6), skel_fill);
+                });
+            });
+
+            ui.add_space(12.0);
+
+            // 3 Pipeline Step Skeletons
+            for (step_title_w, step_cmd_w) in [(180.0, 0.75), (240.0, 0.9), (140.0, 0.6)] {
+                let step_card_h = 76.0;
+                let (step_rect, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), step_card_h), Sense::hover());
+                ui.painter().rect_filled(step_rect, CornerRadius::same(8), SUBTLE_BG);
+                ui.painter().rect_stroke(
+                    step_rect,
+                    CornerRadius::same(8),
+                    Stroke::new(1.0_f32, skel_border),
+                    StrokeKind::Inside,
+                );
+
+                // Step number circle skeleton
+                let num_pos = Pos2::new(step_rect.left() + 22.0, step_rect.top() + 22.0);
+                ui.painter().circle_filled(num_pos, 10.0, skel_fill);
+
+                // Step title skeleton
+                let st_rect = Rect::from_min_size(
+                    Pos2::new(step_rect.left() + 42.0, step_rect.top() + 14.0),
+                    Vec2::new(step_title_w, 16.0),
+                );
+                ui.painter().rect_filled(st_rect, CornerRadius::same(4), skel_fill);
+
+                // Step command skeleton bar
+                let cmd_w = (step_rect.width() - 56.0) * step_cmd_w;
+                let sc_rect = Rect::from_min_size(
+                    Pos2::new(step_rect.left() + 42.0, step_rect.top() + 42.0),
+                    Vec2::new(cmd_w, 20.0),
+                );
+                ui.painter().rect_filled(sc_rect, CornerRadius::same(4), skel_fill);
+
+                ui.add_space(10.0);
+            }
+        });
+}
+
+/// Backward-compatible wrapper for render_project_loading_indicator
+#[allow(dead_code)]
+fn render_project_loading_indicator(ui: &mut egui::Ui, proj_name: &str) {
+    render_project_workspace_skeleton(ui, proj_name);
 }
 
 fn render_light_status_badge(ui: &mut egui::Ui, status: DeploymentStatus) {
@@ -9965,5 +9920,134 @@ mod tests {
             app.storage.projects.iter().find(|p| p.id == "p-frontend").unwrap().group,
             None
         );
+    }
+
+    #[test]
+    fn test_sidebar_design_tokens_skeleton_loading_and_modals() {
+        let ctx = egui::Context::default();
+        ShiplyApp::configure_light_workspace_style(&ctx);
+
+        // 1. Verify typography tokens
+        assert_eq!(FS_TITLE, 18.0);
+        assert_eq!(FS_BRAND, 16.0);
+        assert_eq!(FS_BASE, 14.0);
+        assert_eq!(FS_SMALL, 13.0);
+        assert_eq!(FS_MICRO, 11.0);
+
+        // 2. Verify spacing and radius scales
+        assert_eq!(SP_4, 4.0);
+        assert_eq!(SP_8, 8.0);
+        assert_eq!(SP_12, 12.0);
+        assert_eq!(SP_16, 16.0);
+        assert_eq!(SP_20, 20.0);
+        assert_eq!(SP_24, 24.0);
+        assert_eq!(R_SM, 6.0);
+        assert_eq!(R_MD, 8.0);
+        assert_eq!(R_LG, 12.0);
+        assert_eq!(R_XL, 16.0);
+
+        // 3. Verify color tokens
+        assert_eq!(SB_BG, Color32::from_rgb(11, 18, 32));
+        assert_eq!(SB_SURFACE, Color32::from_rgb(17, 26, 46));
+        assert_eq!(SB_SURFACE_HOVER, Color32::from_rgb(22, 33, 58));
+        assert_eq!(MD_BG, Color32::WHITE);
+        assert_eq!(MD_BORDER, Color32::from_rgb(226, 232, 240));
+
+        let mut storage = crate::storage::AppStorage::default();
+        storage.projects = vec![
+            Project {
+                id: "p-test-long".to_string(),
+                name: "A Super Long Project Name That Should Not Wrap Onto Second Line".to_string(),
+                description: "Test".to_string(),
+                local_path: ".".to_string(),
+                environments: vec![
+                    EnvironmentConfig {
+                        key: "dev".to_string(),
+                        name: "Development".to_string(),
+                        app_name: "test-dev".to_string(),
+                        servers: vec!["127.0.0.1".to_string()],
+                        remote_user: "dev".to_string(),
+                        vault_target: "v1".to_string(),
+                        remote_dir: "/app".to_string(),
+                        env_source: None,
+                        http_proxy: None,
+                        steps: vec![],
+                    },
+                    EnvironmentConfig {
+                        key: "prod".to_string(),
+                        name: "Production".to_string(),
+                        app_name: "test-prod".to_string(),
+                        servers: vec!["127.0.0.2".to_string()],
+                        remote_user: "prod".to_string(),
+                        vault_target: "v1".to_string(),
+                        remote_dir: "/app".to_string(),
+                        env_source: None,
+                        http_proxy: None,
+                        steps: vec![],
+                    },
+                ],
+                group: None,
+                sort_order: Some(0),
+            },
+        ];
+
+        let mut app = ShiplyApp::new(storage);
+
+        // Test rendering with project switch loading (shimmer skeleton pills on card)
+        app.project_switch_loading_id = Some("p-test-long".to_string());
+        let _ = ctx.run(Default::default(), |ctx| {
+            egui::CentralPanel::default().show(ctx, |ui| {
+                app.render_sidebar(ui.ctx(), 1.0);
+            });
+        });
+
+        // Test rendering empty state with refresh shimmer skeletons
+        let mut empty_app = ShiplyApp::new(crate::storage::AppStorage::default());
+        empty_app.sidebar_refreshing_until = Some(Instant::now() + Duration::from_secs(5));
+        let _ = ctx.run(Default::default(), |ctx| {
+            egui::CentralPanel::default().show(ctx, |ui| {
+                empty_app.render_sidebar(ui.ctx(), 1.0);
+            });
+        });
+
+        // Test rendering modals with design tokens
+        app.show_new_project_modal = true;
+        let _ = ctx.run(Default::default(), |ctx| {
+            app.render_new_project_modal(ctx);
+        });
+        app.show_new_project_modal = false;
+
+        app.open_edit_project_modal(0);
+        let _ = ctx.run(Default::default(), |ctx| {
+            app.render_edit_project_modal(ctx);
+        });
+        app.show_edit_project_modal = false;
+
+        app.show_new_env_modal = true;
+        let _ = ctx.run(Default::default(), |ctx| {
+            app.render_new_environment_modal(ctx);
+        });
+        app.show_new_env_modal = false;
+
+        app.pending_delete_confirm = Some(ConfirmDeleteAction::Project {
+            project_id: "p-test-long".to_string(),
+            project_name: "Test".to_string(),
+        });
+        let _ = ctx.run(Default::default(), |ctx| {
+            app.render_delete_confirmation_modal(ctx);
+        });
+        app.pending_delete_confirm = None;
+
+        app.show_bulk_deploy_modal = true;
+        let _ = ctx.run(Default::default(), |ctx| {
+            app.render_bulk_deploy_modal(ctx);
+        });
+        app.show_bulk_deploy_modal = false;
+
+        app.show_update_modal = true;
+        let _ = ctx.run(Default::default(), |ctx| {
+            app.render_github_update_modal(ctx);
+        });
+        app.show_update_modal = false;
     }
 }
