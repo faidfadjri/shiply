@@ -1,5 +1,26 @@
 # Changelog
 
+## [0.10.13] - 2026-10-29
+
+### Added
+- Donation Support Button: added a dedicated heart icon button (`OutlineIcon::Heart`) in the topbar and a "Donate" link in the sidebar footer status row, seamlessly redirecting developers to [Trakteer (faidfadjri)](https://trakteer.id/faidfadjri).
+- Smooth Modal Animations: implemented silky 150ms opacity fade and 18px vertical translateY slide-in animations for both "Add New Project" and "Edit Project Settings" dialogs.
+- Refresh Button Rotation Animation: added dynamic 360-degree spinning rotation animation on the refresh icon across header and context menu triggers.
+- Modern Drag Animation for Projects & Pipelines: replaced plain glowing borders with genuine drag animations featuring soft elevation drop shadows for dragged cards, animated 3px glowing insertion indicator drop lines with circular handles indicating precise top/bottom drop slots, and subtle target card highlights.
+
+### Changed
+- 3-Column Environment Cards Grid: updated workspace environment cards layout to use 3 columns on available widths >= 650px (and 2 columns >= 440px), guaranteeing Development, Production, and Add/Import Environment cards sit side-by-side in a single row filling the available horizontal space.
+- Add Project Buttons State: "Create Project" and "Auto-Fill" buttons are now always visible in the Add New Project modal, styled in a clean subdued grey fill (`#DEE2EB`) with muted text until required fields are filled, smoothly transitioning to solid brand blue upon population.
+- Topbar Black Theme: transformed the top window header into a sleek, unified deep navy-black (`#0B1220`) matching the sidebar palette, featuring crisp white title typography (`#F1F5F9`), subtle dark button hover states (`#1A2438`), and light icon controls.
+- Removed Dark Mode Button: eliminated the theme toggle button (`☀️ / 🌙`) from the topbar, streamlining the title bar to essential window management, notifications, and navigation.
+- High-Contrast Grey-Blue Slate Canvas: upgraded the main workspace background from pure white to a modern cool grey-blue slate gradient (`#EEF2F8` to `#E2E9F3`), delivering striking visual contrast that makes pure white cards (`#FFFFFF`) pop with clean definition.
+
+### Fixed
+- Sync Button Missing Glyph Tofu Box: removed unsupported Unicode geometric triangle characters (`▴`/`▾`) from the Sync button label, eliminating the weird rectangle icon `□` on Windows desktop.
+- Sort Dropdown Active Option Contrast: resolved white text on pale/white background in the sidebar sort dropdown menu; selected items now render high-contrast bright white text and checkmark over solid brand blue (`#146EF5`).
+- Reset Form Fields on Add Project Re-Open: opening or re-opening the "Add Project" modal now automatically clears all input fields (`new_project_name`, `new_project_path`, `new_project_desc`, etc.), ensuring a clean form every time.
+- Text Input Cursor Glitch on First Click: eliminated the 1-frame cursor jump where the cursor briefly flickered at position 0 on mouse down before moving to the clicked position. Refactored `styled_text_edit`, `styled_password_edit`, and `modal_text_input` to vertically center a natural singleline 22px text row (`Margin::ZERO`, `.cursor_at_end(true)`) within the 36px container. Egui's internal cursor hit-testing now evaluates `row.char_at(pos.x)` directly on pointer press/mouse-down, ensuring the cursor immediately appears at the exact clicked character on frame 1 without any initial snap to index 0.
+
 ## [0.10.12] - 2026-10-29
 
 ### Fixed
