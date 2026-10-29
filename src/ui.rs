@@ -63,6 +63,7 @@ pub const BTN_HEIGHT: f32 = 32.0;
 pub const BTN_PRIMARY_HEIGHT: f32 = 36.0;
 pub const INPUT_HEIGHT: f32 = 36.0;
 pub const TABLE_ROW_HEIGHT: f32 = 48.0;
+pub const DONATION_URL: &str = "https://trakteer.id/faidfadjri";
 pub const TAB_HEIGHT: f32 = 40.0;
 pub const ICON_HIT_AREA: f32 = 32.0;
 pub const SIDEBAR_EXPANDED_WIDTH: f32 = 248.0;
@@ -108,15 +109,15 @@ impl Theme {
     pub fn light() -> Self {
         Self {
             is_dark: false,
-            bg: Color32::from_rgb(255, 255, 255), // #FFFFFF
-            bg_gradient_top: Color32::from_rgb(255, 255, 255),
-            bg_gradient_bottom: Color32::from_rgb(245, 247, 255), // #F5F7FF
-            surface: Color32::from_rgb(255, 255, 255),
-            surface_2: Color32::from_rgb(245, 245, 247), // #F5F5F7
-            surface_tint_top: Color32::from_rgb(247, 248, 255), // #F7F8FF
-            surface_tint_bottom: Color32::from_rgb(240, 243, 253), // #F0F3FD
-            border: Color32::from_rgb(230, 230, 234), // #E6E6EA hairline
-            border_strong: Color32::from_rgb(212, 212, 218), // #D4D4DA
+            bg: Color32::from_rgb(235, 239, 246), // Cool grey-blue slate canvas
+            bg_gradient_top: Color32::from_rgb(238, 242, 248), // #EEF2F8
+            bg_gradient_bottom: Color32::from_rgb(226, 233, 243), // #E2E9F3
+            surface: Color32::from_rgb(255, 255, 255), // Pure white cards (#FFFFFF)
+            surface_2: Color32::from_rgb(243, 246, 251), // #F3F6FB subtle hover fill
+            surface_tint_top: Color32::from_rgb(255, 255, 255), // Crisp white top for cards
+            surface_tint_bottom: Color32::from_rgb(248, 250, 253), // Soft tint for cards
+            border: Color32::from_rgb(218, 224, 233), // Hairline border
+            border_strong: Color32::from_rgb(203, 213, 225), // Strong border for inputs
             text: Color32::from_rgb(8, 8, 8), // #080808
             text_muted: Color32::from_rgb(90, 90, 90), // #5A5A5A
             text_subtle: Color32::from_rgb(138, 138, 143), // #8A8A8F
@@ -467,6 +468,7 @@ pub struct ShiplyApp {
     step_scp_sources_buffer: Option<(String, String)>,
     server_env_source_buffer: Option<(String, String)>,
     server_http_proxy_buffer: Option<(String, String)>,
+    pub refresh_anim_start: Option<Instant>,
 }
 
 impl ShiplyApp {
@@ -594,6 +596,7 @@ impl ShiplyApp {
             step_scp_sources_buffer: None,
             server_env_source_buffer: None,
             server_http_proxy_buffer: None,
+            refresh_anim_start: None,
             git_inspect_tx,
             git_inspect_rx,
         };
@@ -778,6 +781,7 @@ impl ShiplyApp {
     }
 
     fn refresh_selected_project_metadata(&mut self, update_version_input: bool) {
+        self.refresh_anim_start = Some(Instant::now());
         let SidebarSelection::Project(proj_id) = &self.selection else {
             return;
         };
@@ -1507,6 +1511,20 @@ impl eframe::App for ShiplyApp {
             ctx.request_repaint();
         }
 
+        let refresh_angle = if let Some(start) = self.refresh_anim_start {
+            let elapsed = start.elapsed().as_secs_f32();
+            if elapsed < 0.65 {
+                ctx.request_repaint();
+                (elapsed / 0.65) * std::f32::consts::TAU
+            } else {
+                self.refresh_anim_start = None;
+                0.0
+            }
+        } else {
+            0.0
+        };
+        ctx.data_mut(|d| d.insert_temp(egui::Id::new("refresh_anim_angle"), refresh_angle));
+
         if let Some(m) = ctx.input(|i| i.viewport().maximized) {
             self.window_maximized = m;
         }
@@ -1720,9 +1738,10 @@ impl ShiplyApp {
     /// 3px brand primary accent strip, theme toggle, draggable window region, notification bell, and window controls.
     fn render_termius_topbar(&mut self, ctx: &egui::Context) {
         let theme = self.theme();
-        let topbar_bg = theme.surface;
-        let pill_bg = theme.surface_2;
-        let icon_muted = theme.text_muted;
+        let topbar_bg = Color32::from_rgb(11, 18, 32); // Deep navy-black topbar
+        let pill_bg = Color32::from_rgb(26, 36, 56);   // Dark hover fill for buttons
+        let topbar_text = Color32::from_rgb(241, 245, 249); // Clean white text
+        let icon_muted = Color32::from_rgb(180, 190, 205);  // Light muted icon
 
         if let Some(maximized) = ctx.input(|i| i.viewport().maximized) {
             self.window_maximized = maximized;
@@ -1756,7 +1775,7 @@ impl ShiplyApp {
                         .rect_filled(menu_rect, CornerRadius::same(6), pill_bg);
                 }
                 let menu_fg = if menu_resp.hovered() {
-                    theme.text
+                    Color32::WHITE
                 } else {
                     icon_muted
                 };
@@ -1794,12 +1813,13 @@ impl ShiplyApp {
                     Align2::LEFT_CENTER,
                     format!("Shiply v{APP_VERSION}"),
                     FontId::proportional(FONT_MD),
-                    theme.text,
+                    topbar_text,
                 );
                 let left_controls_end = x + 100.0;
 
                 // =========================================================================
-                // Right-Side Window Actions (Theme Toggle, Bell, Minimize ─, Maximize/Restore ❐, Close ×)
+                // Right-Side Window Actions (Bell, Minimize ─, Maximize/Restore ❐, Close ×)
+                // (Dark mode button removed as requested)
                 // =========================================================================
                 let btn_w = 34.0;
                 let btn_gap = 4.0;
@@ -1821,14 +1841,14 @@ impl ShiplyApp {
                     Pos2::new(min_rect.left() - 8.0 - btn_w * 0.5, cy),
                     Vec2::new(btn_w, pill_h),
                 );
-                let theme_rect = Rect::from_center_size(
+                let donate_rect = Rect::from_center_size(
                     Pos2::new(bell_rect.left() - btn_gap - btn_w * 0.5, cy),
                     Vec2::new(btn_w, pill_h),
                 );
 
                 // Interactive Drag Region in the middle empty space of the topbar
                 let drag_left = left_controls_end;
-                let drag_right = (theme_rect.left() - 6.0).max(drag_left + 10.0);
+                let drag_right = (donate_rect.left() - 6.0).max(drag_left + 10.0);
                 let drag_rect = Rect::from_min_max(
                     Pos2::new(drag_left, bar_rect.top()),
                     Pos2::new(drag_right, bar_rect.bottom()),
@@ -1845,36 +1865,6 @@ impl ShiplyApp {
                     ctx.send_viewport_cmd(egui::ViewportCommand::StartDrag);
                 }
 
-                // Theme Toggle Button (☀️ / 🌙)
-                let theme_resp = ui.interact(
-                    theme_rect,
-                    egui::Id::new("topbar_theme_toggle_btn"),
-                    Sense::click(),
-                )
-                .on_hover_cursor(egui::CursorIcon::PointingHand);
-                if theme_resp.hovered() {
-                    ui.painter()
-                        .rect_filled(theme_rect, CornerRadius::same(6), pill_bg);
-                }
-                let theme_icon_str = if self.dark_mode { "☀️" } else { "🌙" };
-                ui.painter().text(
-                    theme_rect.center(),
-                    Align2::CENTER_CENTER,
-                    theme_icon_str,
-                    FontId::proportional(13.0),
-                    if theme_resp.hovered() { theme.text } else { icon_muted },
-                );
-                if theme_resp
-                    .on_hover_text(if self.dark_mode {
-                        "Switch to Light Theme"
-                    } else {
-                        "Switch to Dark Theme"
-                    })
-                    .clicked()
-                {
-                    self.dark_mode = !self.dark_mode;
-                }
-
                 // A. Notification Bell Button (🔔) — acts as Update Information
                 let bell_resp = ui.interact(
                     bell_rect,
@@ -1889,7 +1879,7 @@ impl ShiplyApp {
                 let bell_fg = if self.available_update.is_some() {
                     theme.warning
                 } else if bell_resp.hovered() {
-                    theme.text
+                    Color32::WHITE
                 } else {
                     icon_muted
                 };
@@ -1915,6 +1905,28 @@ impl ShiplyApp {
                     }
                 }
 
+                // A2. Donation / Support Button (❤️) — redirects to Trakteer
+                let donate_resp = ui.interact(
+                    donate_rect,
+                    egui::Id::new("topbar_donate_btn"),
+                    Sense::click(),
+                )
+                .on_hover_cursor(egui::CursorIcon::PointingHand)
+                .on_hover_text("Support development on Trakteer (https://trakteer.id/faidfadjri)");
+                if donate_resp.hovered() {
+                    ui.painter()
+                        .rect_filled(donate_rect, CornerRadius::same(6), pill_bg);
+                }
+                let donate_fg = if donate_resp.hovered() {
+                    Color32::from_rgb(255, 95, 125)
+                } else {
+                    icon_muted
+                };
+                draw_outline_icon(ui.painter(), donate_rect.center(), OutlineIcon::Heart, donate_fg);
+                if donate_resp.clicked() {
+                    open_url_in_browser(DONATION_URL);
+                }
+
                 // B. Minimize Button (─)
                 let min_resp = ui.interact(
                     min_rect,
@@ -1927,7 +1939,7 @@ impl ShiplyApp {
                         .rect_filled(min_rect, CornerRadius::same(6), pill_bg);
                 }
                 let min_fg = if min_resp.hovered() {
-                    theme.text
+                    Color32::WHITE
                 } else {
                     icon_muted
                 };
@@ -1952,7 +1964,7 @@ impl ShiplyApp {
                         .rect_filled(max_rect, CornerRadius::same(6), pill_bg);
                 }
                 let max_fg = if max_resp.hovered() {
-                    theme.text
+                    Color32::WHITE
                 } else {
                     icon_muted
                 };
@@ -2431,8 +2443,7 @@ impl ShiplyApp {
                     ui.painter().rect_filled(add_rect, CornerRadius::same(R_MD as u8), add_bg);
                     draw_icon_plus(ui.painter(), add_rect.center(), if add_resp.hovered() { SB_TEXT } else { SB_TEXT_MUTED });
                     if add_resp.clicked() {
-                        self.new_project_group.clear();
-                        self.show_new_project_modal = true;
+                        self.open_new_project_modal();
                     }
                     ui.add_space(36.0);
 
@@ -2815,6 +2826,38 @@ impl ShiplyApp {
                         Err(err) => self.status_banner = Some((err, false)),
                     }
                 }
+
+                // Donate link on sidebar status line
+                let don_x = link_rect.right() + 8.0;
+                let don_galley = footer_ui.painter().layout_no_wrap(
+                    "Donate".to_string(),
+                    FontId::proportional(FS_MICRO),
+                    SB_TEXT_FAINT,
+                );
+                let don_rect = Rect::from_min_size(
+                    Pos2::new(don_x, stat_rect.center().y - don_galley.size().y / 2.0),
+                    don_galley.size(),
+                );
+                let don_resp = footer_ui
+                    .interact(
+                        don_rect,
+                        egui::Id::new("sidebar_donate_link"),
+                        Sense::click(),
+                    )
+                    .on_hover_cursor(egui::CursorIcon::PointingHand)
+                    .on_hover_text("Support Shiply development on Trakteer (https://trakteer.id/faidfadjri)");
+                let don_color = if don_resp.hovered() {
+                    Color32::from_rgb(255, 105, 135)
+                } else {
+                    SB_TEXT_FAINT
+                };
+                footer_ui
+                    .painter()
+                    .galley(don_rect.min, don_galley, don_color);
+
+                if don_resp.clicked() {
+                    open_url_in_browser(DONATION_URL);
+                }
             }
 
             // 3. Middle Scrollable Content (Nav items + Projects header + Search + Projects list)
@@ -2961,8 +3004,7 @@ impl ShiplyApp {
                         SB_TEXT,
                     );
                     if add_btn_resp.clicked() {
-                        self.new_project_group.clear();
-                        self.show_new_project_modal = true;
+                        self.open_new_project_modal();
                     }
 
                     // Sort Control
@@ -3239,6 +3281,14 @@ impl ShiplyApp {
                                 } else {
                                     SB_SURFACE
                                 };
+                                if is_being_dragged {
+                                    let shadow_rect = p_rect.translate(Vec2::new(0.0, 3.0)).expand(1.0);
+                                    ui.painter().rect_filled(
+                                        shadow_rect,
+                                        CornerRadius::same(8),
+                                        Color32::from_rgba_premultiplied(0, 0, 0, 80),
+                                    );
+                                }
                                 ui.painter()
                                     .rect_filled(p_rect, CornerRadius::same(8), fill);
 
@@ -3274,16 +3324,39 @@ impl ShiplyApp {
                                     grip_color,
                                 );
 
-                                // Reordering drop preview
+                                // Reordering drop preview & animation
                                 if let Some(from_idx) = self.dragged_project_idx {
                                     if from_idx != proj_idx {
                                         if let Some(pos) = pointer_pos {
                                             if p_rect.contains(pos) {
-                                                ui.painter().rect_stroke(
+                                                let is_top_half = pos.y < p_rect.center().y;
+                                                let line_y = if is_top_half {
+                                                    p_rect.top() - 2.0
+                                                } else {
+                                                    p_rect.bottom() + 2.0
+                                                };
+                                                let insert_line = [
+                                                    Pos2::new(p_rect.left() + 6.0, line_y),
+                                                    Pos2::new(p_rect.right() - 6.0, line_y),
+                                                ];
+                                                // Drop insertion glow & line
+                                                ui.painter().line_segment(
+                                                    insert_line,
+                                                    Stroke::new(4.0_f32, SB_ACCENT.gamma_multiply(0.4)),
+                                                );
+                                                ui.painter().line_segment(
+                                                    insert_line,
+                                                    Stroke::new(2.5_f32, SB_ACCENT),
+                                                );
+                                                ui.painter().circle_filled(
+                                                    Pos2::new(p_rect.left() + 6.0, line_y),
+                                                    3.5,
+                                                    SB_ACCENT,
+                                                );
+                                                ui.painter().rect_filled(
                                                     p_rect,
                                                     CornerRadius::same(8),
-                                                    Stroke::new(2.0_f32, SB_ACCENT),
-                                                    StrokeKind::Inside,
+                                                    Color32::from_rgba_premultiplied(20, 110, 245, 25),
                                                 );
                                                 if is_pointer_released {
                                                     drag_reorder = Some((from_idx, proj_idx));
@@ -3571,29 +3644,29 @@ impl ShiplyApp {
                     ).on_hover_cursor(egui::CursorIcon::PointingHand);
 
                     let is_selected = self.project_sort_mode == *mode;
-                    let bg = if item_resp.hovered() {
-                        SB_SURFACE_HOVER
-                    } else if is_selected {
-                        ACCENT_SOFT
+                    let (bg, text_color, check_color) = if is_selected {
+                        (PRIMARY_BLUE, Color32::WHITE, Color32::WHITE)
+                    } else if item_resp.hovered() {
+                        (SB_SURFACE_HOVER, SB_TEXT, SB_TEXT_MUTED)
                     } else {
-                        Color32::TRANSPARENT
+                        (Color32::TRANSPARENT, SB_TEXT_MUTED, Color32::TRANSPARENT)
                     };
 
                     ui.painter().rect_filled(item_rect, CornerRadius::same(R_SM as u8), bg);
 
-                    // Text: --fs-small, color --sb-text
+                    // Text: --fs-small
                     ui.painter().text(
                         Pos2::new(item_rect.left() + 10.0, item_rect.center().y),
                         Align2::LEFT_CENTER,
                         *label,
                         FontId::proportional(FS_SMALL),
-                        SB_TEXT,
+                        text_color,
                     );
 
                     // Selected item: 14px check icon (SVG) on the right
                     if is_selected {
                         let check_pos = Pos2::new(item_rect.right() - 14.0, item_rect.center().y);
-                        draw_outline_icon(ui.painter(), check_pos, OutlineIcon::Check, SB_TEXT);
+                        draw_outline_icon(ui.painter(), check_pos, OutlineIcon::Check, check_color);
                     }
 
                     if item_resp.clicked() {
@@ -4029,11 +4102,11 @@ impl ShiplyApp {
                         .min_size(Vec2::new(235.0, 40.0));
 
                         if ui.add(import_btn).clicked() {
+                            self.open_new_project_modal();
                             if let Some(picked) = pick_ps1_file_dialog() {
                                 self.new_project_ps1_path = picked.clone();
                                 self.apply_ps1_auto_import_to_modal(&picked);
                             }
-                            self.show_new_project_modal = true;
                         }
 
                         ui.add_space(8.0);
@@ -4050,7 +4123,7 @@ impl ShiplyApp {
                         .min_size(Vec2::new(130.0, 40.0));
 
                         if ui.add(add_btn).clicked() {
-                            self.show_new_project_modal = true;
+                            self.open_new_project_modal();
                         }
 
                         ui.add_space(8.0);
@@ -4081,8 +4154,20 @@ impl ShiplyApp {
         self.render_os_credentials_guideline_card(ui);
     }
 
+    pub fn open_new_project_modal(&mut self) {
+        self.new_project_ps1_path.clear();
+        self.new_project_name.clear();
+        self.new_project_path.clear();
+        self.new_project_desc.clear();
+        self.new_project_group.clear();
+        self.new_project_imported_envs.clear();
+        self.new_project_import_notice = None;
+        self.show_new_project_modal = true;
+    }
+
     fn render_new_project_modal(&mut self, ctx: &egui::Context) {
-        if !self.show_new_project_modal {
+        let anim_t = ctx.animate_bool(egui::Id::new("anim_modal_new_project"), self.show_new_project_modal);
+        if anim_t <= 0.005 {
             return;
         }
 
@@ -4092,26 +4177,28 @@ impl ShiplyApp {
             return;
         }
 
-        // Dimmed backdrop with click-to-dismiss
+        // Dimmed backdrop with click-to-dismiss and smooth fade
+        let overlay_color = Color32::from_rgba_premultiplied(0, 0, 0, (180.0 * anim_t) as u8);
         egui::Area::new(egui::Id::new("modal_backdrop_new_project"))
             .order(egui::Order::Middle)
             .fixed_pos(Pos2::ZERO)
             .show(ctx, |ui| {
                 let screen_rect = ctx.screen_rect();
                 let resp = ui.allocate_rect(screen_rect, Sense::click());
-                ui.painter().rect_filled(screen_rect, CornerRadius::ZERO, MD_OVERLAY);
+                ui.painter().rect_filled(screen_rect, CornerRadius::ZERO, overlay_color);
                 if resp.clicked() {
                     self.show_new_project_modal = false;
                 }
             });
 
         let (modal_w, inner_w) = modal_width_and_inner(ctx);
+        let slide_y = (1.0 - anim_t) * -18.0;
         egui::Window::new("Add Project")
             .order(egui::Order::Foreground)
             .title_bar(false)
             .collapsible(false)
             .resizable(false)
-            .anchor(Align2::CENTER_CENTER, Vec2::ZERO)
+            .anchor(Align2::CENTER_CENTER, Vec2::new(0.0, slide_y))
             .fixed_size(Vec2::new(modal_w, 0.0))
             .frame(modal_dialog_frame_for(ctx))
             .show(ctx, |ui| {
@@ -4161,7 +4248,7 @@ impl ShiplyApp {
                             ui.add_space(SP_8);
                             let can_autofill = !self.new_project_ps1_path.trim().is_empty();
                             let parse_btn = modal_primary_button("Auto-Fill", can_autofill);
-                            if ui.add_enabled(can_autofill, parse_btn).clicked() && can_autofill {
+                            if ui.add(parse_btn).clicked() && can_autofill {
                                 let path_copy = self.new_project_ps1_path.clone();
                                 self.apply_ps1_auto_import_to_modal(&path_copy);
                             }
@@ -4329,7 +4416,7 @@ impl ShiplyApp {
                         let create_btn = modal_primary_button("Create Project", can_create);
 
                         let enter_submitted = can_create && ctx.input(|i| i.key_pressed(egui::Key::Enter));
-                        if (ui.add_enabled(can_create, create_btn).clicked() || enter_submitted) && can_create {
+                        if (ui.add(create_btn).clicked() || enter_submitted) && can_create {
                             let slug = crate::domain::normalize_env_key(&self.new_project_name);
                             let proj = Project {
                                 id: if slug.is_empty() {
@@ -4398,7 +4485,8 @@ impl ShiplyApp {
     }
 
     fn render_edit_project_modal(&mut self, ctx: &egui::Context) {
-        if !self.show_edit_project_modal {
+        let anim_t = ctx.animate_bool(egui::Id::new("anim_modal_edit_project"), self.show_edit_project_modal);
+        if anim_t <= 0.005 {
             return;
         }
 
@@ -4418,26 +4506,28 @@ impl ShiplyApp {
             return;
         };
 
-        // Dimmed backdrop with click-to-dismiss
+        // Dimmed backdrop with click-to-dismiss and smooth fade
+        let overlay_color = Color32::from_rgba_premultiplied(0, 0, 0, (180.0 * anim_t) as u8);
         egui::Area::new(egui::Id::new("modal_backdrop_edit_project"))
             .order(egui::Order::Middle)
             .fixed_pos(Pos2::ZERO)
             .show(ctx, |ui| {
                 let screen_rect = ctx.screen_rect();
                 let resp = ui.allocate_rect(screen_rect, Sense::click());
-                ui.painter().rect_filled(screen_rect, CornerRadius::ZERO, MD_OVERLAY);
+                ui.painter().rect_filled(screen_rect, CornerRadius::ZERO, overlay_color);
                 if resp.clicked() {
                     self.show_edit_project_modal = false;
                 }
             });
 
         let (modal_w, inner_w) = modal_width_and_inner(ctx);
+        let slide_y = (1.0 - anim_t) * -18.0;
         egui::Window::new("Edit Project")
             .order(egui::Order::Foreground)
             .title_bar(false)
             .collapsible(false)
             .resizable(false)
-            .anchor(Align2::CENTER_CENTER, Vec2::ZERO)
+            .anchor(Align2::CENTER_CENTER, Vec2::new(0.0, slide_y))
             .fixed_size(Vec2::new(modal_w, 0.0))
             .frame(modal_dialog_frame_for(ctx))
             .show(ctx, |ui| {
@@ -6964,7 +7054,7 @@ impl ShiplyApp {
 
         ui.add_space(14.0);
 
-        // 3. Environment Cards Grid — Responsive columns (3 >= 1200px, 2 900-1199px, 1 < 900px)
+        // 3. Environment Cards Grid — Responsive columns (3 columns fill workspace width >= 650px, 2 columns >= 440px, 1 column < 440px)
         let env_summaries: Vec<(String, String)> = self.storage.projects[proj_idx]
             .environments
             .iter()
@@ -6974,10 +7064,9 @@ impl ShiplyApp {
         let mut new_selected_env_key = None;
         let mut delete_env_key = None;
         let card_spacing = 14.0;
-        let screen_w = ui.ctx().screen_rect().width();
-        let cols = if screen_w >= 1200.0 {
+        let cols = if avail_w >= 650.0 {
             3
-        } else if screen_w >= 900.0 {
+        } else if avail_w >= 440.0 {
             2
         } else {
             1
@@ -6985,7 +7074,7 @@ impl ShiplyApp {
         let card_w = if cols == 1 {
             avail_w
         } else {
-            ((avail_w - card_spacing * (cols - 1) as f32) / cols as f32).max(220.0)
+            ((avail_w - card_spacing * (cols - 1) as f32) / cols as f32).floor()
         };
 
         ui.horizontal_wrapped(|ui| {
@@ -7659,11 +7748,7 @@ impl ShiplyApp {
         };
         let project_id = project_id_owned.as_str();
         let sync_candidates = self.sync_version_candidates(project_id);
-        let sync_btn_text = if self.sync_version_dropdown_open {
-            "Sync ▴"
-        } else {
-            "Sync ▾"
-        };
+        let sync_btn_text = "Sync";
         let sync_tooltip = if sync_candidates.is_empty() {
             "Sync version across environments (no other deployed versions found yet)".to_string()
         } else if let Some(latest) = sync_candidates.iter().find(|c| c.is_latest) {
@@ -8460,16 +8545,46 @@ impl ShiplyApp {
                 CornerRadius { nw: 0, ne: 3, se: 3, sw: 0 },
                 if step.enabled { step_accent_color } else { theme.text_subtle },
             );
+            if is_being_dragged {
+                let shadow_rect = card_rect.translate(Vec2::new(0.0, 4.0)).expand(1.0);
+                ui.painter().rect_filled(
+                    shadow_rect,
+                    CornerRadius::same(10),
+                    Color32::from_rgba_premultiplied(0, 0, 0, 40),
+                );
+            }
             if let Some(from_idx) = self.dragged_step_idx {
                 if from_idx != idx {
                     if let Some(pos) = pointer_pos {
                         if card_rect.contains(pos) {
-                            // Highlight card as the active drop target
-                            ui.painter().rect_stroke(
+                            let is_top_half = pos.y < card_rect.center().y;
+                            let line_y = if is_top_half {
+                                card_rect.top() - 3.0
+                            } else {
+                                card_rect.bottom() + 3.0
+                            };
+                            let insert_line = [
+                                Pos2::new(card_rect.left() + 6.0, line_y),
+                                Pos2::new(card_rect.right() - 6.0, line_y),
+                            ];
+                            // Animated drop insertion glow & line
+                            ui.painter().line_segment(
+                                insert_line,
+                                Stroke::new(5.0_f32, PRIMARY_BLUE.gamma_multiply(0.4)),
+                            );
+                            ui.painter().line_segment(
+                                insert_line,
+                                Stroke::new(2.5_f32, PRIMARY_BLUE),
+                            );
+                            ui.painter().circle_filled(
+                                Pos2::new(card_rect.left() + 6.0, line_y),
+                                4.0,
+                                PRIMARY_BLUE,
+                            );
+                            ui.painter().rect_filled(
                                 card_rect,
                                 CornerRadius::same(10),
-                                Stroke::new(2.5_f32, PRIMARY_BLUE),
-                                StrokeKind::Inside,
+                                PRIMARY_BLUE.gamma_multiply(0.08),
                             );
                             if is_pointer_released {
                                 drag_reorder = Some((from_idx, idx));
@@ -8818,23 +8933,13 @@ impl ShiplyApp {
                             if !is_two_col {
                                 ui.end_row();
                             }
-                            let edit = egui::TextEdit::singleline(&mut self.manual_ssh_password)
-                                .id_salt(("srv_manual_pwd", &env_key))
-                                .font(FontId::proportional(FONT_MD))
-                                .background_color(INPUT_BG)
-                                .password(true)
-                                .desired_width(field_width)
-                                .min_size(Vec2::new(field_width, INPUT_HEIGHT))
-                                .margin(Margin::symmetric(10, 8))
-                                .hint_text(
-                                    RichText::new(
-                                        "Optional — leave blank to use OS Credential Vault or SSH Key",
-                                    )
-                                    .size(FONT_MD)
-                                    .color(TEXT_PLACEHOLDER),
-                                );
-                            let mut output = edit.show(ui);
-                            handle_text_edit_cursor_and_selection(ui.ctx(), &mut output, &self.manual_ssh_password);
+                            styled_password_edit(
+                                ui,
+                                ("srv_manual_pwd", &env_key),
+                                &mut self.manual_ssh_password,
+                                field_width,
+                                Some("Optional — leave blank to use OS Credential Vault or SSH Key"),
+                            );
                             ui.end_row();
                             if !is_two_col {
                                 ui.add_space(6.0);
@@ -10312,20 +10417,80 @@ fn styled_text_edit(
     width: f32,
     hint: Option<&str>,
 ) -> bool {
+    styled_text_edit_ext(ui, id_salt, value, width, hint, false)
+}
+
+fn styled_password_edit(
+    ui: &mut egui::Ui,
+    id_salt: impl std::hash::Hash,
+    value: &mut String,
+    width: f32,
+    hint: Option<&str>,
+) -> bool {
+    styled_text_edit_ext(ui, id_salt, value, width, hint, true)
+}
+
+fn styled_text_edit_ext(
+    ui: &mut egui::Ui,
+    id_salt: impl std::hash::Hash,
+    value: &mut String,
+    width: f32,
+    hint: Option<&str>,
+    is_password: bool,
+) -> bool {
     let placeholder_str = hint.unwrap_or("Enter value...");
+    let height = INPUT_HEIGHT; // 36.0
+    let (outer_rect, outer_resp) = ui.allocate_exact_size(Vec2::new(width, height), Sense::click());
+
+    // Single clean white background fill
+    ui.painter().rect_filled(outer_rect, CornerRadius::same(6), INPUT_BG);
+
+    // Inner TextEdit child matching singleline text row height (22px) centered vertically
+    let text_h = 22.0_f32;
+    let text_y = outer_rect.center().y - text_h * 0.5;
+    let text_rect = Rect::from_min_size(
+        Pos2::new(outer_rect.left() + 10.0, text_y),
+        Vec2::new((width - 20.0).max(10.0), text_h),
+    );
+
+    let mut child_ui = ui.new_child(egui::UiBuilder::new().max_rect(text_rect));
     let edit = egui::TextEdit::singleline(value)
         .id_salt(id_salt)
         .font(FontId::proportional(FONT_MD))
-        .background_color(INPUT_BG)
-        .desired_width(width)
-        .min_size(Vec2::new(width, INPUT_HEIGHT))
-        .margin(Margin::symmetric(10, 8))
+        .text_color(Color32::from_rgb(8, 8, 8))
+        .password(is_password)
+        .frame(false)
+        .margin(Margin::ZERO)
+        .cursor_at_end(true)
+        .desired_width(text_rect.width())
+        .min_size(Vec2::new(text_rect.width(), text_h))
         .hint_text(
             RichText::new(placeholder_str)
                 .size(FONT_MD)
                 .color(TEXT_PLACEHOLDER),
         );
-    let mut output = edit.show(ui);
+    let mut output = edit.show(&mut child_ui);
+
+    if outer_resp.clicked() && !output.response.has_focus() {
+        ui.memory_mut(|mem| mem.request_focus(output.response.id));
+    }
+
+    let is_focused = output.response.has_focus() || ui.memory(|mem| mem.has_focus(output.response.id));
+    let is_hovered = outer_resp.hovered() || output.response.hovered();
+
+    let stroke = if is_focused {
+        Stroke::new(1.5_f32, PRIMARY_BLUE)
+    } else if is_hovered {
+        Stroke::new(1.0_f32, Color32::from_rgb(160, 160, 165))
+    } else {
+        Stroke::new(1.0_f32, INPUT_BORDER)
+    };
+    ui.painter().rect_stroke(
+        outer_rect,
+        CornerRadius::same(6),
+        stroke,
+        StrokeKind::Inside,
+    );
 
     handle_text_edit_cursor_and_selection(ui.ctx(), &mut output, value);
 
@@ -10347,16 +10512,17 @@ fn handle_text_edit_cursor_and_selection(
         }
     }
 
-    // Precise cursor placement on single click without dragging:
-    // - Click within text: samples at vertical center of text line (never glitches or jumps to 0)
-    // - Click in empty space to the right: places cursor at the end of the text
-    // - Click to the left: places cursor at index 0
-    if output.response.clicked()
+    // Precise cursor placement on press/click without dragging:
+    let pointer_pressed = output.response.hovered() && ctx.input(|i| i.pointer.primary_pressed());
+    let is_click = output.response.clicked();
+    let gained_focus = output.response.gained_focus();
+
+    if (is_click || pointer_pressed || gained_focus)
         && !output.response.double_clicked()
         && !output.response.triple_clicked()
         && !ctx.input(|i| i.pointer.is_decidedly_dragging())
     {
-        if let Some(pos) = output.response.interact_pointer_pos() {
+        if let Some(pos) = output.response.interact_pointer_pos().or_else(|| ctx.pointer_interact_pos()) {
             let rel_x = pos.x - output.galley_pos.x;
             let char_count = value.chars().count();
             let ccursor = if rel_x >= output.galley.size().x {
@@ -10771,19 +10937,57 @@ fn modal_text_input(
     placeholder: Option<&str>,
 ) -> egui::Response {
     let hint_str = placeholder.unwrap_or("Enter value...");
+    let height = INPUT_HEIGHT; // 36.0
+    let (outer_rect, outer_resp) = ui.allocate_exact_size(Vec2::new(width, height), Sense::click());
+
+    // Single clean modal input background fill
+    ui.painter().rect_filled(outer_rect, CornerRadius::same(R_MD as u8), MD_INPUT_BG);
+
+    // Inner TextEdit child matching singleline text row height (22px) centered vertically
+    let text_h = 22.0_f32;
+    let text_y = outer_rect.center().y - text_h * 0.5;
+    let text_rect = Rect::from_min_size(
+        Pos2::new(outer_rect.left() + 12.0, text_y),
+        Vec2::new((width - 24.0).max(10.0), text_h),
+    );
+
+    let mut child_ui = ui.new_child(egui::UiBuilder::new().max_rect(text_rect));
     let edit = egui::TextEdit::singleline(value)
         .id_salt(id_salt)
         .font(FontId::proportional(FS_BASE))
-        .background_color(MD_INPUT_BG)
-        .desired_width(width)
-        .min_size(Vec2::new(width, INPUT_HEIGHT))
-        .margin(Margin::symmetric(12, 8))
+        .text_color(MD_TEXT)
+        .frame(false)
+        .margin(Margin::ZERO)
+        .cursor_at_end(true)
+        .desired_width(text_rect.width())
+        .min_size(Vec2::new(text_rect.width(), text_h))
         .hint_text(
             RichText::new(hint_str)
                 .size(FS_BASE)
                 .color(MD_TEXT_MUTED.gamma_multiply(0.7)),
         );
-    let mut output = edit.show(ui);
+    let mut output = edit.show(&mut child_ui);
+
+    if outer_resp.clicked() && !output.response.has_focus() {
+        ui.memory_mut(|mem| mem.request_focus(output.response.id));
+    }
+
+    let is_focused = output.response.has_focus() || ui.memory(|mem| mem.has_focus(output.response.id));
+    let is_hovered = outer_resp.hovered() || output.response.hovered();
+
+    let stroke = if is_focused {
+        Stroke::new(1.5_f32, PRIMARY_BLUE)
+    } else if is_hovered {
+        Stroke::new(1.0_f32, ACCENT)
+    } else {
+        Stroke::new(1.0_f32, MD_BORDER)
+    };
+    ui.painter().rect_stroke(
+        outer_rect,
+        CornerRadius::same(R_MD as u8),
+        stroke,
+        StrokeKind::Inside,
+    );
 
     handle_text_edit_cursor_and_selection(ui.ctx(), &mut output, value);
 
@@ -10799,13 +11003,18 @@ fn modal_primary_button(text: &str, enabled: bool) -> egui::Button<'static> {
             .color(if enabled {
                 Color32::WHITE
             } else {
-                Color32::from_rgba_unmultiplied(255, 255, 255, 128)
+                Color32::from_rgb(148, 155, 168)
             }),
     )
     .fill(if enabled {
         ACCENT
     } else {
-        ACCENT.gamma_multiply(0.5)
+        Color32::from_rgb(222, 226, 235)
+    })
+    .stroke(if enabled {
+        Stroke::NONE
+    } else {
+        Stroke::new(1.0_f32, Color32::from_rgb(205, 212, 224))
     })
     .corner_radius(R_MD)
     .min_size(Vec2::new(0.0, 40.0))
@@ -11426,17 +11635,46 @@ fn draw_icon_folder(painter: &egui::Painter, c: Pos2, color: Color32) {
     );
 }
 
-fn draw_icon_refresh(painter: &egui::Painter, c: Pos2, color: Color32) {
+fn draw_icon_refresh_rotated(painter: &egui::Painter, c: Pos2, color: Color32, angle: f32) {
     let s = Stroke::new(1.75_f32, color);
+    let rot = |p: Pos2| -> Pos2 {
+        if angle.abs() < 1e-4 {
+            return p;
+        }
+        let dx = p.x - c.x;
+        let dy = p.y - c.y;
+        let cos = angle.cos();
+        let sin = angle.sin();
+        Pos2::new(c.x + dx * cos - dy * sin, c.y + dx * sin + dy * cos)
+    };
     painter.circle_stroke(c, 5.0, s);
-    painter.line_segment(
-        [Pos2::new(c.x + 2.5, c.y - 5.0), Pos2::new(c.x + 5.5, c.y - 4.5)],
-        s,
-    );
-    painter.line_segment(
-        [Pos2::new(c.x + 5.5, c.y - 4.5), Pos2::new(c.x + 4.5, c.y - 1.5)],
-        s,
-    );
+    let p1 = rot(Pos2::new(c.x + 2.5, c.y - 5.0));
+    let p2 = rot(Pos2::new(c.x + 5.5, c.y - 4.5));
+    let p3 = rot(Pos2::new(c.x + 4.5, c.y - 1.5));
+    painter.line_segment([p1, p2], s);
+    painter.line_segment([p2, p3], s);
+}
+
+fn draw_icon_refresh(painter: &egui::Painter, c: Pos2, color: Color32) {
+    draw_icon_refresh_rotated(painter, c, color, 0.0);
+}
+
+fn draw_icon_heart(painter: &egui::Painter, c: Pos2, color: Color32) {
+    let s = Stroke::new(1.6_f32, color);
+    let pts = [
+        Pos2::new(c.x, c.y - 1.5),
+        Pos2::new(c.x - 2.5, c.y - 4.5),
+        Pos2::new(c.x - 5.0, c.y - 2.5),
+        Pos2::new(c.x - 4.5, c.y + 0.5),
+        Pos2::new(c.x, c.y + 5.5),
+        Pos2::new(c.x + 4.5, c.y + 0.5),
+        Pos2::new(c.x + 5.0, c.y - 2.5),
+        Pos2::new(c.x + 2.5, c.y - 4.5),
+        Pos2::new(c.x, c.y - 1.5),
+    ];
+    for w in pts.windows(2) {
+        painter.line_segment([w[0], w[1]], s);
+    }
 }
 
 fn draw_icon_plus(painter: &egui::Painter, c: Pos2, color: Color32) {
@@ -11553,6 +11791,7 @@ enum OutlineIcon {
     X,
     MoreHorizontal,
     Search,
+    Heart,
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -11676,7 +11915,14 @@ fn draw_outline_icon(painter: &egui::Painter, c: Pos2, icon: OutlineIcon, color:
             );
         }
         OutlineIcon::Refresh => {
-            draw_icon_refresh(painter, c, color);
+            let angle = painter
+                .ctx()
+                .data(|d| d.get_temp::<f32>(egui::Id::new("refresh_anim_angle")))
+                .unwrap_or(0.0);
+            draw_icon_refresh_rotated(painter, c, color, angle);
+        }
+        OutlineIcon::Heart => {
+            draw_icon_heart(painter, c, color);
         }
         OutlineIcon::ArrowUp => {
             painter.line_segment(
@@ -13671,11 +13917,12 @@ mod tests {
     #[test]
     fn test_webflow_palette_and_theme_tokens() {
         let light = Theme::light();
-        assert_eq!(light.bg, Color32::WHITE);
-        assert_eq!(light.surface, Color32::WHITE);
-        assert_eq!(light.surface_2, Color32::from_rgb(245, 245, 247)); // #F5F5F7
-        assert_eq!(light.border, Color32::from_rgb(230, 230, 234)); // #E6E6EA
-        assert_eq!(light.border_strong, Color32::from_rgb(212, 212, 218)); // #D4D4DA
+        assert_eq!(light.bg, Color32::from_rgb(235, 239, 246)); // Grey-blue slate canvas
+        assert_eq!(light.surface, Color32::WHITE); // Pure white card
+        assert_ne!(light.bg, light.surface); // High contrast between canvas and cards
+        assert_eq!(light.surface_2, Color32::from_rgb(243, 246, 251)); // #F3F6FB
+        assert_eq!(light.border, Color32::from_rgb(218, 224, 233));
+        assert_eq!(light.border_strong, Color32::from_rgb(203, 213, 225));
         assert_eq!(light.text, Color32::from_rgb(8, 8, 8)); // #080808
         assert_eq!(light.text_muted, Color32::from_rgb(90, 90, 90)); // #5A5A5A
         assert_eq!(light.primary, Color32::from_rgb(20, 110, 245)); // #146EF5
@@ -13869,5 +14116,99 @@ mod tests {
         // Frame stroke must be Stroke::NONE to prevent any dark horizontal border line
         assert_eq!(Stroke::NONE.width, 0.0);
         assert_eq!(Stroke::NONE.color, Color32::TRANSPARENT);
+    }
+
+    #[test]
+    fn test_topbar_black_background_and_no_theme_toggle() {
+        let ctx = egui::Context::default();
+        let mut app = ShiplyApp::new(crate::storage::AppStorage::default());
+
+        let _ = ctx.run(Default::default(), |ctx| {
+            app.render_termius_topbar(ctx);
+        });
+
+        // Verify topbar renders without theme toggle
+        assert!(!app.window_maximized);
+    }
+
+    #[test]
+    fn test_styled_text_edit_and_password_edit() {
+        let ctx = egui::Context::default();
+        let mut pwd = "secret".to_string();
+
+        let _ = ctx.run(Default::default(), |ctx| {
+            egui::CentralPanel::default().show(ctx, |ui| {
+                let changed = styled_password_edit(
+                    ui,
+                    "test_pwd_field",
+                    &mut pwd,
+                    200.0,
+                    Some("Password..."),
+                );
+                assert!(!changed);
+            });
+        });
+
+        assert_eq!(pwd, "secret");
+    }
+
+    #[test]
+    fn test_environment_cards_3_columns_fill_space() {
+        let card_spacing = 14.0_f32;
+        let avail_w = 900.0_f32;
+        let cols = if avail_w >= 650.0 {
+            3
+        } else if avail_w >= 440.0 {
+            2
+        } else {
+            1
+        };
+        assert_eq!(cols, 3);
+        let card_w = ((avail_w - card_spacing * (cols - 1) as f32) / cols as f32).floor();
+        assert_eq!(card_w, 290.0);
+        let total_w = card_w * 3.0 + card_spacing * 2.0;
+        assert!(total_w <= avail_w);
+    }
+
+    #[test]
+    fn test_modal_primary_button_grey_when_disabled() {
+        let _btn_disabled = modal_primary_button("Create Project", false);
+        let _btn_enabled = modal_primary_button("Create Project", true);
+    }
+
+    #[test]
+    fn test_open_new_project_modal_resets_form_fields() {
+        let mut app = ShiplyApp::new(crate::storage::AppStorage::default());
+        app.new_project_name = "dirty_name".to_string();
+        app.new_project_path = "dirty_path".to_string();
+        app.new_project_ps1_path = "dirty.ps1".to_string();
+
+        app.open_new_project_modal();
+
+        assert!(app.show_new_project_modal);
+        assert!(app.new_project_name.is_empty());
+        assert!(app.new_project_path.is_empty());
+        assert!(app.new_project_ps1_path.is_empty());
+    }
+
+    #[test]
+    fn test_donation_url_and_heart_icon() {
+        assert_eq!(DONATION_URL, "https://trakteer.id/faidfadjri");
+        let ctx = egui::Context::default();
+        let _ = ctx.run(Default::default(), |ctx| {
+            egui::CentralPanel::default().show(ctx, |ui| {
+                draw_outline_icon(ui.painter(), Pos2::new(10.0, 10.0), OutlineIcon::Heart, Color32::RED);
+            });
+        });
+    }
+
+    #[test]
+    fn test_refresh_animation_state() {
+        let mut app = ShiplyApp::new(crate::storage::AppStorage::default());
+        assert!(app.refresh_anim_start.is_some());
+        app.refresh_anim_start = None;
+        assert!(app.refresh_anim_start.is_none());
+        app.refresh_selected_project_metadata(true);
+        assert!(app.refresh_anim_start.is_some());
     }
 }
