@@ -1,6 +1,7 @@
 use crate::installer::{default_install_dir, install_binary_to_dir, installed_exe_name, APP_VERSION};
 use crate::version::configure_background_command;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -18,6 +19,10 @@ pub const GITHUB_RELEASES_LATEST_URL: &str =
 
 /// Public GitHub Releases page URL for browser fallback.
 pub const GITHUB_RELEASES_PAGE_URL: &str = "https://github.com/faidfadjri/shiply/releases";
+
+/// Direct CDN URL to the latest.json release asset (bypasses GitHub REST API 60 req/hr rate limits).
+pub const GITHUB_RELEASES_LATEST_JSON_URL: &str =
+    "https://github.com/faidfadjri/shiply/releases/latest/download/latest.json";
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ReleaseInfo {
@@ -63,15 +68,35 @@ pub enum UpdaterEvent {
 }
 
 #[derive(Debug, Deserialize)]
+struct LatestJsonPayload {
+    #[serde(default)]
+    version: Option<String>,
+    #[serde(default)]
+    tag_name: Option<String>,
+    #[serde(default)]
+    pub_date: Option<String>,
+    #[serde(default)]
+    notes: Option<String>,
+    #[serde(default)]
+    platforms: Option<HashMap<String, LatestJsonPlatform>>,
+}
+
+#[derive(Debug, Deserialize)]
+struct LatestJsonPlatform {
+    url: String,
+}
+
+#[derive(Debug, Deserialize)]
 struct GitHubReleasePayload {
+    #[serde(alias = "tagName")]
     tag_name: String,
     #[serde(default)]
     name: Option<String>,
     #[serde(default)]
     body: Option<String>,
-    #[serde(default)]
+    #[serde(default, alias = "publishedAt")]
     published_at: Option<String>,
-    #[serde(default)]
+    #[serde(default, alias = "url")]
     html_url: Option<String>,
     #[serde(default)]
     draft: bool,
@@ -82,6 +107,7 @@ struct GitHubReleasePayload {
 #[derive(Debug, Clone, Deserialize)]
 struct GitHubAssetPayload {
     name: String,
+    #[serde(alias = "url")]
     browser_download_url: String,
     #[serde(default)]
     size: u64,
@@ -220,6 +246,53 @@ pub fn parse_github_release_json_for_os(
         return Err("Empty response from GitHub Releases API.".to_string());
     }
 
+    // 1. Check if payload matches latest.json manifest format
+    if let Ok(latest) = serde_json::from_str::<LatestJsonPayload>(trimmed) {
+        if latest.platforms.is_some() || (latest.version.is_some() && trimmed.contains("\"platforms\"")) {
+            let tag = latest.tag_name.or(latest.version.clone()).unwrap_or_default();
+            let candidate_version = normalize_version_tag(latest.version.as_deref().unwrap_or(&tag));
+            if !is_newer_semver(current_version, &candidate_version) {
+                return Ok(None);
+            }
+            let (target_key, fallback_name) = match target_os {
+                "windows" => ("windows-x86_64", "shiply.exe"),
+                "macos" => ("darwin-aarch64", "shiply-macos-aarch64"),
+                _ => ("linux-x86_64", "shiply-linux-x86_64"),
+            };
+            let platforms = latest.platforms.unwrap_or_default();
+            let download_url = platforms
+                .get(target_key)
+                .map(|p| p.url.clone())
+                .unwrap_or_else(|| {
+                    format!("{GITHUB_RELEASES_PAGE_URL}/download/{tag}/{fallback_name}")
+                });
+            let name = format!("Shiply v{candidate_version}");
+            let body = latest
+                .notes
+                .unwrap_or_else(|| format!("Shiply v{candidate_version} release."));
+            let published_at = latest
+                .pub_date
+                .unwrap_or_else(|| "Recently published".to_string());
+
+            return Ok(Some(ReleaseInfo {
+                tag_name: if tag.starts_with('v') || tag.starts_with('V') {
+                    tag.clone()
+                } else {
+                    format!("v{candidate_version}")
+                },
+                version: candidate_version,
+                name,
+                body,
+                published_at,
+                html_url: format!("{GITHUB_RELEASES_PAGE_URL}/tag/{tag}"),
+                download_url,
+                asset_name: fallback_name.to_string(),
+                asset_size: 0,
+            }));
+        }
+    }
+
+    // 2. Standard GitHub Release JSON or gh CLI release view output
     let payload: GitHubReleasePayload = serde_json::from_str(trimmed)
         .map_err(|e| format!("Failed to parse GitHub Release JSON: {e}"))?;
 
@@ -276,25 +349,74 @@ pub fn parse_github_release_json_for_os(
     }))
 }
 
-/// Fetches the latest GitHub Release JSON using `curl` (with PowerShell fallback on Windows).
+/// Fetches the latest GitHub Release JSON using rate-limit-free CDN latest.json first,
+/// falling back to GitHub CLI (gh release view), then authenticated/unauthenticated curl.
 fn fetch_latest_release_json() -> Result<String, String> {
-    let mut cmd = Command::new("curl");
-    cmd.args([
+    // 1. Try fetching the rate-limit-free latest.json release asset directly from GitHub CDN
+    let mut cmd_latest = Command::new("curl");
+    cmd_latest.args([
         "-sSL",
         "--max-time",
-        "12",
-        "-H",
-        "Accept: application/vnd.github+json",
+        "10",
         "-H",
         "User-Agent: Shiply-Desktop-Updater",
-        GITHUB_RELEASES_LATEST_URL,
+        GITHUB_RELEASES_LATEST_JSON_URL,
     ]);
-    configure_background_command(&mut cmd);
+    configure_background_command(&mut cmd_latest);
+    if let Ok(output) = cmd_latest.output() {
+        if output.status.success() {
+            let text = String::from_utf8_lossy(&output.stdout).to_string();
+            if (text.contains("\"version\"") || text.contains("\"tag_name\"")) && text.contains("\"platforms\"") {
+                return Ok(text);
+            }
+        }
+    }
 
+    // 2. Try GitHub CLI (`gh release view`) which uses local auth token and avoids unauthenticated rate limits
+    let mut gh_cmd = Command::new("gh");
+    gh_cmd.args([
+        "release",
+        "view",
+        "--repo",
+        GITHUB_REPO,
+        "--json",
+        "tagName,name,body,publishedAt,url,assets",
+    ]);
+    configure_background_command(&mut gh_cmd);
+    if let Ok(output) = gh_cmd.output() {
+        if output.status.success() {
+            let text = String::from_utf8_lossy(&output.stdout).to_string();
+            if text.contains("\"tagName\"") || text.contains("\"tag_name\"") {
+                return Ok(text);
+            }
+        }
+    }
+
+    // 3. Fallback to GitHub REST API endpoint using curl
+    let mut cmd = Command::new("curl");
+    let mut args = vec![
+        "-sSL".to_string(),
+        "--max-time".to_string(),
+        "12".to_string(),
+        "-H".to_string(),
+        "Accept: application/vnd.github+json".to_string(),
+        "-H".to_string(),
+        "User-Agent: Shiply-Desktop-Updater".to_string(),
+    ];
+    if let Ok(token) = env::var("GITHUB_TOKEN").or_else(|_| env::var("GH_TOKEN")) {
+        let trimmed = token.trim();
+        if !trimmed.is_empty() {
+            args.push("-H".to_string());
+            args.push(format!("Authorization: Bearer {trimmed}"));
+        }
+    }
+    args.push(GITHUB_RELEASES_LATEST_URL.to_string());
+    cmd.args(&args);
+    configure_background_command(&mut cmd);
     if let Ok(output) = cmd.output() {
         if output.status.success() {
             let text = String::from_utf8_lossy(&output.stdout).to_string();
-            if text.contains("\"tag_name\"") {
+            if text.contains("\"tag_name\"") && !text.contains("\"message\"") {
                 return Ok(text);
             }
         }
@@ -302,11 +424,30 @@ fn fetch_latest_release_json() -> Result<String, String> {
 
     #[cfg(windows)]
     {
+        // Try latest.json in PowerShell
+        let ps_latest_script = format!(
+            "$ProgressPreference = 'SilentlyContinue'; \
+             [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; \
+             (Invoke-WebRequest -Uri '{}' -Headers @{{'User-Agent'='Shiply-Desktop-Updater'}} -UseBasicParsing -TimeoutSec 10).Content",
+            GITHUB_RELEASES_LATEST_JSON_URL
+        );
+        let mut ps_latest = Command::new("powershell");
+        ps_latest.args(["-NoProfile", "-NonInteractive", "-Command", &ps_latest_script]);
+        configure_background_command(&mut ps_latest);
+        if let Ok(output) = ps_latest.output() {
+            if output.status.success() {
+                let text = String::from_utf8_lossy(&output.stdout).to_string();
+                if (text.contains("\"version\"") || text.contains("\"tag_name\"")) && text.contains("\"platforms\"") {
+                    return Ok(text);
+                }
+            }
+        }
+
+        // Try API in PowerShell
         let ps_script = format!(
             "$ProgressPreference = 'SilentlyContinue'; \
              [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; \
-             $resp = Invoke-WebRequest -Uri '{}' -Headers @{{'User-Agent'='Shiply-Desktop-Updater'; 'Accept'='application/vnd.github+json'}} -UseBasicParsing -TimeoutSec 12; \
-             $resp.Content",
+             (Invoke-WebRequest -Uri '{}' -Headers @{{'User-Agent'='Shiply-Desktop-Updater'; 'Accept'='application/vnd.github+json'}} -UseBasicParsing -TimeoutSec 12).Content",
             GITHUB_RELEASES_LATEST_URL
         );
         let mut ps = Command::new("powershell");
@@ -315,7 +456,7 @@ fn fetch_latest_release_json() -> Result<String, String> {
         if let Ok(output) = ps.output() {
             if output.status.success() {
                 let text = String::from_utf8_lossy(&output.stdout).to_string();
-                if text.contains("\"tag_name\"") {
+                if text.contains("\"tag_name\"") && !text.contains("\"message\"") {
                     return Ok(text);
                 }
             }
@@ -323,7 +464,7 @@ fn fetch_latest_release_json() -> Result<String, String> {
     }
 
     Err(format!(
-        "Could not reach GitHub Releases for {GITHUB_REPO} (check network or verify a release is published)."
+        "Could not reach GitHub Releases for {GITHUB_REPO} (check network connection or try visiting {GITHUB_RELEASES_PAGE_URL})."
     ))
 }
 
@@ -668,5 +809,63 @@ mod tests {
             fs::read(&running_exe).expect("read updated"),
             b"new-binary-v0.4.0"
         );
+    }
+
+    #[test]
+    fn test_parse_latest_json_format() {
+        let manifest_json = r#"{
+            "version": "0.10.15",
+            "tag_name": "v0.10.15",
+            "pub_date": "2026-10-30T00:00:00Z",
+            "notes": "Automated release without rate limiting.",
+            "platforms": {
+                "windows-x86_64": {
+                    "url": "https://github.com/faidfadjri/shiply/releases/download/v0.10.15/shiply.exe"
+                },
+                "linux-x86_64": {
+                    "url": "https://github.com/faidfadjri/shiply/releases/download/v0.10.15/shiply-linux-x86_64"
+                },
+                "darwin-aarch64": {
+                    "url": "https://github.com/faidfadjri/shiply/releases/download/v0.10.15/shiply-macos-aarch64"
+                }
+            }
+        }"#;
+
+        let win_update = parse_github_release_json_for_os(manifest_json, "0.10.14", "windows")
+            .expect("parse manifest")
+            .expect("should find update");
+        assert_eq!(win_update.version, "0.10.15");
+        assert_eq!(win_update.tag_name, "v0.10.15");
+        assert_eq!(win_update.download_url, "https://github.com/faidfadjri/shiply/releases/download/v0.10.15/shiply.exe");
+
+        // Same version returns None
+        let up_to_date = parse_github_release_json_for_os(manifest_json, "0.10.15", "windows")
+            .expect("parse manifest");
+        assert!(up_to_date.is_none());
+    }
+
+    #[test]
+    fn test_parse_gh_cli_release_view_format() {
+        let gh_json = r#"{
+            "tagName": "v0.10.15",
+            "name": "Shiply v0.10.15",
+            "body": "Cli output release",
+            "publishedAt": "2026-10-30T00:00:00Z",
+            "url": "https://github.com/faidfadjri/shiply/releases/tag/v0.10.15",
+            "assets": [
+                {
+                    "name": "shiply.exe",
+                    "url": "https://github.com/faidfadjri/shiply/releases/download/v0.10.15/shiply.exe",
+                    "size": 8500000
+                }
+            ]
+        }"#;
+
+        let res = parse_github_release_json_for_os(gh_json, "0.10.14", "windows")
+            .expect("parse gh json")
+            .expect("should find update");
+        assert_eq!(res.version, "0.10.15");
+        assert_eq!(res.tag_name, "v0.10.15");
+        assert_eq!(res.download_url, "https://github.com/faidfadjri/shiply/releases/download/v0.10.15/shiply.exe");
     }
 }
