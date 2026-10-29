@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.10.14] - 2026-10-29
+
+### Refactored
+- Unified Modal Lifecycle Architecture: abstracted modal presentation, backdrop rendering, smooth 60fps opacity fade, slide translateY entrance, Escape key dismissal, and backdrop outside-click detection into reusable [`prepare_animated_modal`](file:///D:/NTI/Labs/shiply/src/ui.rs#L4157-L4195) and [`animated_modal_window`](file:///D:/NTI/Labs/shiply/src/ui.rs#L4196-L4220) helpers.
+- Standardized All 6 Application Modals: migrated `Add Project`, `Edit Project`, `Add Environment Level`, `Bulk Deployment`, `Software Updates`, and `Confirm Deletion` dialogs onto the unified lifecycle, eliminating over 200 lines of repetitive boilerplate across `src/ui.rs` while ensuring consistent animation timing, responsive sizing, and click-to-dismiss behavior across every modal.
+- Adherence to DRY & KISS Principles: centralized dialog setup logic, improved code maintainability, and added comprehensive lifecycle unit testing (`test_prepare_animated_modal_and_window_lifecycle`).
+
 ## [0.10.13] - 2026-10-29
 
 ### Added
