@@ -255,7 +255,7 @@ pub struct ShiplyApp {
     // Background execution channel
     event_tx: Sender<ExecutorEvent>,
     event_rx: Receiver<ExecutorEvent>,
-    pub active_deployments: HashMap<String, String>,
+    pub active_deployments: HashMap<(String, String), String>,
     pub active_deployment_id: Option<String>,
 
     // Async Git inspection channel (instant project switching without UI freezing)
@@ -465,8 +465,21 @@ impl ShiplyApp {
         self.status_banner = Some((message, is_success));
     }
 
+    pub fn is_env_deploying(&self, project_id: &str, env_key: &str) -> bool {
+        self.active_deployments
+            .keys()
+            .any(|(p, e)| p == project_id && e == env_key)
+            || self
+                .storage
+                .deployments
+                .iter()
+                .any(|d| d.project_id == project_id && d.environment == env_key && d.status == DeploymentStatus::Running)
+    }
+
     pub fn is_project_deploying(&self, project_id: &str) -> bool {
-        self.active_deployments.contains_key(project_id)
+        self.active_deployments
+            .keys()
+            .any(|(p, _)| p == project_id)
             || self.active_deployment_id.as_ref().is_some_and(|dep_id| {
                 self.storage
                     .deployments
@@ -478,6 +491,34 @@ impl ShiplyApp {
                 .deployments
                 .iter()
                 .any(|d| d.project_id == project_id && d.status == DeploymentStatus::Running)
+    }
+
+    pub fn active_deployment_for_env(&self, project_id: &str, env_key: &str) -> Option<String> {
+        self.active_deployments
+            .iter()
+            .find(|((p, e), _)| p == project_id && e == env_key)
+            .map(|(_, id)| id.clone())
+            .or_else(|| {
+                self.storage
+                    .deployments
+                    .iter()
+                    .find(|d| d.project_id == project_id && d.environment == env_key && d.status == DeploymentStatus::Running)
+                    .map(|d| d.id.clone())
+            })
+    }
+
+    pub fn active_deployment_for_project(&self, project_id: &str) -> Option<String> {
+        self.active_deployments
+            .iter()
+            .find(|((p, _), _)| p == project_id)
+            .map(|(_, id)| id.clone())
+            .or_else(|| {
+                self.storage
+                    .deployments
+                    .iter()
+                    .find(|d| d.project_id == project_id && d.status == DeploymentStatus::Running)
+                    .map(|d| d.id.clone())
+            })
     }
 
     pub fn is_deployment_active(&self, deployment_id: &str) -> bool {
@@ -613,9 +654,12 @@ impl ShiplyApp {
         }
 
         // Ensure selected_deployment_id belongs strictly to this active project,
-        // prioritizing any active/running deployment for this project
-        if let Some(active_dep_id) = self.active_deployments.get(proj_id) {
-            self.selected_deployment_id = Some(active_dep_id.clone());
+        // prioritizing any active/running deployment for this project & selected environment
+        if let Some(active_dep_id) = self
+            .active_deployment_for_env(proj_id, &self.selected_env_key)
+            .or_else(|| self.active_deployment_for_project(proj_id))
+        {
+            self.selected_deployment_id = Some(active_dep_id);
         } else {
             let belongs_to_current_project = self
                 .selected_deployment_id
@@ -628,7 +672,8 @@ impl ShiplyApp {
                     .storage
                     .deployments
                     .iter()
-                    .find(|d| &d.project_id == proj_id)
+                    .find(|d| &d.project_id == proj_id && d.environment == self.selected_env_key)
+                    .or_else(|| self.storage.deployments.iter().find(|d| &d.project_id == proj_id))
                     .map(|d| d.id.clone());
             }
         }
@@ -674,8 +719,22 @@ impl ShiplyApp {
             match event {
                 ExecutorEvent::Updated(record) => {
                     let is_current = match &self.selection {
-                        SidebarSelection::Project(pid) => pid == &record.project_id,
-                        SidebarSelection::AllDeployments => true,
+                        SidebarSelection::Project(pid) => {
+                            if pid != &record.project_id {
+                                false
+                            } else if let Some(sel_id) = &self.selected_deployment_id {
+                                sel_id == &record.id
+                            } else {
+                                self.selected_env_key == record.environment
+                            }
+                        }
+                        SidebarSelection::AllDeployments => {
+                            if let Some(sel_id) = &self.selected_deployment_id {
+                                sel_id == &record.id
+                            } else {
+                                true
+                            }
+                        }
                     };
                     if is_current {
                         self.selected_deployment_id = Some(record.id.clone());
@@ -698,13 +757,27 @@ impl ShiplyApp {
                     );
                     self.status_banner = Some((msg.clone(), ok));
                     let is_current = match &self.selection {
-                        SidebarSelection::Project(pid) => pid == &record.project_id,
-                        SidebarSelection::AllDeployments => true,
+                        SidebarSelection::Project(pid) => {
+                            if pid != &record.project_id {
+                                false
+                            } else if let Some(sel_id) = &self.selected_deployment_id {
+                                sel_id == &record.id
+                            } else {
+                                self.selected_env_key == record.environment
+                            }
+                        }
+                        SidebarSelection::AllDeployments => {
+                            if let Some(sel_id) = &self.selected_deployment_id {
+                                sel_id == &record.id
+                            } else {
+                                true
+                            }
+                        }
                     };
                     if is_current {
                         self.selected_deployment_id = Some(record.id.clone());
                     }
-                    self.active_deployments.remove(&record.project_id);
+                    self.active_deployments.retain(|_, id| id != &record.id);
                     if self.active_deployment_id.as_deref() == Some(&record.id) {
                         self.active_deployment_id = self.active_deployments.values().next().cloned();
                     }
@@ -858,11 +931,12 @@ impl ShiplyApp {
 
     fn start_deployment(&mut self, req: DeploymentRequest) {
         self.flush_pending_save();
-        if self.is_project_deploying(&req.project_id) {
+        if self.is_env_deploying(&req.project_id, &req.env_config.key) {
             self.status_banner = Some((
                 format!(
-                    "A deployment for '{}' is already running. Please wait for it to finish.",
-                    req.project_name
+                    "A deployment for '{}' ({}) is already running. Please wait for it to finish.",
+                    req.project_name,
+                    format_env_badge(&req.env_config.key)
                 ),
                 false,
             ));
@@ -870,7 +944,8 @@ impl ShiplyApp {
         }
 
         let dep_id = req.deployment_id.clone();
-        self.active_deployments.insert(req.project_id.clone(), dep_id.clone());
+        let key = (req.project_id.clone(), req.env_config.key.clone());
+        self.active_deployments.insert(key, dep_id.clone());
         self.active_deployment_id = Some(dep_id.clone());
         self.selected_deployment_id = Some(dep_id);
         self.active_tab = WorkspaceTab::HistoryAndLogs;
@@ -2506,12 +2581,13 @@ impl ShiplyApp {
                                         let mut pill_x = content_x;
                                         for env in project.environments.iter().take(3) {
                                             let badge = env.badge_label();
-                                            let is_env_running = self.storage.deployments.iter().any(|d| {
-                                                d.project_id == project.id
-                                                    && d.environment == env.key
-                                                    && (d.status == DeploymentStatus::Running
-                                                        || self.is_deployment_active(&d.id))
-                                            });
+                                            let is_env_running = self.is_env_deploying(&project.id, &env.key)
+                                                || self.storage.deployments.iter().any(|d| {
+                                                    d.project_id == project.id
+                                                        && d.environment == env.key
+                                                        && (d.status == DeploymentStatus::Running
+                                                            || self.is_deployment_active(&d.id))
+                                                });
                                             let key_lower = env.key.to_lowercase();
                                             let is_prod = key_lower.contains("prod");
 
@@ -6693,7 +6769,7 @@ impl ShiplyApp {
         );
 
         // Right-aligned Deploy Button + Rollback Button (Feature #3: Dynamic sizing based on env & version)
-        let is_busy = self.is_project_deploying(project_id);
+        let is_busy = self.is_env_deploying(project_id, &self.selected_env_key);
         let btn_text = if is_busy {
             "Deploying...".to_string()
         } else {
@@ -8132,7 +8208,7 @@ impl ShiplyApp {
                         // ACTIONS column (Rollback + Re-run + View Logs) using outline icons
                         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                             ui.spacing_mut().item_spacing = Vec2::new(6.0, 0.0);
-                            let is_busy = self.is_project_deploying(&dep.project_id);
+                            let is_busy = self.is_env_deploying(&dep.project_id, &dep.environment);
 
                             if outline_icon_button(
                                 ui,
@@ -11731,7 +11807,8 @@ mod tests {
         };
         app.start_deployment(req_backend_again);
         let banner = app.status_banner.as_ref().unwrap();
-        assert!(banner.0.contains("A deployment for 'Backend Service' is already running"));
+        assert!(banner.0.contains("A deployment for 'Backend Service'"));
+        assert!(banner.0.contains("is already running"));
         assert!(!banner.1); // false = error banner
 
         // 4. Deploying frontend AT THE SAME TIME is allowed and succeeds!
@@ -11810,6 +11887,202 @@ mod tests {
     }
 
     #[test]
+    fn test_concurrent_deployments_for_multiple_environments_on_same_project() {
+        let ctx = egui::Context::default();
+        ShiplyApp::configure_light_workspace_style(&ctx);
+
+        let mut storage = crate::storage::AppStorage::default();
+        let proj_multi = Project {
+            id: "proj-api".to_string(),
+            name: "API Service".to_string(),
+            description: "API".to_string(),
+            local_path: ".".to_string(),
+            environments: vec![
+                EnvironmentConfig {
+                    key: "dev".to_string(),
+                    name: "Development".to_string(),
+                    app_name: "api-dev".to_string(),
+                    servers: vec!["10.0.0.10".to_string()],
+                    remote_user: "deploy".to_string(),
+                    vault_target: "v-dev".to_string(),
+                    remote_dir: "/apps/api-dev".to_string(),
+                    env_source: None,
+                    http_proxy: None,
+                    steps: Vec::new(),
+                },
+                EnvironmentConfig {
+                    key: "prod".to_string(),
+                    name: "Production".to_string(),
+                    app_name: "api-prod".to_string(),
+                    servers: vec!["10.0.0.20".to_string()],
+                    remote_user: "deploy".to_string(),
+                    vault_target: "v-prod".to_string(),
+                    remote_dir: "/apps/api-prod".to_string(),
+                    env_source: None,
+                    http_proxy: None,
+                    steps: Vec::new(),
+                },
+            ],
+            group: None,
+            sort_order: None,
+        };
+        storage.projects = vec![proj_multi.clone()];
+
+        let mut app = ShiplyApp::new(storage);
+
+        // 1. Initially neither environment is deploying
+        assert!(!app.is_env_deploying("proj-api", "dev"));
+        assert!(!app.is_env_deploying("proj-api", "prod"));
+        assert!(!app.is_project_deploying("proj-api"));
+
+        // 2. Start deployment for Development environment
+        let req_dev = crate::executor::DeploymentRequest {
+            deployment_id: "dep-api-dev-1".to_string(),
+            project_id: "proj-api".to_string(),
+            project_name: "API Service".to_string(),
+            local_path: PathBuf::from("."),
+            env_config: proj_multi.environments[0].clone(),
+            version: "1.0.0".to_string(),
+            is_rollback: false,
+            previous_commit: None,
+            manual_password: None,
+            target_git_branch: None,
+            bump_package_json: false,
+            create_git_tag_on_success: false,
+            skip_ssh_preflight: false,
+            rollback_commit: None,
+        };
+        app.start_deployment(req_dev);
+
+        // Development is deploying; Production is free
+        assert!(app.is_env_deploying("proj-api", "dev"));
+        assert!(!app.is_env_deploying("proj-api", "prod"));
+        assert!(app.is_project_deploying("proj-api"));
+
+        // 3. Attempting to deploy Development AGAIN on the same project is prevented
+        let req_dev_again = crate::executor::DeploymentRequest {
+            deployment_id: "dep-api-dev-2".to_string(),
+            project_id: "proj-api".to_string(),
+            project_name: "API Service".to_string(),
+            local_path: PathBuf::from("."),
+            env_config: proj_multi.environments[0].clone(),
+            version: "1.0.1".to_string(),
+            is_rollback: false,
+            previous_commit: None,
+            manual_password: None,
+            target_git_branch: None,
+            bump_package_json: false,
+            create_git_tag_on_success: false,
+            skip_ssh_preflight: false,
+            rollback_commit: None,
+        };
+        app.start_deployment(req_dev_again);
+        let banner = app.status_banner.as_ref().unwrap();
+        assert!(banner.0.contains("A deployment for 'API Service' (DEV) is already running"));
+        assert!(!banner.1); // error banner
+
+        // 4. Deploying Production AT THE SAME TIME on the SAME PROJECT is allowed!
+        let req_prod = crate::executor::DeploymentRequest {
+            deployment_id: "dep-api-prod-1".to_string(),
+            project_id: "proj-api".to_string(),
+            project_name: "API Service".to_string(),
+            local_path: PathBuf::from("."),
+            env_config: proj_multi.environments[1].clone(),
+            version: "1.0.0".to_string(),
+            is_rollback: false,
+            previous_commit: None,
+            manual_password: None,
+            target_git_branch: None,
+            bump_package_json: false,
+            create_git_tag_on_success: false,
+            skip_ssh_preflight: false,
+            rollback_commit: None,
+        };
+        app.start_deployment(req_prod);
+
+        // BOTH Development and Production are now deploying simultaneously on the SAME project!
+        assert!(app.is_env_deploying("proj-api", "dev"));
+        assert!(app.is_env_deploying("proj-api", "prod"));
+        assert_eq!(app.active_deployments.len(), 2);
+        assert!(app.is_project_deploying("proj-api"));
+
+        // 5. Attempting to deploy Production AGAIN while running is prevented
+        let req_prod_again = crate::executor::DeploymentRequest {
+            deployment_id: "dep-api-prod-2".to_string(),
+            project_id: "proj-api".to_string(),
+            project_name: "API Service".to_string(),
+            local_path: PathBuf::from("."),
+            env_config: proj_multi.environments[1].clone(),
+            version: "1.0.1".to_string(),
+            is_rollback: false,
+            previous_commit: None,
+            manual_password: None,
+            target_git_branch: None,
+            bump_package_json: false,
+            create_git_tag_on_success: false,
+            skip_ssh_preflight: false,
+            rollback_commit: None,
+        };
+        app.start_deployment(req_prod_again);
+        let banner_prod = app.status_banner.as_ref().unwrap();
+        assert!(banner_prod.0.contains("A deployment for 'API Service' (PROD) is already running"));
+        assert!(!banner_prod.1);
+
+        // 6. Development deployment completes
+        let finished_dev = DeploymentRecord {
+            id: "dep-api-dev-1".to_string(),
+            project_id: "proj-api".to_string(),
+            project_name: "API Service".to_string(),
+            environment: "dev".to_string(),
+            app_name: "api-dev".to_string(),
+            version: "1.0.0".to_string(),
+            git_branch: Some("main".to_string()),
+            git_commit: Some("c1".to_string()),
+            git_changes: vec![],
+            is_rollback: false,
+            servers: vec!["10.0.0.10".to_string()],
+            status: DeploymentStatus::Succeeded,
+            started_at: chrono::Utc::now(),
+            finished_at: Some(chrono::Utc::now()),
+            duration_ms: Some(800),
+            step_logs: vec![],
+            executed_steps: vec![],
+        };
+        let (tx, rx) = mpsc::channel();
+        tx.send(ExecutorEvent::Finished(finished_dev)).unwrap();
+        app.event_rx = rx;
+        app.poll_executor_events(&ctx);
+
+        // Development is done, but Production is STILL running!
+        assert!(!app.is_env_deploying("proj-api", "dev"));
+        assert!(app.is_env_deploying("proj-api", "prod"));
+        assert_eq!(app.active_deployments.len(), 1);
+        assert!(app.is_project_deploying("proj-api"));
+
+        // 7. Development can now be deployed again while Production is still active
+        let req_dev_new = crate::executor::DeploymentRequest {
+            deployment_id: "dep-api-dev-3".to_string(),
+            project_id: "proj-api".to_string(),
+            project_name: "API Service".to_string(),
+            local_path: PathBuf::from("."),
+            env_config: proj_multi.environments[0].clone(),
+            version: "1.0.2".to_string(),
+            is_rollback: false,
+            previous_commit: None,
+            manual_password: None,
+            target_git_branch: None,
+            bump_package_json: false,
+            create_git_tag_on_success: false,
+            skip_ssh_preflight: false,
+            rollback_commit: None,
+        };
+        app.start_deployment(req_dev_new);
+        assert!(app.is_env_deploying("proj-api", "dev"));
+        assert!(app.is_env_deploying("proj-api", "prod"));
+        assert_eq!(app.active_deployments.len(), 2);
+    }
+
+    #[test]
     fn test_deployment_keeps_running_on_update_and_restart_deferred_until_finished() {
         let storage = crate::storage::AppStorage::default();
         let mut app = ShiplyApp::new(storage);
@@ -11817,9 +12090,10 @@ mod tests {
 
         // 1. Mark an active deployment in progress
         app.active_deployments
-            .insert("proj-app".to_string(), "dep-99".to_string());
+            .insert(("proj-app".to_string(), "prod".to_string()), "dep-99".to_string());
         assert!(app.has_active_deployments());
         assert!(app.is_project_deploying("proj-app"));
+        assert!(app.is_env_deploying("proj-app", "prod"));
 
         // 2. An update download completes while deployment is still running
         let (updater_tx, updater_rx) = mpsc::channel();

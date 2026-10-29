@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.10.8] - 2026-10-29
+
+### Added
+- Environment-level Deployment Concurrency: users can now deploy multiple environments simultaneously on the same project (e.g. running both Development and Production deployments at the same time on the same project). Duplicate deployment prevention is strictly scoped to the exact `(project_id, environment_key)` pair.
+- Multi-Environment Live Switching: switching between environment tabs dynamically prioritizes and streams the live console output for the currently viewed environment while other environments continue running concurrently in the background.
+- Sidebar & Action Bar Isolation: action bar Deploy and Quick Rollback buttons, as well as sidebar environment badge indicators, now independently track and display the deployment status of each environment.
+
 ## [0.10.7] - 2026-10-29
 
 ### Changed
