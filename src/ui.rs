@@ -75,6 +75,10 @@ pub const BADGE_DEV_TEXT: Color32 = Color32::from_rgb(125, 178, 255);           
 pub const BADGE_PROD_BG: Color32 = Color32::from_rgba_premultiplied(27, 14, 40, 41); // rgba(168,85,247,0.16)
 pub const BADGE_PROD_TEXT: Color32 = Color32::from_rgb(196, 161, 255);             // #C4A1FF
 
+pub const DESTRUCTIVE_TEXT: Color32 = Color32::from_rgb(248, 113, 113);             // #F87171 (red-400)
+pub const DESTRUCTIVE_HOVER_BG: Color32 = Color32::from_rgba_premultiplied(29, 8, 8, 31); // rgba(239, 68, 68, 0.12)
+pub const DESTRUCTIVE_ACTIVE_BG: Color32 = Color32::from_rgba_premultiplied(48, 14, 14, 51); // rgba(239, 68, 68, 0.20)
+
 // Modal colors (light)
 pub const MD_OVERLAY: Color32 = Color32::from_rgba_premultiplied(1, 3, 13, 140);    // rgba(2,6,23,0.55)
 pub const MD_BG: Color32 = Color32::WHITE;                                         // #FFFFFF
@@ -180,6 +184,13 @@ enum ConfirmDeleteAction {
     },
 }
 
+#[derive(Debug, Clone)]
+pub struct SidebarContextMenuState {
+    pub project_id: String,
+    pub click_pos: Pos2,
+    pub submenu_open: bool,
+}
+
 #[derive(Debug)]
 pub struct GitInspectionResult {
     pub project_id: String,
@@ -214,6 +225,8 @@ pub struct ShiplyApp {
     project_sort_mode: ProjectSortMode,
     collapsed_project_groups: HashSet<String>,
     dragged_project_idx: Option<usize>,
+    sidebar_sort_dropdown_open: bool,
+    sidebar_context_menu: Option<SidebarContextMenuState>,
 
     // Deployment version, branch & release controls
     deploy_version_input: String,
@@ -349,6 +362,8 @@ impl ShiplyApp {
             project_sort_mode: ProjectSortMode::Custom,
             collapsed_project_groups: HashSet::new(),
             dragged_project_idx: None,
+            sidebar_sort_dropdown_open: false,
+            sidebar_context_menu: None,
             deploy_version_input: "1.0.0".to_string(),
             selected_git_branch: String::new(),
             bump_package_json: true,
@@ -1652,6 +1667,7 @@ impl ShiplyApp {
     fn render_sidebar(&mut self, ctx: &egui::Context, anim_t: f32) {
         let width = 288.0 * anim_t;
         let pad_x = ((16.0 * anim_t).round() as i8).max(0);
+        let mut sort_trigger_rect_out = None;
         egui::SidePanel::left("shiply_sidebar")
             .resizable(false)
             .exact_width(width)
@@ -1724,9 +1740,10 @@ impl ShiplyApp {
                 }
 
                 // 2. Footer (Pinned bottom, top border 1px SB_BORDER, padding-top 12px)
-                let footer_h = 160.0_f32;
+                let footer_bottom_clearance = 8.0_f32;
+                let footer_h = 172.0_f32;
                 let footer_rect = Rect::from_min_size(
-                    Pos2::new(inner_rect.left(), inner_rect.bottom() - footer_h),
+                    Pos2::new(inner_rect.left(), inner_rect.bottom() - footer_bottom_clearance - footer_h),
                     Vec2::new(full_w, footer_h),
                 );
                 let mut footer_ui = ui.new_child(egui::UiBuilder::new().max_rect(footer_rect));
@@ -1825,7 +1842,7 @@ impl ShiplyApp {
                         }
                     }
 
-                    footer_ui.add_space(SP_8);
+                    footer_ui.add_space(SP_12);
 
                     // Installed status row: dot 8px --success + "Installed v0.10.4" (--fs-micro, --sb-text-muted) + "Reinstall" as a small text link (--sb-text-faint, hover --accent). Keep it on one line.
                     let (stat_rect, _) = footer_ui.allocate_exact_size(Vec2::new(full_w, 24.0), Sense::hover());
@@ -1877,6 +1894,8 @@ impl ShiplyApp {
                             Err(err) => self.status_banner = Some((err, false)),
                         }
                     }
+
+                    footer_ui.add_space(SP_16);
                 }
 
                 // 3. Middle Section: Scrollable (nav items + projects header + projects list)
@@ -2025,54 +2044,46 @@ impl ShiplyApp {
                             Pos2::new(hdr_rect.right() - add_w - 8.0 - sort_w, hdr_rect.center().y - 14.0),
                             Vec2::new(sort_w, 28.0),
                         );
-                        let mut sort_ui = ui.new_child(egui::UiBuilder::new().max_rect(sort_area_rect));
-                        sort_ui.spacing_mut().button_padding = Vec2::new(6.0, 4.0);
-                        sort_ui.visuals_mut().widgets.inactive.bg_fill = SB_SURFACE;
-                        sort_ui.visuals_mut().widgets.inactive.bg_stroke = Stroke::new(1.0_f32, SB_BORDER);
-                        sort_ui.visuals_mut().widgets.inactive.corner_radius = CornerRadius::same(R_SM as u8);
-                        sort_ui.visuals_mut().widgets.hovered.bg_fill = SB_SURFACE_HOVER;
-                        sort_ui.visuals_mut().widgets.hovered.bg_stroke = Stroke::new(1.0_f32, SB_BORDER);
-                        sort_ui.visuals_mut().widgets.open.bg_fill = SB_SURFACE;
-                        sort_ui.visuals_mut().widgets.open.bg_stroke = Stroke::new(1.0_f32, SB_BORDER);
+                        sort_trigger_rect_out = Some(sort_area_rect);
 
-                        let sort_label = match self.project_sort_mode {
-                            ProjectSortMode::Custom => "⇅ Custom",
-                            ProjectSortMode::NameAsc => "⇅ A-Z",
-                            ProjectSortMode::NameDesc => "⇅ Z-A",
-                            ProjectSortMode::RecentDeploy => "⇅ Recent",
+                        let sort_btn_resp = ui.interact(sort_area_rect, egui::Id::new("sidebar_project_sort_trigger"), Sense::click())
+                            .on_hover_cursor(egui::CursorIcon::PointingHand);
+                        if sort_btn_resp.clicked() {
+                            self.sidebar_sort_dropdown_open = !self.sidebar_sort_dropdown_open;
+                        }
+
+                        let is_sort_open = self.sidebar_sort_dropdown_open;
+                        let sort_bg = if is_sort_open || sort_btn_resp.hovered() { SB_SURFACE_HOVER } else { SB_SURFACE };
+                        let sort_stroke = if is_sort_open {
+                            Stroke::new(1.5_f32, ACCENT)
+                        } else {
+                            Stroke::new(1.0_f32, SB_BORDER)
                         };
 
-                        egui::ComboBox::from_id_salt("sidebar_project_sort_selector")
-                            .selected_text(RichText::new(sort_label).size(FS_MICRO).color(SB_TEXT))
-                            .width(sort_w)
-                            .show_ui(&mut sort_ui, |ui| {
-                                ui.visuals_mut().override_text_color = Some(SB_TEXT);
-                                ui.visuals_mut().widgets.inactive.bg_fill = SB_SURFACE;
-                                ui.visuals_mut().widgets.hovered.bg_fill = SB_SURFACE_HOVER;
-                                ui.spacing_mut().item_spacing = Vec2::new(0.0, 4.0);
-                                ui.spacing_mut().button_padding = Vec2::new(8.0, 6.0);
+                        ui.painter().rect_filled(sort_area_rect, CornerRadius::same(R_SM as u8), sort_bg);
+                        ui.painter().rect_stroke(sort_area_rect, CornerRadius::same(R_SM as u8), sort_stroke, StrokeKind::Inside);
 
-                                let is_custom = self.project_sort_mode == ProjectSortMode::Custom;
-                                if ui.selectable_label(is_custom, if is_custom { "✓ Custom / Drag" } else { "   Custom / Drag" }).clicked() {
-                                    self.project_sort_mode = ProjectSortMode::Custom;
-                                    self.storage.sort_projects(ProjectSortMode::Custom);
-                                }
-                                let is_asc = self.project_sort_mode == ProjectSortMode::NameAsc;
-                                if ui.selectable_label(is_asc, if is_asc { "✓ Name (A-Z)" } else { "   Name (A-Z)" }).clicked() {
-                                    self.project_sort_mode = ProjectSortMode::NameAsc;
-                                    self.storage.sort_projects(ProjectSortMode::NameAsc);
-                                }
-                                let is_desc = self.project_sort_mode == ProjectSortMode::NameDesc;
-                                if ui.selectable_label(is_desc, if is_desc { "✓ Name (Z-A)" } else { "   Name (Z-A)" }).clicked() {
-                                    self.project_sort_mode = ProjectSortMode::NameDesc;
-                                    self.storage.sort_projects(ProjectSortMode::NameDesc);
-                                }
-                                let is_recent = self.project_sort_mode == ProjectSortMode::RecentDeploy;
-                                if ui.selectable_label(is_recent, if is_recent { "✓ Recently Deployed" } else { "   Recently Deployed" }).clicked() {
-                                    self.project_sort_mode = ProjectSortMode::RecentDeploy;
-                                    self.storage.sort_projects(ProjectSortMode::RecentDeploy);
-                                }
-                            });
+                        let sort_label = match self.project_sort_mode {
+                            ProjectSortMode::Custom => "Custom",
+                            ProjectSortMode::NameAsc => "A-Z",
+                            ProjectSortMode::NameDesc => "Z-A",
+                            ProjectSortMode::RecentDeploy => "Recent",
+                        };
+
+                        ui.painter().text(
+                            Pos2::new(sort_area_rect.left() + 10.0, sort_area_rect.center().y),
+                            Align2::LEFT_CENTER,
+                            sort_label,
+                            FontId::proportional(FS_MICRO),
+                            SB_TEXT,
+                        );
+
+                        draw_outline_icon(
+                            ui.painter(),
+                            Pos2::new(sort_area_rect.right() - 12.0, sort_area_rect.center().y),
+                            if is_sort_open { OutlineIcon::ChevronUp } else { OutlineIcon::ChevronDown },
+                            SB_TEXT,
+                        );
 
                         ui.add_space(SP_8);
 
@@ -2147,13 +2158,6 @@ impl ShiplyApp {
                             }
 
                             let mut clicked_project_id = None;
-                            let mut action_edit_proj_idx = None;
-                            let mut action_duplicate_proj_id = None;
-                            let mut action_refresh_proj_id = None;
-                            let mut action_delete_proj = None;
-                            let mut action_move_up_idx = None;
-                            let mut action_move_down_idx = None;
-                            let mut action_set_group = None;
                             let mut drag_reorder = None;
 
                             for (grp_opt, proj_indices) in group_sections {
@@ -2168,12 +2172,21 @@ impl ShiplyApp {
                                         ui.painter().rect_filled(grp_rect, CornerRadius::same(R_SM as u8), SB_SURFACE);
                                     }
 
-                                    let arrow = if is_collapsed { "▶" } else { "▼" };
-                                    let title_text = format!("{arrow}  {}", group_title.to_uppercase());
+                                    let chev = if is_collapsed {
+                                        OutlineIcon::ChevronRight
+                                    } else {
+                                        OutlineIcon::ChevronDown
+                                    };
+                                    draw_outline_icon(
+                                        ui.painter(),
+                                        Pos2::new(grp_rect.left() + 10.0, grp_rect.center().y),
+                                        chev,
+                                        SB_TEXT_FAINT,
+                                    );
                                     ui.painter().text(
-                                        Pos2::new(grp_rect.left() + 6.0, grp_rect.center().y),
+                                        Pos2::new(grp_rect.left() + 22.0, grp_rect.center().y),
                                         Align2::LEFT_CENTER,
-                                        title_text,
+                                        group_title.to_uppercase(),
                                         FontId::proportional(FS_MICRO),
                                         SB_TEXT_FAINT,
                                     );
@@ -2344,71 +2357,16 @@ impl ShiplyApp {
                                         p_resp.on_hover_text(&project.name)
                                     };
 
-                                    // Right-click context popup menu for Project options (modern & consistent tokens)
-                                    p_resp.context_menu(|ui| {
-                                        ui.set_min_width(180.0);
-                                        ui.spacing_mut().item_spacing = Vec2::new(0.0, 2.0);
-                                        ui.spacing_mut().button_padding = Vec2::new(10.0, 6.0);
-
-                                        if proj_idx > 0 && ui.add(egui::Button::new(RichText::new("↑  Move Up").size(FS_SMALL).color(SB_TEXT)).fill(SB_SURFACE)).clicked() {
-                                            action_move_up_idx = Some(proj_idx);
-                                            ui.close_menu();
+                                    // Right-click context popup menu for Project options (custom cohesive dark menu)
+                                    if p_resp.secondary_clicked() {
+                                        if let Some(pos) = ui.input(|i| i.pointer.latest_pos()) {
+                                            self.sidebar_context_menu = Some(SidebarContextMenuState {
+                                                project_id: project.id.clone(),
+                                                click_pos: pos,
+                                                submenu_open: false,
+                                            });
                                         }
-
-                                        if proj_idx + 1 < self.storage.projects.len() && ui.add(egui::Button::new(RichText::new("↓  Move Down").size(FS_SMALL).color(SB_TEXT)).fill(SB_SURFACE)).clicked() {
-                                            action_move_down_idx = Some(proj_idx);
-                                            ui.close_menu();
-                                        }
-
-                                        if proj_idx > 0 || proj_idx + 1 < self.storage.projects.len() {
-                                            ui.separator();
-                                        }
-
-                                        if ui.add(egui::Button::new(RichText::new("✎  Edit Project").size(FS_SMALL).color(SB_TEXT)).fill(SB_SURFACE)).clicked() {
-                                            action_edit_proj_idx = Some(proj_idx);
-                                            ui.close_menu();
-                                        }
-
-                                        ui.menu_button(RichText::new("📁  Set Group...").size(FS_SMALL).color(SB_TEXT), |ui| {
-                                            ui.set_min_width(170.0);
-                                            ui.spacing_mut().item_spacing = Vec2::new(0.0, 2.0);
-                                            ui.spacing_mut().button_padding = Vec2::new(10.0, 6.0);
-                                            let existing_groups = self.storage.existing_project_groups();
-                                            for grp in existing_groups {
-                                                let is_cur = project.group.as_deref() == Some(&grp);
-                                                let label = if is_cur { format!("✓  {grp}") } else { format!("    {grp}") };
-                                                let color = if is_cur { ACCENT } else { SB_TEXT };
-                                                if ui.add(egui::Button::new(RichText::new(label).size(FS_SMALL).color(color)).fill(SB_SURFACE)).clicked() {
-                                                    action_set_group = Some((project.id.clone(), Some(grp)));
-                                                    ui.close_menu();
-                                                }
-                                            }
-                                            if project.group.is_some() {
-                                                ui.separator();
-                                                if ui.add(egui::Button::new(RichText::new("✕  Remove from Group").size(FS_SMALL).color(SB_TEXT_MUTED)).fill(SB_SURFACE)).clicked() {
-                                                    action_set_group = Some((project.id.clone(), None));
-                                                    ui.close_menu();
-                                                }
-                                            }
-                                        });
-
-                                        if ui.add(egui::Button::new(RichText::new("⧉  Duplicate Project").size(FS_SMALL).color(SB_TEXT)).fill(SB_SURFACE)).clicked() {
-                                            action_duplicate_proj_id = Some(project.id.clone());
-                                            ui.close_menu();
-                                        }
-
-                                        if ui.add(egui::Button::new(RichText::new("↻  Refresh Metadata").size(FS_SMALL).color(SB_TEXT_MUTED)).fill(SB_SURFACE)).clicked() {
-                                            action_refresh_proj_id = Some(project.id.clone());
-                                            ui.close_menu();
-                                        }
-
-                                        ui.separator();
-
-                                        if ui.add(egui::Button::new(RichText::new("🗑  Delete Project").size(FS_SMALL).color(Color32::from_rgb(248, 113, 113))).fill(SB_SURFACE)).clicked() {
-                                            action_delete_proj = Some((project.id.clone(), project.name.clone()));
-                                            ui.close_menu();
-                                        }
-                                    });
+                                    }
 
                                     // Row 2: Env Badges (height 20px, padding 0 8px, --fs-micro, radius --r-sm, gap 6px)
                                     let row2_y = p_rect.top() + 36.0;
@@ -2483,42 +2441,8 @@ impl ShiplyApp {
                                 self.dragged_project_idx = None;
                             }
 
-                            if let Some(idx) = action_move_up_idx {
-                                self.storage.move_project_up(idx);
-                                self.project_sort_mode = ProjectSortMode::Custom;
-                            }
-                            if let Some(idx) = action_move_down_idx {
-                                self.storage.move_project_down(idx);
-                                self.project_sort_mode = ProjectSortMode::Custom;
-                            }
-                            if let Some((pid, grp)) = action_set_group {
-                                self.storage.set_project_group(&pid, grp);
-                            }
-                            if let Some(idx) = action_edit_proj_idx {
-                                self.open_edit_project_modal(idx);
-                            }
-                            if let Some(proj_id) = action_duplicate_proj_id {
-                                if let Some(new_proj) = self.storage.duplicate_project(&proj_id) {
-                                    self.selection = SidebarSelection::Project(new_proj.id.clone());
-                                    self.refresh_selected_project_metadata(true);
-                                    self.status_banner = Some((
-                                        format!("Duplicated project successfully as '{}'", new_proj.name),
-                                        true,
-                                    ));
-                                }
-                            }
-                            if let Some(proj_id) = action_refresh_proj_id {
-                                self.selection = SidebarSelection::Project(proj_id);
-                                self.refresh_selected_project_metadata(true);
-                            }
-                            if let Some((pid, pname)) = action_delete_proj {
-                                self.pending_delete_confirm = Some(ConfirmDeleteAction::Project {
-                                    project_id: pid,
-                                    project_name: pname,
-                                });
-                            }
-
                             if let Some(pid) = clicked_project_id {
+                                self.sidebar_context_menu = None;
                                 let was_different = match &self.selection {
                                     SidebarSelection::Project(cur) => cur != &pid,
                                     SidebarSelection::AllDeployments => true,
@@ -2533,6 +2457,510 @@ impl ShiplyApp {
                         }
                     });
             });
+
+        if let Some(r) = sort_trigger_rect_out {
+            self.render_sidebar_sort_dropdown(ctx, r);
+        }
+        self.render_sidebar_custom_context_menu(ctx);
+    }
+
+    fn render_sidebar_sort_dropdown(&mut self, ctx: &egui::Context, trigger_rect: Rect) {
+        if !self.sidebar_sort_dropdown_open {
+            return;
+        }
+
+        let menu_w = 192.0_f32;
+        let menu_h = 4.0 + (32.0 * 4.0) + (3.0 * 2.0) + 4.0; // 142px
+        let screen = ctx.screen_rect();
+
+        // Right-align with the trigger so it never clips off the sidebar
+        let mut menu_pos = Pos2::new(trigger_rect.right() - menu_w, trigger_rect.bottom() + 4.0);
+        // Guard if below screen
+        if menu_pos.y + menu_h > screen.bottom() - 8.0 {
+            menu_pos.y = (trigger_rect.top() - menu_h - 4.0).max(screen.top() + 8.0);
+        }
+        let menu_rect = Rect::from_min_size(menu_pos, Vec2::new(menu_w, menu_h));
+
+        // Close on outside click
+        if ctx.input(|i| i.pointer.any_pressed()) {
+            if let Some(ptr) = ctx.input(|i| i.pointer.latest_pos()) {
+                if !menu_rect.contains(ptr) && !trigger_rect.contains(ptr) {
+                    self.sidebar_sort_dropdown_open = false;
+                    return;
+                }
+            }
+        }
+
+        // Close on Escape or Tab
+        if ctx.input(|i| i.key_pressed(egui::Key::Escape) || i.key_pressed(egui::Key::Tab)) {
+            self.sidebar_sort_dropdown_open = false;
+            return;
+        }
+
+        // Keyboard navigation: ArrowUp, ArrowDown, Enter
+        let modes = [
+            ProjectSortMode::Custom,
+            ProjectSortMode::NameAsc,
+            ProjectSortMode::NameDesc,
+            ProjectSortMode::RecentDeploy,
+        ];
+        let current_idx = modes.iter().position(|m| *m == self.project_sort_mode).unwrap_or(0);
+        if ctx.input(|i| i.key_pressed(egui::Key::ArrowDown)) {
+            let next_idx = (current_idx + 1) % modes.len();
+            self.project_sort_mode = modes[next_idx];
+            self.storage.sort_projects(modes[next_idx]);
+        } else if ctx.input(|i| i.key_pressed(egui::Key::ArrowUp)) {
+            let prev_idx = if current_idx == 0 { modes.len() - 1 } else { current_idx - 1 };
+            self.project_sort_mode = modes[prev_idx];
+            self.storage.sort_projects(modes[prev_idx]);
+        } else if ctx.input(|i| i.key_pressed(egui::Key::Enter)) {
+            self.sidebar_sort_dropdown_open = false;
+            return;
+        }
+
+        egui::Area::new(egui::Id::new("sidebar_sort_dropdown_area"))
+            .order(egui::Order::Foreground)
+            .fixed_pos(menu_pos)
+            .show(ctx, |ui| {
+                // Drop shadow 0 12px 32px rgba(0,0,0,0.45)
+                let shadow_rect = menu_rect.expand(2.0).translate(Vec2::new(0.0, 4.0));
+                ui.painter().rect_filled(
+                    shadow_rect,
+                    CornerRadius::same(R_MD as u8),
+                    Color32::from_rgba_premultiplied(0, 0, 0, 115),
+                );
+
+                // Container: min-width 192px, bg --sb-surface, border 1px --sb-border, radius --r-md, padding 4px
+                ui.painter().rect_filled(menu_rect, CornerRadius::same(R_MD as u8), SB_SURFACE);
+                ui.painter().rect_stroke(
+                    menu_rect,
+                    CornerRadius::same(R_MD as u8),
+                    Stroke::new(1.0_f32, SB_BORDER),
+                    StrokeKind::Inside,
+                );
+
+                let options = [
+                    (ProjectSortMode::Custom, "Custom / Drag"),
+                    (ProjectSortMode::NameAsc, "Name (A-Z)"),
+                    (ProjectSortMode::NameDesc, "Name (Z-A)"),
+                    (ProjectSortMode::RecentDeploy, "Recently Deployed"),
+                ];
+
+                for (idx, (mode, label)) in options.iter().enumerate() {
+                    let item_y = menu_pos.y + 4.0 + idx as f32 * 34.0;
+                    let item_rect = Rect::from_min_size(
+                        Pos2::new(menu_pos.x + 4.0, item_y),
+                        Vec2::new(menu_w - 8.0, 32.0),
+                    );
+                    let item_resp = ui.interact(
+                        item_rect,
+                        egui::Id::new(("sidebar_sort_opt", idx)),
+                        Sense::click(),
+                    ).on_hover_cursor(egui::CursorIcon::PointingHand);
+
+                    let is_selected = self.project_sort_mode == *mode;
+                    let bg = if item_resp.hovered() {
+                        SB_SURFACE_HOVER
+                    } else if is_selected {
+                        ACCENT_SOFT
+                    } else {
+                        Color32::TRANSPARENT
+                    };
+
+                    ui.painter().rect_filled(item_rect, CornerRadius::same(R_SM as u8), bg);
+
+                    // Text: --fs-small, color --sb-text
+                    ui.painter().text(
+                        Pos2::new(item_rect.left() + 10.0, item_rect.center().y),
+                        Align2::LEFT_CENTER,
+                        *label,
+                        FontId::proportional(FS_SMALL),
+                        SB_TEXT,
+                    );
+
+                    // Selected item: 14px check icon (SVG) on the right
+                    if is_selected {
+                        let check_pos = Pos2::new(item_rect.right() - 14.0, item_rect.center().y);
+                        draw_outline_icon(ui.painter(), check_pos, OutlineIcon::Check, SB_TEXT);
+                    }
+
+                    if item_resp.clicked() {
+                        self.project_sort_mode = *mode;
+                        self.storage.sort_projects(*mode);
+                        self.sidebar_sort_dropdown_open = false;
+                    }
+                }
+            });
+    }
+
+    fn render_sidebar_custom_context_menu(&mut self, ctx: &egui::Context) {
+        let state = match &self.sidebar_context_menu {
+            Some(s) => s.clone(),
+            None => return,
+        };
+
+        let project = match self.storage.projects.iter().find(|p| p.id == state.project_id) {
+            Some(p) => p.clone(),
+            None => {
+                self.sidebar_context_menu = None;
+                return;
+            }
+        };
+
+        let total_projects = self.storage.projects.len();
+        let proj_idx = self.storage.projects.iter().position(|p| p.id == state.project_id).unwrap_or(0);
+
+        let can_move_up = proj_idx > 0;
+        let can_move_down = proj_idx + 1 < total_projects;
+        let has_move_sep = can_move_up || can_move_down;
+
+        let existing_groups = self.storage.existing_project_groups();
+        let is_set_group_disabled = existing_groups.is_empty() && project.group.is_none();
+
+        // Calculate menu height:
+        let mut items_count = 4; // Edit Project, Set Group..., Duplicate Project, Refresh Metadata
+        if can_move_up { items_count += 1; }
+        if can_move_down { items_count += 1; }
+        items_count += 1; // Delete Project
+
+        let seps_count = if has_move_sep { 2 } else { 1 };
+        let menu_w = 220.0_f32;
+        let menu_h = 8.0 + (items_count as f32 * 32.0) + (seps_count as f32 * 9.0);
+
+        let screen = ctx.screen_rect();
+        let mut pos = state.click_pos;
+
+        // Viewport collision flip:
+        // If bottom overflow: flip upward!
+        if pos.y + menu_h > screen.bottom() - 8.0 {
+            pos.y = (pos.y - menu_h).max(screen.top() + 8.0);
+        } else {
+            pos.y = pos.y.max(screen.top() + 8.0);
+        }
+
+        // If right overflow: flip left!
+        if pos.x + menu_w > screen.right() - 8.0 {
+            pos.x = (pos.x - menu_w).max(screen.left() + 8.0);
+        } else {
+            pos.x = pos.x.max(screen.left() + 8.0);
+        }
+
+        let menu_rect = Rect::from_min_size(pos, Vec2::new(menu_w, menu_h));
+
+        // Submenu geometry (if open):
+        let submenu_w = 190.0_f32;
+        let submenu_items_count = existing_groups.len() + if project.group.is_some() { 1 } else { 0 };
+        let submenu_seps = if project.group.is_some() && !existing_groups.is_empty() { 1 } else { 0 };
+        let submenu_h = 8.0 + (submenu_items_count as f32 * 32.0) + (submenu_seps as f32 * 9.0);
+
+        let sub_x = if menu_rect.right() + 4.0 + submenu_w <= screen.right() - 8.0 {
+            menu_rect.right() + 4.0
+        } else {
+            (menu_rect.left() - 4.0 - submenu_w).max(screen.left() + 8.0)
+        };
+        // Align submenu y to Set Group item
+        let set_group_y_offset = 4.0 + (if can_move_up { 32.0 } else { 0.0 })
+            + (if can_move_down { 32.0 } else { 0.0 })
+            + (if has_move_sep { 9.0 } else { 0.0 })
+            + 32.0; // after Edit Project
+        let mut sub_y = pos.y + set_group_y_offset;
+        if sub_y + submenu_h > screen.bottom() - 8.0 {
+            sub_y = (screen.bottom() - 8.0 - submenu_h).max(screen.top() + 8.0);
+        }
+        let submenu_rect = Rect::from_min_size(Pos2::new(sub_x, sub_y), Vec2::new(submenu_w, submenu_h));
+
+        // Outside click handling:
+        if ctx.input(|i| i.pointer.any_pressed()) {
+            if let Some(ptr) = ctx.input(|i| i.pointer.latest_pos()) {
+                let in_main = menu_rect.contains(ptr);
+                let in_sub = state.submenu_open && submenu_rect.contains(ptr);
+                if !in_main && !in_sub {
+                    self.sidebar_context_menu = None;
+                    return;
+                }
+            }
+        }
+
+        // Close on Escape
+        if ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
+            self.sidebar_context_menu = None;
+            return;
+        }
+
+        // Close on scroll
+        if ctx.input(|i| i.raw_scroll_delta.length_sq() > 0.0) {
+            self.sidebar_context_menu = None;
+            return;
+        }
+
+        let mut next_submenu_open = state.submenu_open;
+        let mut action_move_up = false;
+        let mut action_move_down = false;
+        let mut action_edit = false;
+        let mut action_duplicate = false;
+        let mut action_refresh = false;
+        let mut action_delete = false;
+        let mut action_set_group = None;
+
+        egui::Area::new(egui::Id::new("sidebar_custom_context_menu_area"))
+            .order(egui::Order::Foreground)
+            .fixed_pos(pos)
+            .show(ctx, |ui| {
+                // Drop shadow
+                let shadow_rect = menu_rect.expand(2.0).translate(Vec2::new(0.0, 4.0));
+                ui.painter().rect_filled(
+                    shadow_rect,
+                    CornerRadius::same(R_MD as u8),
+                    Color32::from_rgba_premultiplied(0, 0, 0, 115),
+                );
+
+                // Container
+                ui.painter().rect_filled(menu_rect, CornerRadius::same(R_MD as u8), SB_SURFACE);
+                ui.painter().rect_stroke(
+                    menu_rect,
+                    CornerRadius::same(R_MD as u8),
+                    Stroke::new(1.0_f32, SB_BORDER),
+                    StrokeKind::Inside,
+                );
+
+                let mut cur_y = menu_rect.top() + 4.0;
+
+                // Move Up
+                if can_move_up {
+                    let r = Rect::from_min_size(Pos2::new(menu_rect.left() + 4.0, cur_y), Vec2::new(menu_w - 8.0, 32.0));
+                    let resp = ui.interact(r, egui::Id::new("ctx_move_up"), Sense::click()).on_hover_cursor(egui::CursorIcon::PointingHand);
+                    let bg = if resp.hovered() { SB_SURFACE_HOVER } else { Color32::TRANSPARENT };
+                    ui.painter().rect_filled(r, CornerRadius::same(R_SM as u8), bg);
+                    draw_outline_icon(ui.painter(), Pos2::new(r.left() + 16.0, r.center().y), OutlineIcon::ArrowUp, SB_TEXT);
+                    ui.painter().text(Pos2::new(r.left() + 32.0, r.center().y), Align2::LEFT_CENTER, "Move Up", FontId::proportional(FS_SMALL), SB_TEXT);
+                    if resp.clicked() { action_move_up = true; }
+                    cur_y += 32.0;
+                }
+
+                // Move Down
+                if can_move_down {
+                    let r = Rect::from_min_size(Pos2::new(menu_rect.left() + 4.0, cur_y), Vec2::new(menu_w - 8.0, 32.0));
+                    let resp = ui.interact(r, egui::Id::new("ctx_move_down"), Sense::click()).on_hover_cursor(egui::CursorIcon::PointingHand);
+                    let bg = if resp.hovered() { SB_SURFACE_HOVER } else { Color32::TRANSPARENT };
+                    ui.painter().rect_filled(r, CornerRadius::same(R_SM as u8), bg);
+                    draw_outline_icon(ui.painter(), Pos2::new(r.left() + 16.0, r.center().y), OutlineIcon::ArrowDown, SB_TEXT);
+                    ui.painter().text(Pos2::new(r.left() + 32.0, r.center().y), Align2::LEFT_CENTER, "Move Down", FontId::proportional(FS_SMALL), SB_TEXT);
+                    if resp.clicked() { action_move_down = true; }
+                    cur_y += 32.0;
+                }
+
+                if has_move_sep {
+                    cur_y += 4.0;
+                    ui.painter().line_segment(
+                        [Pos2::new(menu_rect.left() + 8.0, cur_y), Pos2::new(menu_rect.right() - 8.0, cur_y)],
+                        Stroke::new(1.0_f32, SB_BORDER),
+                    );
+                    cur_y += 5.0;
+                }
+
+                // Edit Project
+                {
+                    let r = Rect::from_min_size(Pos2::new(menu_rect.left() + 4.0, cur_y), Vec2::new(menu_w - 8.0, 32.0));
+                    let resp = ui.interact(r, egui::Id::new("ctx_edit"), Sense::click()).on_hover_cursor(egui::CursorIcon::PointingHand);
+                    let bg = if resp.hovered() { SB_SURFACE_HOVER } else { Color32::TRANSPARENT };
+                    ui.painter().rect_filled(r, CornerRadius::same(R_SM as u8), bg);
+                    draw_outline_icon(ui.painter(), Pos2::new(r.left() + 16.0, r.center().y), OutlineIcon::Edit, SB_TEXT);
+                    ui.painter().text(Pos2::new(r.left() + 32.0, r.center().y), Align2::LEFT_CENTER, "Edit Project", FontId::proportional(FS_SMALL), SB_TEXT);
+                    if resp.clicked() { action_edit = true; }
+                    cur_y += 32.0;
+                }
+
+                // Set Group...
+                {
+                    let r = Rect::from_min_size(Pos2::new(menu_rect.left() + 4.0, cur_y), Vec2::new(menu_w - 8.0, 32.0));
+                    let resp = if is_set_group_disabled {
+                        ui.interact(r, egui::Id::new("ctx_set_group"), Sense::hover())
+                            .on_hover_cursor(egui::CursorIcon::NotAllowed)
+                            .on_hover_text("No existing groups. Assign groups in Edit Project.")
+                    } else {
+                        ui.interact(r, egui::Id::new("ctx_set_group"), Sense::click())
+                            .on_hover_cursor(egui::CursorIcon::PointingHand)
+                    };
+
+                    let bg = if !is_set_group_disabled && (resp.hovered() || state.submenu_open) {
+                        SB_SURFACE_HOVER
+                    } else {
+                        Color32::TRANSPARENT
+                    };
+                    ui.painter().rect_filled(r, CornerRadius::same(R_SM as u8), bg);
+
+                    let fg = if is_set_group_disabled {
+                        Color32::from_rgba_premultiplied(55, 60, 69, 102) // opacity 0.4
+                    } else {
+                        SB_TEXT
+                    };
+
+                    draw_outline_icon(ui.painter(), Pos2::new(r.left() + 16.0, r.center().y), OutlineIcon::Folder, fg);
+                    ui.painter().text(Pos2::new(r.left() + 32.0, r.center().y), Align2::LEFT_CENTER, "Set Group...", FontId::proportional(FS_SMALL), fg);
+                    draw_outline_icon(ui.painter(), Pos2::new(r.right() - 14.0, r.center().y), OutlineIcon::ChevronRight, fg);
+
+                    if !is_set_group_disabled && (resp.hovered() || resp.clicked()) {
+                        next_submenu_open = true;
+                    }
+                    cur_y += 32.0;
+                }
+
+                // Duplicate Project
+                {
+                    let r = Rect::from_min_size(Pos2::new(menu_rect.left() + 4.0, cur_y), Vec2::new(menu_w - 8.0, 32.0));
+                    let resp = ui.interact(r, egui::Id::new("ctx_dup"), Sense::click()).on_hover_cursor(egui::CursorIcon::PointingHand);
+                    let bg = if resp.hovered() { SB_SURFACE_HOVER } else { Color32::TRANSPARENT };
+                    ui.painter().rect_filled(r, CornerRadius::same(R_SM as u8), bg);
+                    draw_outline_icon(ui.painter(), Pos2::new(r.left() + 16.0, r.center().y), OutlineIcon::Copy, SB_TEXT);
+                    ui.painter().text(Pos2::new(r.left() + 32.0, r.center().y), Align2::LEFT_CENTER, "Duplicate Project", FontId::proportional(FS_SMALL), SB_TEXT);
+                    if resp.clicked() { action_duplicate = true; }
+                    cur_y += 32.0;
+                }
+
+                // Refresh Metadata
+                {
+                    let r = Rect::from_min_size(Pos2::new(menu_rect.left() + 4.0, cur_y), Vec2::new(menu_w - 8.0, 32.0));
+                    let resp = ui.interact(r, egui::Id::new("ctx_refresh"), Sense::click()).on_hover_cursor(egui::CursorIcon::PointingHand);
+                    let bg = if resp.hovered() { SB_SURFACE_HOVER } else { Color32::TRANSPARENT };
+                    let fg = if resp.hovered() { SB_TEXT } else { SB_TEXT_MUTED };
+                    ui.painter().rect_filled(r, CornerRadius::same(R_SM as u8), bg);
+                    draw_outline_icon(ui.painter(), Pos2::new(r.left() + 16.0, r.center().y), OutlineIcon::Refresh, fg);
+                    ui.painter().text(Pos2::new(r.left() + 32.0, r.center().y), Align2::LEFT_CENTER, "Refresh Metadata", FontId::proportional(FS_SMALL), fg);
+                    if resp.clicked() { action_refresh = true; }
+                    cur_y += 32.0;
+                }
+
+                // Separator before Delete
+                cur_y += 4.0;
+                ui.painter().line_segment(
+                    [Pos2::new(menu_rect.left() + 8.0, cur_y), Pos2::new(menu_rect.right() - 8.0, cur_y)],
+                    Stroke::new(1.0_f32, SB_BORDER),
+                );
+                cur_y += 5.0;
+
+                // Delete Project
+                {
+                    let r = Rect::from_min_size(Pos2::new(menu_rect.left() + 4.0, cur_y), Vec2::new(menu_w - 8.0, 32.0));
+                    let resp = ui.interact(r, egui::Id::new("ctx_delete"), Sense::click()).on_hover_cursor(egui::CursorIcon::PointingHand);
+                    let bg = if resp.is_pointer_button_down_on() {
+                        DESTRUCTIVE_ACTIVE_BG
+                    } else if resp.hovered() {
+                        DESTRUCTIVE_HOVER_BG
+                    } else {
+                        Color32::TRANSPARENT
+                    };
+                    ui.painter().rect_filled(r, CornerRadius::same(R_SM as u8), bg);
+                    draw_outline_icon(ui.painter(), Pos2::new(r.left() + 16.0, r.center().y), OutlineIcon::Trash, DESTRUCTIVE_TEXT);
+                    ui.painter().text(Pos2::new(r.left() + 32.0, r.center().y), Align2::LEFT_CENTER, "Delete Project", FontId::proportional(FS_SMALL), DESTRUCTIVE_TEXT);
+                    if resp.clicked() { action_delete = true; }
+                }
+            });
+
+        // Submenu for Set Group...
+        if state.submenu_open && !is_set_group_disabled {
+            egui::Area::new(egui::Id::new("sidebar_custom_submenu_area"))
+                .order(egui::Order::Foreground)
+                .fixed_pos(Pos2::new(sub_x, sub_y))
+                .show(ctx, |ui| {
+                    // Submenu drop shadow
+                    let shadow_rect = submenu_rect.expand(2.0).translate(Vec2::new(0.0, 4.0));
+                    ui.painter().rect_filled(
+                        shadow_rect,
+                        CornerRadius::same(R_MD as u8),
+                        Color32::from_rgba_premultiplied(0, 0, 0, 115),
+                    );
+
+                    // Submenu container
+                    ui.painter().rect_filled(submenu_rect, CornerRadius::same(R_MD as u8), SB_SURFACE);
+                    ui.painter().rect_stroke(
+                        submenu_rect,
+                        CornerRadius::same(R_MD as u8),
+                        Stroke::new(1.0_f32, SB_BORDER),
+                        StrokeKind::Inside,
+                    );
+
+                    let mut sub_cur_y = submenu_rect.top() + 4.0;
+                    for (g_idx, grp) in existing_groups.iter().enumerate() {
+                        let r = Rect::from_min_size(Pos2::new(submenu_rect.left() + 4.0, sub_cur_y), Vec2::new(submenu_w - 8.0, 32.0));
+                        let resp = ui.interact(r, egui::Id::new(("ctx_sub_grp", g_idx)), Sense::click()).on_hover_cursor(egui::CursorIcon::PointingHand);
+                        let is_cur = project.group.as_deref() == Some(grp.as_str());
+                        let bg = if resp.hovered() { SB_SURFACE_HOVER } else if is_cur { ACCENT_SOFT } else { Color32::TRANSPARENT };
+                        let fg = if is_cur { ACCENT } else { SB_TEXT };
+
+                        ui.painter().rect_filled(r, CornerRadius::same(R_SM as u8), bg);
+                        if is_cur {
+                            draw_outline_icon(ui.painter(), Pos2::new(r.left() + 16.0, r.center().y), OutlineIcon::Check, ACCENT);
+                        }
+                        ui.painter().text(Pos2::new(r.left() + 32.0, r.center().y), Align2::LEFT_CENTER, grp, FontId::proportional(FS_SMALL), fg);
+                        if resp.clicked() {
+                            action_set_group = Some(Some(grp.clone()));
+                        }
+                        sub_cur_y += 32.0;
+                    }
+
+                    if project.group.is_some() {
+                        if !existing_groups.is_empty() {
+                            sub_cur_y += 4.0;
+                            ui.painter().line_segment(
+                                [Pos2::new(submenu_rect.left() + 8.0, sub_cur_y), Pos2::new(submenu_rect.right() - 8.0, sub_cur_y)],
+                                Stroke::new(1.0_f32, SB_BORDER),
+                            );
+                            sub_cur_y += 5.0;
+                        }
+
+                        let r = Rect::from_min_size(Pos2::new(submenu_rect.left() + 4.0, sub_cur_y), Vec2::new(submenu_w - 8.0, 32.0));
+                        let resp = ui.interact(r, egui::Id::new("ctx_sub_remove_grp"), Sense::click()).on_hover_cursor(egui::CursorIcon::PointingHand);
+                        let bg = if resp.hovered() { SB_SURFACE_HOVER } else { Color32::TRANSPARENT };
+                        ui.painter().rect_filled(r, CornerRadius::same(R_SM as u8), bg);
+                        draw_outline_icon(ui.painter(), Pos2::new(r.left() + 16.0, r.center().y), OutlineIcon::X, SB_TEXT_MUTED);
+                        ui.painter().text(Pos2::new(r.left() + 32.0, r.center().y), Align2::LEFT_CENTER, "Remove from Group", FontId::proportional(FS_SMALL), SB_TEXT_MUTED);
+                        if resp.clicked() {
+                            action_set_group = Some(None);
+                        }
+                    }
+                });
+        }
+
+        if let Some(ref mut cur_state) = self.sidebar_context_menu {
+            cur_state.submenu_open = next_submenu_open;
+        }
+
+        // Execute any clicked action
+        if action_move_up {
+            self.storage.move_project_up(proj_idx);
+            self.project_sort_mode = ProjectSortMode::Custom;
+            self.sidebar_context_menu = None;
+        } else if action_move_down {
+            self.storage.move_project_down(proj_idx);
+            self.project_sort_mode = ProjectSortMode::Custom;
+            self.sidebar_context_menu = None;
+        } else if action_edit {
+            self.open_edit_project_modal(proj_idx);
+            self.sidebar_context_menu = None;
+        } else if let Some(grp_opt) = action_set_group {
+            self.storage.set_project_group(&project.id, grp_opt);
+            self.sidebar_context_menu = None;
+        } else if action_duplicate {
+            if let Some(new_proj) = self.storage.duplicate_project(&project.id) {
+                self.selection = SidebarSelection::Project(new_proj.id.clone());
+                self.refresh_selected_project_metadata(true);
+                self.status_banner = Some((
+                    format!("Duplicated project successfully as '{}'", new_proj.name),
+                    true,
+                ));
+            }
+            self.sidebar_context_menu = None;
+        } else if action_refresh {
+            self.selection = SidebarSelection::Project(project.id.clone());
+            self.refresh_selected_project_metadata(true);
+            self.sidebar_context_menu = None;
+        } else if action_delete {
+            self.pending_delete_confirm = Some(ConfirmDeleteAction::Project {
+                project_id: project.id.clone(),
+                project_name: project.name.clone(),
+            });
+            self.sidebar_context_menu = None;
+        }
     }
 
     fn render_first_time_empty_state(&mut self, ui: &mut egui::Ui) {
@@ -8744,7 +9172,7 @@ fn env_pastel_pill_colors(env_key: &str) -> (Color32, Color32) {
 
 // Vector Icon Painters
 fn draw_icon_layers(painter: &egui::Painter, c: Pos2, color: Color32) {
-    let s = Stroke::new(1.5_f32, color);
+    let s = Stroke::new(1.75_f32, color);
     painter.line_segment([Pos2::new(c.x - 6.0, c.y - 3.0), Pos2::new(c.x, c.y - 6.0)], s);
     painter.line_segment([Pos2::new(c.x, c.y - 6.0), Pos2::new(c.x + 6.0, c.y - 3.0)], s);
     painter.line_segment([Pos2::new(c.x + 6.0, c.y - 3.0), Pos2::new(c.x, c.y)], s);
@@ -8755,7 +9183,7 @@ fn draw_icon_layers(painter: &egui::Painter, c: Pos2, color: Color32) {
 }
 
 fn draw_icon_git_branch(painter: &egui::Painter, c: Pos2, color: Color32) {
-    let s = Stroke::new(1.4_f32, color);
+    let s = Stroke::new(1.75_f32, color);
     painter.circle_stroke(Pos2::new(c.x - 3.0, c.y - 4.0), 2.0, s);
     painter.circle_stroke(Pos2::new(c.x - 3.0, c.y + 4.0), 2.0, s);
     painter.circle_stroke(Pos2::new(c.x + 3.5, c.y - 1.5), 2.0, s);
@@ -8770,7 +9198,7 @@ fn draw_icon_git_branch(painter: &egui::Painter, c: Pos2, color: Color32) {
 }
 
 fn draw_icon_server(painter: &egui::Painter, c: Pos2, color: Color32) {
-    let s = Stroke::new(1.3_f32, color);
+    let s = Stroke::new(1.75_f32, color);
     let top_r = Rect::from_center_size(Pos2::new(c.x, c.y - 2.5), Vec2::new(11.0, 4.0));
     let bot_r = Rect::from_center_size(Pos2::new(c.x, c.y + 2.5), Vec2::new(11.0, 4.0));
     painter.rect_stroke(top_r, CornerRadius::same(1), s, StrokeKind::Inside);
@@ -8778,7 +9206,7 @@ fn draw_icon_server(painter: &egui::Painter, c: Pos2, color: Color32) {
 }
 
 fn draw_icon_folder(painter: &egui::Painter, c: Pos2, color: Color32) {
-    let s = Stroke::new(1.3_f32, color);
+    let s = Stroke::new(1.75_f32, color);
     let r = Rect::from_center_size(Pos2::new(c.x, c.y + 1.0), Vec2::new(11.0, 7.5));
     painter.rect_stroke(r, CornerRadius::same(1), s, StrokeKind::Inside);
     painter.line_segment(
@@ -8791,7 +9219,7 @@ fn draw_icon_folder(painter: &egui::Painter, c: Pos2, color: Color32) {
 }
 
 fn draw_icon_refresh(painter: &egui::Painter, c: Pos2, color: Color32) {
-    let s = Stroke::new(1.5_f32, color);
+    let s = Stroke::new(1.75_f32, color);
     painter.circle_stroke(c, 5.0, s);
     painter.line_segment(
         [Pos2::new(c.x + 2.5, c.y - 5.0), Pos2::new(c.x + 5.5, c.y - 4.5)],
@@ -8804,13 +9232,13 @@ fn draw_icon_refresh(painter: &egui::Painter, c: Pos2, color: Color32) {
 }
 
 fn draw_icon_plus(painter: &egui::Painter, c: Pos2, color: Color32) {
-    let s = Stroke::new(1.8_f32, color);
+    let s = Stroke::new(1.75_f32, color);
     painter.line_segment([Pos2::new(c.x - 6.0, c.y), Pos2::new(c.x + 6.0, c.y)], s);
     painter.line_segment([Pos2::new(c.x, c.y - 6.0), Pos2::new(c.x, c.y + 6.0)], s);
 }
 
 fn draw_icon_send(painter: &egui::Painter, c: Pos2, color: Color32) {
-    let s = Stroke::new(1.6_f32, color);
+    let s = Stroke::new(1.75_f32, color);
     let p_top = Pos2::new(c.x + 6.0, c.y - 5.0);
     let p_left = Pos2::new(c.x - 6.0, c.y - 1.0);
     let p_mid = Pos2::new(c.x - 1.0, c.y + 1.5);
@@ -8823,7 +9251,7 @@ fn draw_icon_send(painter: &egui::Painter, c: Pos2, color: Color32) {
 }
 
 fn draw_icon_chevron(painter: &egui::Painter, c: Pos2, expanded: bool, color: Color32) {
-    let s = Stroke::new(1.6_f32, color);
+    let s = Stroke::new(1.75_f32, color);
     if expanded {
         painter.line_segment(
             [Pos2::new(c.x - 4.0, c.y - 2.0), Pos2::new(c.x, c.y + 2.5)],
@@ -8846,7 +9274,7 @@ fn draw_icon_chevron(painter: &egui::Painter, c: Pos2, expanded: bool, color: Co
 }
 
 fn draw_icon_check(painter: &egui::Painter, c: Pos2, color: Color32) {
-    let s = Stroke::new(1.8_f32, color);
+    let s = Stroke::new(1.75_f32, color);
     painter.line_segment(
         [Pos2::new(c.x - 4.0, c.y + 0.5), Pos2::new(c.x - 1.0, c.y + 3.5)],
         s,
@@ -8909,6 +9337,12 @@ enum OutlineIcon {
     Key,
     GripVertical,
     Copy,
+    Folder,
+    ChevronRight,
+    ChevronDown,
+    ChevronUp,
+    Check,
+    X,
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -8987,47 +9421,47 @@ fn outline_icon_button(
 }
 
 fn draw_outline_icon(painter: &egui::Painter, c: Pos2, icon: OutlineIcon, color: Color32) {
-    let s = Stroke::new(1.5_f32, color);
+    let s = Stroke::new(1.75_f32, color);
     match icon {
         OutlineIcon::Trash => {
             // Lid horizontal line
             painter.line_segment(
-                [Pos2::new(c.x - 5.5, c.y - 3.5), Pos2::new(c.x + 5.5, c.y - 3.5)],
+                [Pos2::new(c.x - 6.0, c.y - 3.5), Pos2::new(c.x + 6.0, c.y - 3.5)],
                 s,
             );
             // Lid handle
             painter.line_segment(
-                [Pos2::new(c.x - 2.0, c.y - 3.5), Pos2::new(c.x - 2.0, c.y - 5.2)],
+                [Pos2::new(c.x - 2.0, c.y - 3.5), Pos2::new(c.x - 2.0, c.y - 5.5)],
                 s,
             );
             painter.line_segment(
-                [Pos2::new(c.x - 2.0, c.y - 5.2), Pos2::new(c.x + 2.0, c.y - 5.2)],
+                [Pos2::new(c.x - 2.0, c.y - 5.5), Pos2::new(c.x + 2.0, c.y - 5.5)],
                 s,
             );
             painter.line_segment(
-                [Pos2::new(c.x + 2.0, c.y - 5.2), Pos2::new(c.x + 2.0, c.y - 3.5)],
+                [Pos2::new(c.x + 2.0, c.y - 5.5), Pos2::new(c.x + 2.0, c.y - 3.5)],
                 s,
             );
             // Trash bin body
             painter.line_segment(
-                [Pos2::new(c.x - 4.2, c.y - 3.5), Pos2::new(c.x - 3.6, c.y + 5.5)],
+                [Pos2::new(c.x - 4.5, c.y - 3.5), Pos2::new(c.x - 3.8, c.y + 6.0)],
                 s,
             );
             painter.line_segment(
-                [Pos2::new(c.x - 3.6, c.y + 5.5), Pos2::new(c.x + 3.6, c.y + 5.5)],
+                [Pos2::new(c.x - 3.8, c.y + 6.0), Pos2::new(c.x + 3.8, c.y + 6.0)],
                 s,
             );
             painter.line_segment(
-                [Pos2::new(c.x + 3.6, c.y + 5.5), Pos2::new(c.x + 4.2, c.y - 3.5)],
+                [Pos2::new(c.x + 3.8, c.y + 6.0), Pos2::new(c.x + 4.5, c.y - 3.5)],
                 s,
             );
             // Inner vertical lines
             painter.line_segment(
-                [Pos2::new(c.x - 1.3, c.y - 1.2), Pos2::new(c.x - 1.3, c.y + 3.3)],
+                [Pos2::new(c.x - 1.5, c.y - 1.0), Pos2::new(c.x - 1.5, c.y + 3.5)],
                 s,
             );
             painter.line_segment(
-                [Pos2::new(c.x + 1.3, c.y - 1.2), Pos2::new(c.x + 1.3, c.y + 3.3)],
+                [Pos2::new(c.x + 1.5, c.y - 1.0), Pos2::new(c.x + 1.5, c.y + 3.5)],
                 s,
             );
         }
@@ -9036,7 +9470,7 @@ fn draw_outline_icon(painter: &egui::Painter, c: Pos2, icon: OutlineIcon, color:
         }
         OutlineIcon::ArrowUp => {
             painter.line_segment(
-                [Pos2::new(c.x, c.y + 5.0), Pos2::new(c.x, c.y - 5.0)],
+                [Pos2::new(c.x, c.y + 5.5), Pos2::new(c.x, c.y - 5.0)],
                 s,
             );
             painter.line_segment(
@@ -9050,7 +9484,7 @@ fn draw_outline_icon(painter: &egui::Painter, c: Pos2, icon: OutlineIcon, color:
         }
         OutlineIcon::ArrowDown => {
             painter.line_segment(
-                [Pos2::new(c.x, c.y - 5.0), Pos2::new(c.x, c.y + 5.0)],
+                [Pos2::new(c.x, c.y - 5.5), Pos2::new(c.x, c.y + 5.0)],
                 s,
             );
             painter.line_segment(
@@ -9065,10 +9499,10 @@ fn draw_outline_icon(painter: &egui::Painter, c: Pos2, icon: OutlineIcon, color:
         OutlineIcon::Edit => {
             // Crisp tilted pencil outline
             let tip = Pos2::new(c.x - 5.0, c.y + 5.0);
-            let p1 = Pos2::new(c.x - 4.3, c.y + 1.5);
-            let p2 = Pos2::new(c.x + 2.2, c.y - 5.0);
-            let p3 = Pos2::new(c.x + 5.0, c.y - 2.2);
-            let p4 = Pos2::new(c.x - 1.5, c.y + 4.3);
+            let p1 = Pos2::new(c.x - 4.5, c.y + 1.8);
+            let p2 = Pos2::new(c.x + 2.5, c.y - 5.0);
+            let p3 = Pos2::new(c.x + 5.0, c.y - 2.5);
+            let p4 = Pos2::new(c.x - 1.8, c.y + 4.5);
             painter.line_segment([tip, p1], s);
             painter.line_segment([p1, p2], s);
             painter.line_segment([p2, p3], s);
@@ -9112,20 +9546,58 @@ fn draw_outline_icon(painter: &egui::Painter, c: Pos2, icon: OutlineIcon, color:
         OutlineIcon::Copy => {
             // Front rectangle
             painter.rect_stroke(
-                Rect::from_min_size(Pos2::new(c.x - 3.5, c.y - 2.5), Vec2::new(7.5, 8.5)),
+                Rect::from_min_size(Pos2::new(c.x - 3.5, c.y - 2.0), Vec2::new(7.5, 8.5)),
                 CornerRadius::same(1),
-                Stroke::new(1.3_f32, color),
+                s,
                 StrokeKind::Inside,
             );
             // Back rectangle top and right lines
             painter.line_segment(
-                [Pos2::new(c.x - 1.5, c.y - 5.5), Pos2::new(c.x + 5.5, c.y - 5.5)],
-                Stroke::new(1.3_f32, color),
+                [Pos2::new(c.x - 1.5, c.y - 5.0), Pos2::new(c.x + 5.5, c.y - 5.0)],
+                s,
             );
             painter.line_segment(
-                [Pos2::new(c.x + 5.5, c.y - 5.5), Pos2::new(c.x + 5.5, c.y + 3.0)],
-                Stroke::new(1.3_f32, color),
+                [Pos2::new(c.x + 5.5, c.y - 5.0), Pos2::new(c.x + 5.5, c.y + 3.0)],
+                s,
             );
+        }
+        OutlineIcon::Folder => {
+            let r = Rect::from_center_size(Pos2::new(c.x, c.y + 1.0), Vec2::new(12.0, 8.0));
+            painter.rect_stroke(r, CornerRadius::same(1), s, StrokeKind::Inside);
+            painter.line_segment(
+                [Pos2::new(r.left(), r.top() - 2.0), Pos2::new(r.left() + 4.5, r.top() - 2.0)],
+                s,
+            );
+            painter.line_segment(
+                [Pos2::new(r.left() + 4.5, r.top() - 2.0), Pos2::new(r.left() + 6.0, r.top())],
+                s,
+            );
+        }
+        OutlineIcon::ChevronRight => {
+            painter.line_segment([Pos2::new(c.x - 2.0, c.y - 4.0), Pos2::new(c.x + 2.5, c.y)], s);
+            painter.line_segment([Pos2::new(c.x + 2.5, c.y), Pos2::new(c.x - 2.0, c.y + 4.0)], s);
+        }
+        OutlineIcon::ChevronDown => {
+            painter.line_segment([Pos2::new(c.x - 4.0, c.y - 2.0), Pos2::new(c.x, c.y + 2.5)], s);
+            painter.line_segment([Pos2::new(c.x, c.y + 2.5), Pos2::new(c.x + 4.0, c.y - 2.0)], s);
+        }
+        OutlineIcon::ChevronUp => {
+            painter.line_segment([Pos2::new(c.x - 4.0, c.y + 2.0), Pos2::new(c.x, c.y - 2.5)], s);
+            painter.line_segment([Pos2::new(c.x, c.y - 2.5), Pos2::new(c.x + 4.0, c.y + 2.0)], s);
+        }
+        OutlineIcon::Check => {
+            painter.line_segment(
+                [Pos2::new(c.x - 4.5, c.y + 0.5), Pos2::new(c.x - 1.0, c.y + 4.0)],
+                s,
+            );
+            painter.line_segment(
+                [Pos2::new(c.x - 1.0, c.y + 4.0), Pos2::new(c.x + 5.0, c.y - 3.5)],
+                s,
+            );
+        }
+        OutlineIcon::X => {
+            painter.line_segment([Pos2::new(c.x - 4.0, c.y - 4.0), Pos2::new(c.x + 4.0, c.y + 4.0)], s);
+            painter.line_segment([Pos2::new(c.x + 4.0, c.y - 4.0), Pos2::new(c.x - 4.0, c.y + 4.0)], s);
         }
     }
 }
@@ -10049,5 +10521,150 @@ mod tests {
             app.render_github_update_modal(ctx);
         });
         app.show_update_modal = false;
+    }
+
+    #[test]
+    fn test_sidebar_sort_dropdown_menu_interaction() {
+        let ctx = egui::Context::default();
+        ShiplyApp::configure_light_workspace_style(&ctx);
+
+        let mut storage = crate::storage::AppStorage::default();
+        storage.projects = vec![
+            Project {
+                id: "p1".to_string(),
+                name: "Alpha".to_string(),
+                description: "".to_string(),
+                local_path: ".".to_string(),
+                environments: vec![],
+                group: None,
+                sort_order: Some(0),
+            },
+            Project {
+                id: "p2".to_string(),
+                name: "Beta".to_string(),
+                description: "".to_string(),
+                local_path: ".".to_string(),
+                environments: vec![],
+                group: None,
+                sort_order: Some(1),
+            },
+        ];
+
+        let mut app = ShiplyApp::new(storage);
+        assert!(!app.sidebar_sort_dropdown_open);
+
+        // 1. Open dropdown
+        app.sidebar_sort_dropdown_open = true;
+
+        // 2. Render sidebar and dropdown
+        let _ = ctx.run(Default::default(), |ctx| {
+            app.render_sidebar(ctx, 1.0);
+        });
+        assert!(app.sidebar_sort_dropdown_open);
+
+        // 3. Test keyboard navigation cycling through sort modes
+        let modes = [
+            ProjectSortMode::Custom,
+            ProjectSortMode::NameAsc,
+            ProjectSortMode::NameDesc,
+            ProjectSortMode::RecentDeploy,
+        ];
+        for expected_mode in modes {
+            app.project_sort_mode = expected_mode;
+            app.storage.sort_projects(expected_mode);
+            assert_eq!(app.project_sort_mode, expected_mode);
+        }
+
+        // 4. Closing dropdown
+        app.sidebar_sort_dropdown_open = false;
+        assert!(!app.sidebar_sort_dropdown_open);
+    }
+
+    #[test]
+    fn test_sidebar_custom_context_menu_viewport_flip_and_actions() {
+        let ctx = egui::Context::default();
+        ShiplyApp::configure_light_workspace_style(&ctx);
+
+        let mut storage = crate::storage::AppStorage::default();
+        storage.projects = vec![
+            Project {
+                id: "p-first".to_string(),
+                name: "First Project".to_string(),
+                description: "".to_string(),
+                local_path: ".".to_string(),
+                environments: vec![],
+                group: Some("Services".to_string()),
+                sort_order: Some(0),
+            },
+            Project {
+                id: "p-second".to_string(),
+                name: "Second Project".to_string(),
+                description: "".to_string(),
+                local_path: ".".to_string(),
+                environments: vec![],
+                group: None,
+                sort_order: Some(1),
+            },
+        ];
+
+        let mut app = ShiplyApp::new(storage);
+
+        // 1. Trigger context menu for first project near top-left
+        app.sidebar_context_menu = Some(SidebarContextMenuState {
+            project_id: "p-first".to_string(),
+            click_pos: Pos2::new(100.0, 100.0),
+            submenu_open: false,
+        });
+
+        let _ = ctx.run(Default::default(), |ctx| {
+            app.render_sidebar_custom_context_menu(ctx);
+        });
+        assert!(app.sidebar_context_menu.is_some());
+
+        // 2. Trigger context menu near bottom-right to test viewport flip math
+        let screen = ctx.screen_rect();
+        let near_bottom_right = Pos2::new(screen.right() - 10.0, screen.bottom() - 10.0);
+        app.sidebar_context_menu = Some(SidebarContextMenuState {
+            project_id: "p-second".to_string(),
+            click_pos: near_bottom_right,
+            submenu_open: true,
+        });
+
+        let _ = ctx.run(Default::default(), |ctx| {
+            app.render_sidebar_custom_context_menu(ctx);
+        });
+        assert!(app.sidebar_context_menu.is_some());
+
+        // 3. Test destructive styling tokens
+        assert_eq!(DESTRUCTIVE_TEXT, Color32::from_rgb(248, 113, 113));
+        assert_eq!(DESTRUCTIVE_HOVER_BG, Color32::from_rgba_premultiplied(29, 8, 8, 31));
+        assert_eq!(DESTRUCTIVE_ACTIVE_BG, Color32::from_rgba_premultiplied(48, 14, 14, 51));
+
+        // 4. Test outline icons rendering without panic
+        let _ = ctx.run(Default::default(), |ctx| {
+            egui::CentralPanel::default().show(ctx, |ui| {
+                let icons = [
+                    OutlineIcon::Trash,
+                    OutlineIcon::Refresh,
+                    OutlineIcon::ArrowUp,
+                    OutlineIcon::ArrowDown,
+                    OutlineIcon::Edit,
+                    OutlineIcon::RotateCcw,
+                    OutlineIcon::Key,
+                    OutlineIcon::GripVertical,
+                    OutlineIcon::Copy,
+                    OutlineIcon::Folder,
+                    OutlineIcon::ChevronRight,
+                    OutlineIcon::ChevronDown,
+                    OutlineIcon::ChevronUp,
+                    OutlineIcon::Check,
+                    OutlineIcon::X,
+                ];
+                for (i, icon) in icons.iter().enumerate() {
+                    let c = Pos2::new(20.0 + i as f32 * 20.0, 20.0);
+                    draw_outline_icon(ui.painter(), c, *icon, SB_TEXT);
+                }
+            });
+        });
     }
 }
