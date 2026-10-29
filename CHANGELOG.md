@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.10.6] - 2026-10-29
+
+### Added
+- Deployment History: filtered to strictly show the active environment of the selected project (e.g. opening backend project and selecting development displays only development deployments; switching environments dynamically updates history and tab counts).
+- Version Sync: added smooth and clean "Sync" button across environments with 1-click sync for single candidate environments and an elevated custom dropdown for picking between sibling environments or `package.json`.
+- Console Pipeline Indicator: added animated circular loading indicator on running pipelines across all console touchpoints (Console Output section header, Terminal window title bar, and live execution status at the bottom of the log stream).
+
 ## [0.10.5] - 2026-10-29
 
 ### Fixed

@@ -201,6 +201,14 @@ pub struct GitInspectionResult {
     pub update_version_input: bool,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SyncVersionCandidate {
+    pub source_name: String,
+    pub env_key: Option<String>,
+    pub version: String,
+    pub is_latest: bool,
+}
+
 pub struct ShiplyApp {
     storage: AppStorage,
     selection: SidebarSelection,
@@ -227,6 +235,7 @@ pub struct ShiplyApp {
     dragged_project_idx: Option<usize>,
     sidebar_sort_dropdown_open: bool,
     sidebar_context_menu: Option<SidebarContextMenuState>,
+    sync_version_dropdown_open: bool,
 
     // Deployment version, branch & release controls
     deploy_version_input: String,
@@ -364,6 +373,7 @@ impl ShiplyApp {
             dragged_project_idx: None,
             sidebar_sort_dropdown_open: false,
             sidebar_context_menu: None,
+            sync_version_dropdown_open: false,
             deploy_version_input: "1.0.0".to_string(),
             selected_git_branch: String::new(),
             bump_package_json: true,
@@ -6052,7 +6062,13 @@ impl ShiplyApp {
             .storage
             .previous_rollback_candidate(project_id, &self.selected_env_key)
             .cloned();
-        self.render_deploy_action_bar(ui, &active_env_name, rollback_candidate);
+        let mut sync_trigger_rect = None;
+        self.render_deploy_action_bar(
+            ui,
+            &active_env_name,
+            rollback_candidate,
+            &mut sync_trigger_rect,
+        );
 
         ui.add_space(18.0);
 
@@ -6067,7 +6083,7 @@ impl ShiplyApp {
             .unwrap_or(0);
         let history_count = self
             .storage
-            .filter_deployments(Some(project_id), None, None)
+            .filter_deployments(Some(project_id), Some(&self.selected_env_key), None)
             .len();
 
         horizontal_row(ui, 38.0, |ui| {
@@ -6116,6 +6132,268 @@ impl ShiplyApp {
                 self.render_server_settings_tab(ui, proj_idx);
             }
         }
+
+        if let Some(r) = sync_trigger_rect {
+            self.render_sync_version_dropdown(ui.ctx(), r, project_id);
+        }
+    }
+
+    pub fn sync_version_candidates(&self, project_id: &str) -> Vec<SyncVersionCandidate> {
+        let mut candidates = Vec::new();
+        let Some(proj) = self.storage.projects.iter().find(|p| p.id == project_id) else {
+            return candidates;
+        };
+
+        // 1. Collect latest deployed versions from other environments in this project
+        for env in &proj.environments {
+            if env.key == self.selected_env_key {
+                continue;
+            }
+            if let Some(dep) = self
+                .storage
+                .last_succeeded_deployment(project_id, &env.key)
+                .or_else(|| self.storage.latest_deployment(project_id, &env.key))
+            {
+                let ver = dep.version.trim().to_string();
+                if !ver.is_empty()
+                    && !candidates
+                        .iter()
+                        .any(|c: &SyncVersionCandidate| c.version == ver && c.source_name == env.name)
+                {
+                    candidates.push(SyncVersionCandidate {
+                        source_name: env.name.clone(),
+                        env_key: Some(env.key.clone()),
+                        version: ver,
+                        is_latest: false,
+                    });
+                }
+            }
+        }
+
+        // 2. Fall back to package.json if present and not already in candidates
+        if let Some(pkg_ver) = &self.cached_pkg_version {
+            let ver = pkg_ver.trim().to_string();
+            if !ver.is_empty()
+                && ver != "0.0.0"
+                && !candidates.iter().any(|c| c.version == ver)
+            {
+                candidates.push(SyncVersionCandidate {
+                    source_name: "package.json".to_string(),
+                    env_key: None,
+                    version: ver,
+                    is_latest: false,
+                });
+            }
+        }
+
+        // 3. Mark the most recent candidate as is_latest
+        if !candidates.is_empty() {
+            let most_recent_ver = self
+                .storage
+                .deployments
+                .iter()
+                .filter(|d| d.project_id == project_id && d.environment != self.selected_env_key)
+                .max_by_key(|d| d.started_at)
+                .map(|d| d.version.clone());
+
+            let mut matched = false;
+            if let Some(recent_ver) = most_recent_ver {
+                if let Some(cand) = candidates.iter_mut().find(|c| c.version == recent_ver) {
+                    cand.is_latest = true;
+                    matched = true;
+                }
+            }
+            if !matched {
+                candidates[0].is_latest = true;
+            }
+        }
+
+        candidates
+    }
+
+    pub fn apply_synced_version(&mut self, version: &str, source_name: &str) {
+        self.deploy_version_input = version.trim().to_string();
+        self.status_banner = Some((
+            format!("Synced version to v{} from {}.", version.trim(), source_name),
+            true,
+        ));
+        self.sync_version_dropdown_open = false;
+    }
+
+    fn render_sync_version_dropdown(
+        &mut self,
+        ctx: &egui::Context,
+        trigger_rect: Rect,
+        project_id: &str,
+    ) {
+        if !self.sync_version_dropdown_open {
+            return;
+        }
+
+        let candidates = self.sync_version_candidates(project_id);
+        let item_h = 32.0_f32;
+        let header_h = 28.0_f32;
+        let pad = 6.0_f32;
+        let row_count = if candidates.is_empty() { 1 } else { candidates.len() };
+        let menu_w = 270.0_f32;
+        let menu_h = pad * 2.0
+            + header_h
+            + (row_count as f32 * item_h)
+            + ((row_count.saturating_sub(1)) as f32 * 4.0);
+
+        let screen = ctx.screen_rect();
+        let mut menu_pos = Pos2::new(trigger_rect.left(), trigger_rect.bottom() + 4.0);
+        if menu_pos.x + menu_w > screen.right() - 10.0 {
+            menu_pos.x = (trigger_rect.right() - menu_w).max(screen.left() + 10.0);
+        }
+        if menu_pos.y + menu_h > screen.bottom() - 10.0 {
+            menu_pos.y = (trigger_rect.top() - menu_h - 4.0).max(screen.top() + 10.0);
+        }
+        let menu_rect = Rect::from_min_size(menu_pos, Vec2::new(menu_w, menu_h));
+
+        // Outside click to close
+        if ctx.input(|i| i.pointer.any_pressed()) {
+            if let Some(ptr) = ctx.input(|i| i.pointer.latest_pos()) {
+                if !menu_rect.contains(ptr) && !trigger_rect.contains(ptr) {
+                    self.sync_version_dropdown_open = false;
+                    return;
+                }
+            }
+        }
+
+        // Close on Esc / Tab
+        if ctx.input(|i| i.key_pressed(egui::Key::Escape) || i.key_pressed(egui::Key::Tab)) {
+            self.sync_version_dropdown_open = false;
+            return;
+        }
+
+        let mut chosen = None;
+
+        egui::Area::new(egui::Id::new("sync_version_dropdown_area"))
+            .order(egui::Order::Foreground)
+            .fixed_pos(menu_pos)
+            .show(ctx, |ui| {
+                let shadow_rect = menu_rect.expand(2.0);
+                ui.painter().rect_filled(
+                    shadow_rect,
+                    CornerRadius::same(8),
+                    Color32::from_black_alpha(45),
+                );
+
+                ui.painter().rect_filled(menu_rect, CornerRadius::same(8), CARD_BG);
+                ui.painter().rect_stroke(
+                    menu_rect,
+                    CornerRadius::same(8),
+                    Stroke::new(1.0_f32, CARD_BORDER),
+                    StrokeKind::Inside,
+                );
+
+                let mut child = ui.new_child(
+                    egui::UiBuilder::new()
+                        .max_rect(menu_rect.shrink(pad))
+                        .layout(Layout::top_down(Align::Min)),
+                );
+
+                horizontal_row(&mut child, 22.0, |ui| {
+                    ui.add_space(4.0);
+                    ui.label(
+                        RichText::new("SYNC VERSION ACROSS ENVIRONMENTS")
+                            .size(FONT_XS)
+                            .strong()
+                            .color(TEXT_MUTED),
+                    );
+                });
+                draw_divider(&mut child, SUBTLE_BG);
+                child.add_space(4.0);
+
+                if candidates.is_empty() {
+                    child.add_space(4.0);
+                    child.horizontal(|ui| {
+                        ui.add_space(8.0);
+                        ui.label(
+                            RichText::new("No other deployed versions found.")
+                                .size(FONT_SM)
+                                .color(TEXT_MUTED),
+                        );
+                    });
+                } else {
+                    for cand in &candidates {
+                        let is_current = self.deploy_version_input.trim() == cand.version.trim();
+                        let (rect, resp) = child.allocate_exact_size(
+                            Vec2::new(child.available_width(), 32.0),
+                            Sense::click(),
+                        );
+                        let resp = resp.on_hover_cursor(egui::CursorIcon::PointingHand);
+                        let bg = if resp.hovered() {
+                            SUBTLE_BG
+                        } else if cand.is_latest {
+                            Color32::from_rgb(239, 246, 255)
+                        } else {
+                            Color32::TRANSPARENT
+                        };
+                        child.painter().rect_filled(rect, CornerRadius::same(6), bg);
+
+                        // Icon on left
+                        let icon_c = Pos2::new(rect.left() + 16.0, rect.center().y);
+                        draw_outline_icon(
+                            child.painter(),
+                            icon_c,
+                            if cand.env_key.is_some() {
+                                OutlineIcon::Refresh
+                            } else {
+                                OutlineIcon::Folder
+                            },
+                            if cand.is_latest {
+                                PRIMARY_BLUE
+                            } else {
+                                TEXT_SECONDARY
+                            },
+                        );
+
+                        // Source name
+                        let name_text = if cand.is_latest {
+                            format!("{} (Latest)", cand.source_name)
+                        } else {
+                            cand.source_name.clone()
+                        };
+                        child.painter().text(
+                            Pos2::new(rect.left() + 32.0, rect.center().y),
+                            Align2::LEFT_CENTER,
+                            name_text,
+                            FontId::proportional(FONT_SM),
+                            if cand.is_latest {
+                                PRIMARY_BLUE
+                            } else {
+                                TEXT_PRIMARY
+                            },
+                        );
+
+                        // Version badge on right
+                        let ver_text = format!("v{}", cand.version);
+                        let ver_color = if is_current {
+                            Color32::from_rgb(22, 163, 74)
+                        } else {
+                            TEXT_PRIMARY
+                        };
+                        child.painter().text(
+                            Pos2::new(rect.right() - 10.0, rect.center().y),
+                            Align2::RIGHT_CENTER,
+                            ver_text,
+                            FontId::proportional(FONT_SM),
+                            ver_color,
+                        );
+
+                        if resp.clicked() {
+                            chosen = Some((cand.version.clone(), cand.source_name.clone()));
+                        }
+                    }
+                }
+            });
+
+        if let Some((v, s)) = chosen {
+            self.apply_synced_version(&v, &s);
+            ctx.request_repaint();
+        }
     }
 
     fn render_deploy_action_bar(
@@ -6123,6 +6401,7 @@ impl ShiplyApp {
         ui: &mut egui::Ui,
         env_display_name: &str,
         rollback_candidate: Option<DeploymentRecord>,
+        sync_trigger_rect_out: &mut Option<Rect>,
     ) {
         let mut trigger_deploy = false;
         let mut trigger_rollback = None;
@@ -6180,6 +6459,64 @@ impl ShiplyApp {
             .min_size(Vec2::new(56.0, 32.0));
             if child.add(b).clicked() {
                 self.deploy_version_input = bump_semver(&self.deploy_version_input, bump);
+            }
+        }
+
+        child.add_space(4.0);
+        let project_id = match &self.selection {
+            SidebarSelection::Project(pid) => pid.as_str(),
+            SidebarSelection::AllDeployments => "",
+        };
+        let sync_candidates = self.sync_version_candidates(project_id);
+        let sync_btn_text = if self.sync_version_dropdown_open {
+            "Sync ▴"
+        } else {
+            "Sync ▾"
+        };
+        let sync_tooltip = if sync_candidates.is_empty() {
+            "Sync version across environments (no other deployed versions found yet)".to_string()
+        } else if let Some(latest) = sync_candidates.iter().find(|c| c.is_latest) {
+            format!(
+                "Sync version across environments (latest: v{} from {})",
+                latest.version, latest.source_name
+            )
+        } else {
+            "Sync version across environments".to_string()
+        };
+
+        let sync_resp = outline_icon_button(
+            &mut child,
+            ("sync_version_btn", project_id),
+            OutlineIcon::Refresh,
+            Some(sync_btn_text),
+            if self.sync_version_dropdown_open {
+                PRIMARY_BLUE
+            } else {
+                TEXT_SECONDARY
+            },
+            if self.sync_version_dropdown_open {
+                Color32::from_rgb(239, 246, 255)
+            } else {
+                SUBTLE_BG
+            },
+            CARD_BG,
+            if self.sync_version_dropdown_open {
+                PRIMARY_BLUE
+            } else {
+                CARD_BORDER
+            },
+            true,
+        )
+        .on_hover_text(sync_tooltip);
+
+        *sync_trigger_rect_out = Some(sync_resp.rect);
+
+        if sync_resp.clicked() {
+            if sync_candidates.len() == 1 {
+                let cand = &sync_candidates[0];
+                self.apply_synced_version(&cand.version, &cand.source_name);
+            } else {
+                self.sync_version_dropdown_open = !self.sync_version_dropdown_open;
             }
         }
 
@@ -7298,14 +7635,37 @@ impl ShiplyApp {
     }
 
     fn render_history_and_logs_view(&mut self, ui: &mut egui::Ui, project_filter: Option<&str>) {
-        let filter_options = self.storage.existing_environment_tabs(project_filter);
-        if self.history_env_filter.is_some()
-            && !filter_options
+        let is_project_view = project_filter.is_some();
+        let project_envs: Vec<(String, String)> = if let Some(pid) = project_filter {
+            self.storage
+                .projects
                 .iter()
-                .any(|(_, k)| *k == self.history_env_filter)
-        {
-            self.history_env_filter = None;
-        }
+                .find(|p| p.id == pid)
+                .map(|p| {
+                    p.environments
+                        .iter()
+                        .map(|e| (e.name.clone(), e.key.clone()))
+                        .collect()
+                })
+                .unwrap_or_default()
+        } else {
+            Vec::new()
+        };
+
+        let filter_options = if !is_project_view {
+            let opts = self.storage.existing_environment_tabs(None);
+            if self.history_env_filter.is_some()
+                && !opts.iter().any(|(_, k)| *k == self.history_env_filter)
+            {
+                self.history_env_filter = None;
+            }
+            opts
+        } else {
+            Vec::new()
+        };
+
+        let mut switched_env_key = None;
+        let mut switched_history_filter = None;
 
         // Section Header + Filter Pills (Fixed 34px height)
         horizontal_row(ui, 34.0, |ui| {
@@ -7315,36 +7675,81 @@ impl ShiplyApp {
                     .strong()
                     .color(TEXT_PRIMARY),
             );
-            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                ui.spacing_mut().item_spacing = Vec2::new(6.0, 0.0);
-                for (label, filter_val) in filter_options.into_iter().rev() {
-                    let is_active = self.history_env_filter == filter_val;
-                    let btn = egui::Button::new(
-                        RichText::new(label).size(FONT_SM).strong().color(if is_active {
-                            Color32::WHITE
-                        } else {
-                            TEXT_SECONDARY
-                        }),
-                    )
-                    .fill(if is_active { TEXT_PRIMARY } else { CARD_BG })
-                    .stroke(Stroke::new(
-                        1.0_f32,
-                        if is_active { TEXT_PRIMARY } else { CARD_BORDER },
-                    ))
-                    .corner_radius(6.0);
-                    if ui.add(btn).clicked() {
-                        self.history_env_filter = filter_val;
-                        self.history_visible_limit = 5;
+
+            if is_project_view {
+                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                    ui.spacing_mut().item_spacing = Vec2::new(6.0, 0.0);
+                    for (env_name, env_key) in project_envs.into_iter().rev() {
+                        let is_active = self.selected_env_key == env_key;
+                        let btn = egui::Button::new(
+                            RichText::new(env_name).size(FONT_SM).strong().color(if is_active {
+                                Color32::WHITE
+                            } else {
+                                TEXT_SECONDARY
+                            }),
+                        )
+                        .fill(if is_active { TEXT_PRIMARY } else { CARD_BG })
+                        .stroke(Stroke::new(
+                            1.0_f32,
+                            if is_active { TEXT_PRIMARY } else { CARD_BORDER },
+                        ))
+                        .corner_radius(6.0);
+                        if ui.add(btn).clicked() {
+                            switched_env_key = Some(env_key);
+                        }
                     }
-                }
-            });
+                });
+            } else {
+                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                    ui.spacing_mut().item_spacing = Vec2::new(6.0, 0.0);
+                    for (label, filter_val) in filter_options.into_iter().rev() {
+                        let is_active = self.history_env_filter == filter_val;
+                        let btn = egui::Button::new(
+                            RichText::new(label).size(FONT_SM).strong().color(if is_active {
+                                Color32::WHITE
+                            } else {
+                                TEXT_SECONDARY
+                            }),
+                        )
+                        .fill(if is_active { TEXT_PRIMARY } else { CARD_BG })
+                        .stroke(Stroke::new(
+                            1.0_f32,
+                            if is_active { TEXT_PRIMARY } else { CARD_BORDER },
+                        ))
+                        .corner_radius(6.0);
+                        if ui.add(btn).clicked() {
+                            switched_history_filter = Some(filter_val);
+                        }
+                    }
+                });
+            }
         });
+
+        if let Some(env_key) = switched_env_key {
+            self.selected_env_key = env_key;
+            self.history_visible_limit = 5;
+            self.refresh_selected_project_metadata(true);
+        } else if let Some(filter_val) = switched_history_filter {
+            self.history_env_filter = filter_val;
+            self.history_visible_limit = 5;
+        }
 
         ui.add_space(10.0);
 
+        // When viewing a project workspace, deployment history strictly filters by the active environment
+        let effective_env_filter = if is_project_view {
+            if self.selected_env_key.is_empty() {
+                None
+            } else {
+                Some(self.selected_env_key.as_str())
+            }
+        } else {
+            self.history_env_filter.as_deref()
+        };
+
         let filtered: Vec<DeploymentRecord> = self
             .storage
-            .filter_deployments(project_filter, self.history_env_filter.as_deref(), None)
+            .filter_deployments(project_filter, effective_env_filter, None)
             .into_iter()
             .cloned()
             .collect();
@@ -7420,8 +7825,13 @@ impl ShiplyApp {
                 if filtered.is_empty() {
                     ui.vertical_centered(|ui| {
                         ui.add_space(20.0);
+                        let msg = if is_project_view {
+                            format!("No deployments recorded for '{}' yet.", self.selected_env_key)
+                        } else {
+                            "No deployments recorded yet.".to_string()
+                        };
                         ui.label(
-                            RichText::new("No deployments recorded yet.")
+                            RichText::new(msg)
                                 .size(FONT_MD)
                                 .color(TEXT_MUTED),
                         );
@@ -7871,6 +8281,29 @@ impl ShiplyApp {
                 );
                 render_light_status_badge(ui, dep.status);
 
+                if dep.status == DeploymentStatus::Running
+                    || self.active_deployment_id.as_deref() == Some(&dep.id)
+                {
+                    ui.add_space(8.0);
+                    ui.ctx().request_repaint();
+                    let time = ui.input(|i| i.time);
+                    let (spin_r, _) =
+                        ui.allocate_exact_size(Vec2::new(14.0, 14.0), Sense::hover());
+                    draw_circle_loading_spinner(
+                        ui.painter(),
+                        spin_r.center(),
+                        5.0,
+                        PRIMARY_BLUE,
+                        time,
+                    );
+                    ui.label(
+                        RichText::new("Pipeline running...")
+                            .size(FONT_SM)
+                            .strong()
+                            .color(PRIMARY_BLUE),
+                    );
+                }
+
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                     let toggle_lbl = if self.console_collapsed {
                         "Expand Console"
@@ -7964,6 +8397,37 @@ impl ShiplyApp {
                     FontId::proportional(FONT_XS),
                     SIDEBAR_TEXT_MUTED,
                 );
+
+                if dep.status == DeploymentStatus::Running
+                    || self.active_deployment_id.as_deref() == Some(&dep.id)
+                {
+                    ui.ctx().request_repaint();
+                    let time = ui.input(|i| i.time);
+                    let running_lbl_galley = ui.painter().layout_no_wrap(
+                        "RUNNING PIPELINE".to_string(),
+                        FontId::proportional(FONT_XS),
+                        Color32::from_rgb(56, 189, 248),
+                    );
+                    let r_text_w = running_lbl_galley.size().x;
+                    let r_spinner_r = 4.2;
+                    let r_spinner_x = top_rect.right() - 20.0 - r_text_w - 8.0 - r_spinner_r;
+                    let r_spinner_c = Pos2::new(r_spinner_x, top_rect.center().y);
+                    draw_circle_loading_spinner(
+                        ui.painter(),
+                        r_spinner_c,
+                        r_spinner_r,
+                        Color32::from_rgb(56, 189, 248),
+                        time,
+                    );
+                    ui.painter().galley(
+                        Pos2::new(
+                            r_spinner_x + r_spinner_r + 6.0,
+                            top_rect.center().y - running_lbl_galley.size().y / 2.0,
+                        ),
+                        running_lbl_galley,
+                        Color32::from_rgb(56, 189, 248),
+                    );
+                }
 
                 egui::Frame::new()
                     .fill(TERM_BODY_BG)
@@ -8080,6 +8544,35 @@ impl ShiplyApp {
                                 });
                             }
                             ui.add_space(10.0);
+                        }
+
+                        if dep.status == DeploymentStatus::Running
+                            || self.active_deployment_id.as_deref() == Some(&dep.id)
+                        {
+                            ui.add_space(4.0);
+                            horizontal_row(ui, 24.0, |ui| {
+                                let (ic_r, _) =
+                                    ui.allocate_exact_size(Vec2::new(14.0, 14.0), Sense::hover());
+                                ui.ctx().request_repaint();
+                                let time = ui.input(|i| i.time);
+                                draw_circle_loading_spinner(
+                                    ui.painter(),
+                                    ic_r.center(),
+                                    5.0,
+                                    Color32::from_rgb(56, 189, 248),
+                                    time,
+                                );
+                                let active_step_name = dep
+                                    .step_logs
+                                    .last()
+                                    .map(|s| s.step_name.as_str())
+                                    .unwrap_or("Running pipeline");
+                                ui.label(
+                                    RichText::new(format!("Executing: {active_step_name}..."))
+                                        .size(FONT_MD)
+                                        .color(Color32::from_rgb(56, 189, 248)),
+                                );
+                            });
                         }
                     });
             });
@@ -9845,10 +10338,12 @@ mod tests {
         let _ = ctx.run(Default::default(), |ctx| {
             egui::CentralPanel::default().show(ctx, |ui| {
                 ui.set_min_width(1200.0);
+                let mut trigger_rect = None;
                 app.render_deploy_action_bar(
                     ui,
                     "Development Customer Data Ops",
                     Some(rollback_dep.clone()),
+                    &mut trigger_rect,
                 );
             });
         });
@@ -9858,7 +10353,8 @@ mod tests {
         let _ = ctx.run(Default::default(), |ctx| {
             egui::CentralPanel::default().show(ctx, |ui| {
                 ui.set_min_width(1000.0);
-                app.render_deploy_action_bar(ui, "Production", None);
+                let mut trigger_rect = None;
+                app.render_deploy_action_bar(ui, "Production", None, &mut trigger_rect);
             });
         });
     }
@@ -10666,5 +11162,329 @@ mod tests {
                 }
             });
         });
+    }
+
+    #[test]
+    fn test_deployment_history_filters_by_active_environment_for_selected_project() {
+        let ctx = egui::Context::default();
+        ShiplyApp::configure_light_workspace_style(&ctx);
+
+        let mut storage = crate::storage::AppStorage::default();
+        let proj = Project {
+            id: "proj-backend".to_string(),
+            name: "Backend Service".to_string(),
+            description: "API".to_string(),
+            local_path: ".".to_string(),
+            environments: vec![
+                EnvironmentConfig {
+                    key: "dev".to_string(),
+                    name: "Development".to_string(),
+                    app_name: "backend-dev".to_string(),
+                    servers: vec!["10.0.0.1".to_string()],
+                    remote_user: "deploy".to_string(),
+                    vault_target: "v1".to_string(),
+                    remote_dir: "/apps/dev".to_string(),
+                    env_source: None,
+                    http_proxy: None,
+                    steps: Vec::new(),
+                },
+                EnvironmentConfig {
+                    key: "prod".to_string(),
+                    name: "Production".to_string(),
+                    app_name: "backend-prod".to_string(),
+                    servers: vec!["10.0.0.2".to_string()],
+                    remote_user: "deploy".to_string(),
+                    vault_target: "v2".to_string(),
+                    remote_dir: "/apps/prod".to_string(),
+                    env_source: None,
+                    http_proxy: None,
+                    steps: Vec::new(),
+                },
+            ],
+            group: None,
+            sort_order: None,
+        };
+        storage.projects = vec![proj];
+
+        let dep_dev1 = DeploymentRecord {
+            id: "dep-dev-1".to_string(),
+            project_id: "proj-backend".to_string(),
+            project_name: "Backend Service".to_string(),
+            environment: "dev".to_string(),
+            app_name: "backend-dev".to_string(),
+            version: "1.0.0".to_string(),
+            git_branch: Some("main".to_string()),
+            git_commit: Some("commit1".to_string()),
+            git_changes: vec![],
+            is_rollback: false,
+            servers: vec!["10.0.0.1".to_string()],
+            status: DeploymentStatus::Succeeded,
+            started_at: chrono::Utc::now(),
+            finished_at: Some(chrono::Utc::now()),
+            duration_ms: Some(1200),
+            step_logs: vec![],
+            executed_steps: vec![],
+        };
+        let dep_dev2 = DeploymentRecord {
+            id: "dep-dev-2".to_string(),
+            project_id: "proj-backend".to_string(),
+            project_name: "Backend Service".to_string(),
+            environment: "dev".to_string(),
+            app_name: "backend-dev".to_string(),
+            version: "1.0.1".to_string(),
+            git_branch: Some("main".to_string()),
+            git_commit: Some("commit2".to_string()),
+            git_changes: vec![],
+            is_rollback: false,
+            servers: vec!["10.0.0.1".to_string()],
+            status: DeploymentStatus::Succeeded,
+            started_at: chrono::Utc::now(),
+            finished_at: Some(chrono::Utc::now()),
+            duration_ms: Some(1500),
+            step_logs: vec![],
+            executed_steps: vec![],
+        };
+        let dep_prod1 = DeploymentRecord {
+            id: "dep-prod-1".to_string(),
+            project_id: "proj-backend".to_string(),
+            project_name: "Backend Service".to_string(),
+            environment: "prod".to_string(),
+            app_name: "backend-prod".to_string(),
+            version: "1.0.0".to_string(),
+            git_branch: Some("main".to_string()),
+            git_commit: Some("commit1".to_string()),
+            git_changes: vec![],
+            is_rollback: false,
+            servers: vec!["10.0.0.2".to_string()],
+            status: DeploymentStatus::Succeeded,
+            started_at: chrono::Utc::now(),
+            finished_at: Some(chrono::Utc::now()),
+            duration_ms: Some(2000),
+            step_logs: vec![],
+            executed_steps: vec![],
+        };
+        storage.deployments = vec![dep_dev1, dep_dev2, dep_prod1];
+
+        let mut app = ShiplyApp::new(storage);
+        app.selection = SidebarSelection::Project("proj-backend".to_string());
+        app.selected_env_key = "dev".to_string();
+
+        // 1. In project workspace with "dev" active: filtered deployments should only show 2 dev records
+        let _ = ctx.run(Default::default(), |ctx| {
+            egui::CentralPanel::default().show(ctx, |ui| {
+                app.render_history_and_logs_view(ui, Some("proj-backend"));
+            });
+        });
+        let dev_records = app.storage.filter_deployments(Some("proj-backend"), Some(&app.selected_env_key), None);
+        assert_eq!(dev_records.len(), 2);
+        assert!(dev_records.iter().all(|d| d.environment == "dev"));
+
+        // 2. Switch to "prod" active: filtered deployments should only show 1 prod record
+        app.selected_env_key = "prod".to_string();
+        let _ = ctx.run(Default::default(), |ctx| {
+            egui::CentralPanel::default().show(ctx, |ui| {
+                app.render_history_and_logs_view(ui, Some("proj-backend"));
+            });
+        });
+        let prod_records = app.storage.filter_deployments(Some("proj-backend"), Some(&app.selected_env_key), None);
+        assert_eq!(prod_records.len(), 1);
+        assert_eq!(prod_records[0].environment, "prod");
+
+        // 3. Global AllDeployments view: shows all 3 deployments across environments
+        let _ = ctx.run(Default::default(), |ctx| {
+            egui::CentralPanel::default().show(ctx, |ui| {
+                app.render_history_and_logs_view(ui, None);
+            });
+        });
+        let all_records = app.storage.filter_deployments(None, None, None);
+        assert_eq!(all_records.len(), 3);
+    }
+
+    #[test]
+    fn test_sync_version_candidates_and_application() {
+        let mut storage = crate::storage::AppStorage::default();
+        let proj = Project {
+            id: "proj-sync".to_string(),
+            name: "Frontend App".to_string(),
+            description: "SPA".to_string(),
+            local_path: ".".to_string(),
+            environments: vec![
+                EnvironmentConfig {
+                    key: "dev".to_string(),
+                    name: "Development".to_string(),
+                    app_name: "front-dev".to_string(),
+                    servers: vec![],
+                    remote_user: "u".to_string(),
+                    vault_target: "v".to_string(),
+                    remote_dir: "/apps".to_string(),
+                    env_source: None,
+                    http_proxy: None,
+                    steps: Vec::new(),
+                },
+                EnvironmentConfig {
+                    key: "staging".to_string(),
+                    name: "Staging".to_string(),
+                    app_name: "front-staging".to_string(),
+                    servers: vec![],
+                    remote_user: "u".to_string(),
+                    vault_target: "v".to_string(),
+                    remote_dir: "/apps".to_string(),
+                    env_source: None,
+                    http_proxy: None,
+                    steps: Vec::new(),
+                },
+                EnvironmentConfig {
+                    key: "prod".to_string(),
+                    name: "Production".to_string(),
+                    app_name: "front-prod".to_string(),
+                    servers: vec![],
+                    remote_user: "u".to_string(),
+                    vault_target: "v".to_string(),
+                    remote_dir: "/apps".to_string(),
+                    env_source: None,
+                    http_proxy: None,
+                    steps: Vec::new(),
+                },
+            ],
+            group: None,
+            sort_order: None,
+        };
+        storage.projects = vec![proj];
+
+        let dep_dev = DeploymentRecord {
+            id: "dep-dev-sync".to_string(),
+            project_id: "proj-sync".to_string(),
+            project_name: "Frontend App".to_string(),
+            environment: "dev".to_string(),
+            app_name: "front-dev".to_string(),
+            version: "1.3.5".to_string(),
+            git_branch: Some("main".to_string()),
+            git_commit: Some("c1".to_string()),
+            git_changes: vec![],
+            is_rollback: false,
+            servers: vec![],
+            status: DeploymentStatus::Succeeded,
+            started_at: chrono::Utc::now(),
+            finished_at: Some(chrono::Utc::now()),
+            duration_ms: Some(1000),
+            step_logs: vec![],
+            executed_steps: vec![],
+        };
+        let dep_staging = DeploymentRecord {
+            id: "dep-staging-sync".to_string(),
+            project_id: "proj-sync".to_string(),
+            project_name: "Frontend App".to_string(),
+            environment: "staging".to_string(),
+            app_name: "front-staging".to_string(),
+            version: "1.2.0".to_string(),
+            git_branch: Some("main".to_string()),
+            git_commit: Some("c2".to_string()),
+            git_changes: vec![],
+            is_rollback: false,
+            servers: vec![],
+            status: DeploymentStatus::Succeeded,
+            started_at: chrono::Utc::now() - chrono::Duration::hours(2),
+            finished_at: Some(chrono::Utc::now() - chrono::Duration::hours(2)),
+            duration_ms: Some(900),
+            step_logs: vec![],
+            executed_steps: vec![],
+        };
+        storage.deployments = vec![dep_dev, dep_staging];
+
+        let mut app = ShiplyApp::new(storage);
+        app.selection = SidebarSelection::Project("proj-sync".to_string());
+        app.selected_env_key = "prod".to_string();
+        app.cached_pkg_version = Some("1.3.5".to_string());
+
+        // While in "prod", candidates should come from dev and staging
+        let candidates = app.sync_version_candidates("proj-sync");
+        assert_eq!(candidates.len(), 2);
+        let dev_cand = candidates.iter().find(|c| c.source_name == "Development").unwrap();
+        assert_eq!(dev_cand.version, "1.3.5");
+        assert!(dev_cand.is_latest);
+
+        let staging_cand = candidates.iter().find(|c| c.source_name == "Staging").unwrap();
+        assert_eq!(staging_cand.version, "1.2.0");
+        assert!(!staging_cand.is_latest);
+
+        // Apply synced version from Development
+        app.apply_synced_version("1.3.5", "Development");
+        assert_eq!(app.deploy_version_input, "1.3.5");
+        assert!(!app.sync_version_dropdown_open);
+        let banner = app.status_banner.as_ref().unwrap();
+        assert!(banner.0.contains("Synced version to v1.3.5 from Development"));
+        assert!(banner.1); // is_success
+    }
+
+    #[test]
+    fn test_console_loading_indicator_on_running_pipeline() {
+        let ctx = egui::Context::default();
+        ShiplyApp::configure_light_workspace_style(&ctx);
+
+        let mut storage = crate::storage::AppStorage::default();
+        let proj = Project {
+            id: "proj-running-console".to_string(),
+            name: "Realtime API".to_string(),
+            description: "Console Test".to_string(),
+            local_path: ".".to_string(),
+            environments: vec![EnvironmentConfig {
+                key: "prod".to_string(),
+                name: "Production".to_string(),
+                app_name: "realtime-prod".to_string(),
+                servers: vec!["10.0.0.1".to_string()],
+                remote_user: "deploy".to_string(),
+                vault_target: "v".to_string(),
+                remote_dir: "/apps".to_string(),
+                env_source: None,
+                http_proxy: None,
+                steps: Vec::new(),
+            }],
+            group: None,
+            sort_order: None,
+        };
+        storage.projects = vec![proj];
+
+        let running_dep = DeploymentRecord {
+            id: "dep-console-run".to_string(),
+            project_id: "proj-running-console".to_string(),
+            project_name: "Realtime API".to_string(),
+            environment: "prod".to_string(),
+            app_name: "realtime-prod".to_string(),
+            version: "2.0.0".to_string(),
+            git_branch: Some("main".to_string()),
+            git_commit: Some("abc".to_string()),
+            git_changes: vec![],
+            is_rollback: false,
+            servers: vec!["10.0.0.1".to_string()],
+            status: DeploymentStatus::Running,
+            started_at: chrono::Utc::now(),
+            finished_at: None,
+            duration_ms: None,
+            step_logs: vec![crate::domain::StepExecutionLog {
+                step_name: "Building Docker container".to_string(),
+                status: DeploymentStatus::Running,
+                duration_ms: 3200,
+                output: "Step 1/5: RUN cargo build\n[OK] Intermediate image cached\n".to_string(),
+                command_summary: "docker build -t app:2.0.0 .".to_string(),
+            }],
+            executed_steps: vec![],
+        };
+        storage.deployments = vec![running_dep];
+
+        let mut app = ShiplyApp::new(storage);
+        app.selection = SidebarSelection::Project("proj-running-console".to_string());
+        app.selected_env_key = "prod".to_string();
+        app.active_deployment_id = Some("dep-console-run".to_string());
+        app.selected_deployment_id = Some("dep-console-run".to_string());
+        app.console_collapsed = false;
+
+        // Render history and terminal window with running deployment
+        let _ = ctx.run(Default::default(), |ctx| {
+            egui::CentralPanel::default().show(ctx, |ui| {
+                app.render_history_and_logs_view(ui, Some("proj-running-console"));
+            });
+        });
+
+        assert_eq!(app.active_deployment_id.as_deref(), Some("dep-console-run"));
     }
 }
