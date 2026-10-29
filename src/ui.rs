@@ -4153,7 +4153,67 @@ impl ShiplyApp {
         ui.add_space(16.0);
         self.render_os_credentials_guideline_card(ui);
     }
+}
 
+/// Prepares a modal with smooth opacity fade, slide translateY entrance, backdrop click-to-dismiss, and Escape key handling.
+/// Returns `Some(anim_t)` if the modal is currently open or animating, or `None` if completely closed.
+fn prepare_animated_modal(
+    ctx: &egui::Context,
+    modal_id: &str,
+    is_open: &mut bool,
+) -> Option<f32> {
+    let anim_t = ctx.animate_bool(egui::Id::new(("anim_modal", modal_id)), *is_open);
+    if anim_t <= 0.005 {
+        return None;
+    }
+
+    if ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
+        *is_open = false;
+        return None;
+    }
+
+    let overlay_color = Color32::from_rgba_premultiplied(0, 0, 0, (180.0 * anim_t) as u8);
+    egui::Area::new(egui::Id::new(("modal_backdrop", modal_id)))
+        .order(egui::Order::Middle)
+        .fixed_pos(Pos2::ZERO)
+        .show(ctx, |ui| {
+            let screen_rect = ctx.screen_rect();
+            let resp = ui.allocate_rect(screen_rect, Sense::click());
+            ui.painter().rect_filled(screen_rect, CornerRadius::ZERO, overlay_color);
+            if resp.clicked() {
+                *is_open = false;
+            }
+        });
+
+    if !*is_open {
+        return None;
+    }
+
+    Some(anim_t)
+}
+
+/// Constructs a standardized modal window with responsive width, frameless dialog styling, and vertical slide offset.
+fn animated_modal_window(
+    ctx: &egui::Context,
+    title: &str,
+    anim_t: f32,
+    frame_override: Option<egui::Frame>,
+) -> (egui::Window<'static>, f32) {
+    let (modal_w, inner_w) = modal_width_and_inner(ctx);
+    let slide_y = (1.0 - anim_t) * -18.0;
+    let frame = frame_override.unwrap_or_else(|| modal_dialog_frame_for(ctx));
+    let window = egui::Window::new(title.to_string())
+        .order(egui::Order::Foreground)
+        .title_bar(false)
+        .collapsible(false)
+        .resizable(false)
+        .anchor(Align2::CENTER_CENTER, Vec2::new(0.0, slide_y))
+        .fixed_size(Vec2::new(modal_w, 0.0))
+        .frame(frame);
+    (window, inner_w)
+}
+
+impl ShiplyApp {
     pub fn open_new_project_modal(&mut self) {
         self.new_project_ps1_path.clear();
         self.new_project_name.clear();
@@ -4166,43 +4226,12 @@ impl ShiplyApp {
     }
 
     fn render_new_project_modal(&mut self, ctx: &egui::Context) {
-        let anim_t = ctx.animate_bool(egui::Id::new("anim_modal_new_project"), self.show_new_project_modal);
-        if anim_t <= 0.005 {
+        let Some(anim_t) = prepare_animated_modal(ctx, "new_project", &mut self.show_new_project_modal) else {
             return;
-        }
-
-        // Close on Escape key
-        if ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
-            self.show_new_project_modal = false;
-            return;
-        }
-
-        // Dimmed backdrop with click-to-dismiss and smooth fade
-        let overlay_color = Color32::from_rgba_premultiplied(0, 0, 0, (180.0 * anim_t) as u8);
-        egui::Area::new(egui::Id::new("modal_backdrop_new_project"))
-            .order(egui::Order::Middle)
-            .fixed_pos(Pos2::ZERO)
-            .show(ctx, |ui| {
-                let screen_rect = ctx.screen_rect();
-                let resp = ui.allocate_rect(screen_rect, Sense::click());
-                ui.painter().rect_filled(screen_rect, CornerRadius::ZERO, overlay_color);
-                if resp.clicked() {
-                    self.show_new_project_modal = false;
-                }
-            });
-
-        let (modal_w, inner_w) = modal_width_and_inner(ctx);
-        let slide_y = (1.0 - anim_t) * -18.0;
-        egui::Window::new("Add Project")
-            .order(egui::Order::Foreground)
-            .title_bar(false)
-            .collapsible(false)
-            .resizable(false)
-            .anchor(Align2::CENTER_CENTER, Vec2::new(0.0, slide_y))
-            .fixed_size(Vec2::new(modal_w, 0.0))
-            .frame(modal_dialog_frame_for(ctx))
-            .show(ctx, |ui| {
-                ui.set_width(inner_w);
+        };
+        let (window, inner_w) = animated_modal_window(ctx, "Add Project", anim_t, None);
+        window.show(ctx, |ui| {
+            ui.set_width(inner_w);
 
                 if render_modal_header(
                     ui,
@@ -4485,17 +4514,6 @@ impl ShiplyApp {
     }
 
     fn render_edit_project_modal(&mut self, ctx: &egui::Context) {
-        let anim_t = ctx.animate_bool(egui::Id::new("anim_modal_edit_project"), self.show_edit_project_modal);
-        if anim_t <= 0.005 {
-            return;
-        }
-
-        // Close on Escape key
-        if ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
-            self.show_edit_project_modal = false;
-            return;
-        }
-
         let Some(proj_idx) = self
             .storage
             .projects
@@ -4506,32 +4524,12 @@ impl ShiplyApp {
             return;
         };
 
-        // Dimmed backdrop with click-to-dismiss and smooth fade
-        let overlay_color = Color32::from_rgba_premultiplied(0, 0, 0, (180.0 * anim_t) as u8);
-        egui::Area::new(egui::Id::new("modal_backdrop_edit_project"))
-            .order(egui::Order::Middle)
-            .fixed_pos(Pos2::ZERO)
-            .show(ctx, |ui| {
-                let screen_rect = ctx.screen_rect();
-                let resp = ui.allocate_rect(screen_rect, Sense::click());
-                ui.painter().rect_filled(screen_rect, CornerRadius::ZERO, overlay_color);
-                if resp.clicked() {
-                    self.show_edit_project_modal = false;
-                }
-            });
-
-        let (modal_w, inner_w) = modal_width_and_inner(ctx);
-        let slide_y = (1.0 - anim_t) * -18.0;
-        egui::Window::new("Edit Project")
-            .order(egui::Order::Foreground)
-            .title_bar(false)
-            .collapsible(false)
-            .resizable(false)
-            .anchor(Align2::CENTER_CENTER, Vec2::new(0.0, slide_y))
-            .fixed_size(Vec2::new(modal_w, 0.0))
-            .frame(modal_dialog_frame_for(ctx))
-            .show(ctx, |ui| {
-                ui.set_width(inner_w);
+        let Some(anim_t) = prepare_animated_modal(ctx, "edit_project", &mut self.show_edit_project_modal) else {
+            return;
+        };
+        let (window, inner_w) = animated_modal_window(ctx, "Edit Project", anim_t, None);
+        window.show(ctx, |ui| {
+            ui.set_width(inner_w);
 
                 if render_modal_header(
                     ui,
@@ -4775,16 +4773,6 @@ impl ShiplyApp {
     }
 
     fn render_new_environment_modal(&mut self, ctx: &egui::Context) {
-        if !self.show_new_env_modal {
-            return;
-        }
-
-        // Close on Escape key
-        if ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
-            self.show_new_env_modal = false;
-            return;
-        }
-
         let SidebarSelection::Project(proj_id) = self.selection.clone() else {
             self.show_new_env_modal = false;
             return;
@@ -4794,36 +4782,19 @@ impl ShiplyApp {
             return;
         };
 
+        let Some(anim_t) = prepare_animated_modal(ctx, "new_env", &mut self.show_new_env_modal) else {
+            return;
+        };
+
         let existing_envs: Vec<(String, String)> = self.storage.projects[proj_idx]
             .environments
             .iter()
             .map(|e| (e.key.clone(), e.name.clone()))
             .collect();
 
-        // Dimmed backdrop with click-to-dismiss
-        egui::Area::new(egui::Id::new("modal_backdrop_new_env"))
-            .order(egui::Order::Middle)
-            .fixed_pos(Pos2::ZERO)
-            .show(ctx, |ui| {
-                let screen_rect = ctx.screen_rect();
-                let resp = ui.allocate_rect(screen_rect, Sense::click());
-                ui.painter().rect_filled(screen_rect, CornerRadius::ZERO, MD_OVERLAY);
-                if resp.clicked() {
-                    self.show_new_env_modal = false;
-                }
-            });
-
-        let (modal_w, inner_w) = modal_width_and_inner(ctx);
-        egui::Window::new("Add Environment Level")
-            .order(egui::Order::Foreground)
-            .title_bar(false)
-            .collapsible(false)
-            .resizable(false)
-            .anchor(Align2::CENTER_CENTER, Vec2::ZERO)
-            .fixed_size(Vec2::new(modal_w, 0.0))
-            .frame(modal_dialog_frame_for(ctx))
-            .show(ctx, |ui| {
-                ui.set_width(inner_w);
+        let (window, inner_w) = animated_modal_window(ctx, "Add Environment Level", anim_t, None);
+        window.show(ctx, |ui| {
+            ui.set_width(inner_w);
                 if render_modal_header(
                     ui,
                     "close_new_env_modal",
@@ -5010,42 +4981,14 @@ impl ShiplyApp {
     }
 
     fn render_github_update_modal(&mut self, ctx: &egui::Context) {
-        if !self.show_update_modal {
+        let Some(anim_t) = prepare_animated_modal(ctx, "github_update", &mut self.show_update_modal) else {
             return;
-        }
-
-        // Close on Escape key (allows checking deployments while downloading or deferred)
-        if ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
-            self.show_update_modal = false;
-            return;
-        }
-
-        // Dimmed backdrop with click-to-dismiss
-        egui::Area::new(egui::Id::new("modal_backdrop_github_update"))
-            .order(egui::Order::Middle)
-            .fixed_pos(Pos2::ZERO)
-            .show(ctx, |ui| {
-                let screen_rect = ctx.screen_rect();
-                let resp = ui.allocate_rect(screen_rect, Sense::click());
-                ui.painter().rect_filled(screen_rect, CornerRadius::ZERO, MD_OVERLAY);
-                if resp.clicked() {
-                    self.show_update_modal = false;
-                }
-            });
-
-        let (modal_w, inner_w) = modal_width_and_inner(ctx);
+        };
 
         if let Some(release) = self.available_update.clone() {
-            egui::Window::new("Software Update Available")
-                .order(egui::Order::Foreground)
-                .title_bar(false)
-                .collapsible(false)
-                .resizable(false)
-                .anchor(Align2::CENTER_CENTER, Vec2::ZERO)
-                .fixed_size(Vec2::new(modal_w, 0.0))
-                .frame(modal_dialog_frame_for(ctx))
-                .show(ctx, |ui| {
-                    ui.set_width(inner_w);
+            let (window, inner_w) = animated_modal_window(ctx, "Software Update Available", anim_t, None);
+            window.show(ctx, |ui| {
+                ui.set_width(inner_w);
                     if render_modal_header(
                         ui,
                         "close_github_update_modal",
@@ -5293,16 +5236,9 @@ impl ShiplyApp {
                 });
         } else {
             // Up-to-date Update Information Dialog (when clicking notification bell or checking)
-            egui::Window::new("Update Information")
-                .order(egui::Order::Foreground)
-                .title_bar(false)
-                .collapsible(false)
-                .resizable(false)
-                .anchor(Align2::CENTER_CENTER, Vec2::ZERO)
-                .fixed_size(Vec2::new(modal_w, 0.0))
-                .frame(modal_dialog_frame_for(ctx))
-                .show(ctx, |ui| {
-                    ui.set_width(inner_w);
+            let (window, inner_w) = animated_modal_window(ctx, "Update Information", anim_t, None);
+            window.show(ctx, |ui| {
+                ui.set_width(inner_w);
                     if render_modal_header(
                         ui,
                         "close_update_info_modal",
@@ -5381,6 +5317,18 @@ impl ShiplyApp {
 
     /// Renders a confirmation dialog before deleting a project or an environment.
     fn render_delete_confirmation_modal(&mut self, ctx: &egui::Context) {
+        let mut is_open = self.pending_delete_confirm.is_some();
+        let Some(anim_t) = prepare_animated_modal(ctx, "delete_confirm", &mut is_open) else {
+            if !is_open {
+                self.pending_delete_confirm = None;
+            }
+            return;
+        };
+        if !is_open {
+            self.pending_delete_confirm = None;
+            return;
+        }
+
         let Some(action) = self.pending_delete_confirm.clone() else {
             return;
         };
@@ -5388,38 +5336,10 @@ impl ShiplyApp {
         let mut execute_delete = false;
         let mut dismiss = false;
 
-        // Close on Escape key
-        if ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
-            dismiss = true;
-        }
-
-        // Dimmed backdrop with click-to-dismiss
-        egui::Area::new(egui::Id::new("modal_backdrop_delete_confirm"))
-            .order(egui::Order::Middle)
-            .fixed_pos(Pos2::ZERO)
-            .show(ctx, |ui| {
-                let screen_rect = ctx.screen_rect();
-                let resp = ui.allocate_rect(screen_rect, Sense::click());
-                ui.painter().rect_filled(screen_rect, CornerRadius::ZERO, MD_OVERLAY);
-                if resp.clicked() {
-                    dismiss = true;
-                }
-            });
-
-        let (modal_w, inner_w) = modal_width_and_inner(ctx);
-        egui::Window::new("Confirm Deletion")
-            .order(egui::Order::Foreground)
-            .title_bar(false)
-            .collapsible(false)
-            .resizable(false)
-            .anchor(Align2::CENTER_CENTER, Vec2::ZERO)
-            .fixed_size(Vec2::new(modal_w, 0.0))
-            .frame(
-                modal_dialog_frame_for(ctx)
-                    .stroke(Stroke::new(1.0_f32, Color32::from_rgb(252, 165, 165)))
-            )
-            .show(ctx, |ui| {
-                ui.set_width(inner_w);
+        let frame = modal_dialog_frame_for(ctx).stroke(Stroke::new(1.0_f32, Color32::from_rgb(252, 165, 165)));
+        let (window, inner_w) = animated_modal_window(ctx, "Confirm Deletion", anim_t, Some(frame));
+        window.show(ctx, |ui| {
+            ui.set_width(inner_w);
 
                 let (modal_title, modal_subtitle, item_name, warning_text) = match &action {
                     ConfirmDeleteAction::Project { project_name, .. } => (
@@ -6351,40 +6271,12 @@ impl ShiplyApp {
     }
 
     fn render_bulk_deploy_modal(&mut self, ctx: &egui::Context) {
-        if !self.show_bulk_deploy_modal {
+        let Some(anim_t) = prepare_animated_modal(ctx, "bulk_deploy", &mut self.show_bulk_deploy_modal) else {
             return;
-        }
-
-        // Close on Escape key
-        if ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
-            self.show_bulk_deploy_modal = false;
-            return;
-        }
-
-        // Dimmed backdrop with click-to-dismiss
-        egui::Area::new(egui::Id::new("modal_backdrop_bulk_deploy"))
-            .order(egui::Order::Middle)
-            .fixed_pos(Pos2::ZERO)
-            .show(ctx, |ui| {
-                let screen_rect = ctx.screen_rect();
-                let resp = ui.allocate_rect(screen_rect, Sense::click());
-                ui.painter().rect_filled(screen_rect, CornerRadius::ZERO, MD_OVERLAY);
-                if resp.clicked() {
-                    self.show_bulk_deploy_modal = false;
-                }
-            });
-
-        let (modal_w, inner_w) = modal_width_and_inner(ctx);
-        egui::Window::new("Bulk Deployment")
-            .order(egui::Order::Foreground)
-            .title_bar(false)
-            .collapsible(false)
-            .resizable(false)
-            .anchor(Align2::CENTER_CENTER, Vec2::ZERO)
-            .fixed_size(Vec2::new(modal_w, 0.0))
-            .frame(modal_dialog_frame_for(ctx))
-            .show(ctx, |ui| {
-                ui.set_width(inner_w);
+        };
+        let (window, inner_w) = animated_modal_window(ctx, "Bulk Deployment", anim_t, None);
+        window.show(ctx, |ui| {
+            ui.set_width(inner_w);
 
                 if render_modal_header(
                     ui,
@@ -14210,5 +14102,25 @@ mod tests {
         assert!(app.refresh_anim_start.is_none());
         app.refresh_selected_project_metadata(true);
         assert!(app.refresh_anim_start.is_some());
+    }
+
+    #[test]
+    fn test_prepare_animated_modal_and_window_lifecycle() {
+        let ctx = egui::Context::default();
+        let mut is_open = false;
+
+        let anim_none = prepare_animated_modal(&ctx, "test_modal", &mut is_open);
+        assert!(anim_none.is_none());
+
+        is_open = true;
+        let _ = ctx.run(Default::default(), |ctx| {
+            let anim_some = prepare_animated_modal(ctx, "test_modal", &mut is_open);
+            assert!(anim_some.is_some());
+            let (window, inner_w) = animated_modal_window(ctx, "Test Window", anim_some.unwrap(), None);
+            assert!(inner_w > 0.0);
+            window.show(ctx, |ui| {
+                ui.label("Inside modal");
+            });
+        });
     }
 }
