@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.10.15] - 2026-10-30
+
+### Refactored
+- Modularized UI Architecture (Rust Desktop Best Practice): decomposed the 14,000+ line monolithic `src/ui.rs` into a clean, cohesive `src/ui/` module hierarchy (`theme`, `types`, `topbar`, `sidebar`, `modals`, `views`, `components`, `helpers`, `icons`, `app`, and `tests`).
+- Idiomatic Modular Structure: cleanly separated design tokens, custom text edit widgets with cursor mechanics, vector icon renderers, modal lifecycles, and views into dedicated files adhering strictly to KISS, DRY, and YAGNI principles.
+
+### Fixed
+- GitHub Releases Rate-Limit Bypass: eliminated `Could not reach GitHub Releases` error banner caused by GitHub's strict 60 req/hr unauthenticated API limit on shared IPs/VPNs. Added primary rate-limit-free CDN fallback to `latest.json`, secondary GitHub CLI (`gh release view`) fallback, and automatic authorization token forwarding.
+- Removed Topbar and Sidebar White Line: added `.show_separator_line(false)` to both `TopBottomPanel::top` and `SidePanel::left`, completely eliminating the unwanted light separator border between the dark navy topbar and sidebar.
+
 ## [0.10.14] - 2026-10-29
 
 ### Refactored
