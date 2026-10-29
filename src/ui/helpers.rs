@@ -94,6 +94,7 @@ pub(crate) fn open_url_in_browser(url: &str) {
     }
 }
 
+#[allow(dead_code)]
 pub(crate) fn open_windows_credential_manager() {
     let _ = Command::new("control.exe")
         .args(["/name", "Microsoft.CredentialManager"])

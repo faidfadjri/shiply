@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.10.16] - 2026-10-30
+
+### Fixed
+- Cross-Platform Compilation for Linux and macOS: removed errant `#[cfg(windows)]` attribute from `draw_shiply_logo` in `src/ui/icons.rs`, restoring logo rendering and resolving unresolved function symbol errors on macOS and Linux.
+- Added `#[allow(unused_mut)]` on `install_system_fonts` in `src/ui/app.rs` to eliminate non-Windows unused mutability warnings.
+- Added `#[allow(dead_code)]` on `open_windows_credential_manager` in `src/ui/helpers.rs` to eliminate non-Windows dead code warnings.
+- Updated GitHub Actions CI/CD workflow `.github/workflows/release.yml` with pinned `ubuntu-24.04` runner and Node 20 environment flag to prevent deprecation notices.
+
 ## [0.10.15] - 2026-10-30
 
 ### Refactored
