@@ -36,12 +36,24 @@ jobs:
           cargo clippy --all-targets -- -D warnings
           cargo test
 
-      - name: Build Release Binaries
+      - name: Build Release Binaries & Sign Executables
         run: |
           cargo build --release
           Copy-Item target/release/shiply.exe shiply.exe -Force
+          Copy-Item target/release/shiply.exe Shiply-Setup.exe -Force
           Copy-Item target/release/shiply.exe setup.exe -Force
           Copy-Item target/release/shiply.exe shiply-windows-x86_64.exe -Force
+          Copy-Item Windows/install-windows.bat Shiply-Install.bat -Force
+          Copy-Item Windows/install-windows.ps1 install-windows.ps1 -Force
+
+          # Authenticode Code Signing to eliminate "Unknown publisher" in Windows SmartScreen
+          try {
+            $cert = New-SelfSignedCertificate -Type CodeSigningCert -Subject "CN=Shiply, O=Shiply Deployment Platform, C=US" -CertStoreLocation Cert:\CurrentUser\My -HashAlgorithm SHA256
+            Export-Certificate -Cert $cert -FilePath Shiply-Certificate.cer
+            Set-AuthenticodeSignature -Certificate $cert -FilePath @("shiply.exe", "Shiply-Setup.exe", "setup.exe", "shiply-windows-x86_64.exe") -TimestampServer "http://timestamp.digicert.com" -HashAlgorithm SHA256 -ErrorAction SilentlyContinue
+          } catch {
+            Write-Warning "Code signing warning: $_"
+          }
 
       - name: Upload Windows Release Assets
         uses: actions/upload-artifact@v4
@@ -49,8 +61,12 @@ jobs:
           name: windows-binaries
           path: |
             shiply.exe
+            Shiply-Setup.exe
             setup.exe
             shiply-windows-x86_64.exe
+            Shiply-Install.bat
+            install-windows.ps1
+            Shiply-Certificate.cer
 
   build-linux:
     name: Build Linux (x86_64)
@@ -172,8 +188,12 @@ jobs:
           prerelease: false
           files: |
             release_assets/shiply.exe
+            release_assets/Shiply-Setup.exe
             release_assets/setup.exe
             release_assets/shiply-windows-x86_64.exe
+            release_assets/Shiply-Install.bat
+            release_assets/install-windows.ps1
+            release_assets/Shiply-Certificate.cer
             release_assets/shiply-linux-x86_64
             release_assets/shiply-macos-aarch64
             release_assets/shiply-macos-installer.zip

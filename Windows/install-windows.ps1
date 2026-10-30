@@ -7,13 +7,20 @@ $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Definition
 $RepoRoot = Split-Path -Parent $ScriptDir
 $GithubRepo = "faidfadjri/shiply"
 
+$ShiplySetupExe = Join-Path $ScriptDir "Shiply-Setup.exe"
 $SetupExe = Join-Path $ScriptDir "setup.exe"
 $ShiplyExe = Join-Path $ScriptDir "shiply.exe"
 
-if (Test-Path $SetupExe) {
+if (Test-Path $ShiplySetupExe) {
+    Unblock-File $ShiplySetupExe -ErrorAction SilentlyContinue
+    Write-Host "Running local Shiply Windows Installer ($ShiplySetupExe --install)..." -ForegroundColor Cyan
+    & $ShiplySetupExe --install
+} elseif (Test-Path $SetupExe) {
+    Unblock-File $SetupExe -ErrorAction SilentlyContinue
     Write-Host "Running local Shiply Windows Installer ($SetupExe --install)..." -ForegroundColor Cyan
     & $SetupExe --install
 } elseif (Test-Path $ShiplyExe) {
+    Unblock-File $ShiplyExe -ErrorAction SilentlyContinue
     Write-Host "Running local Shiply Windows Installer ($ShiplyExe --install)..." -ForegroundColor Cyan
     & $ShiplyExe --install
 } elseif ((Get-Command "cargo" -ErrorAction SilentlyContinue) -and (Test-Path (Join-Path $RepoRoot "Cargo.toml"))) {
@@ -25,19 +32,21 @@ if (Test-Path $SetupExe) {
             throw "Cargo build failed with exit code $LASTEXITCODE."
         }
         $BuiltExe = Join-Path $RepoRoot "target\release\shiply.exe"
+        Unblock-File $BuiltExe -ErrorAction SilentlyContinue
         Write-Host "Running built installer ($BuiltExe --install)..." -ForegroundColor Cyan
         & $BuiltExe --install
     } finally {
         Pop-Location
     }
 } else {
-    Write-Host "Cargo not found; downloading latest Shiply binary from GitHub Releases..." -ForegroundColor Cyan
-    $DownloadUrl = "https://github.com/$GithubRepo/releases/latest/download/shiply-windows-x86_64.exe"
-    $TempInstaller = Join-Path $env:TEMP "shiply-installer-$([System.Guid]::NewGuid().ToString('N')).exe"
+    Write-Host "Downloading latest Shiply Installer from GitHub Releases..." -ForegroundColor Cyan
+    $DownloadUrl = "https://github.com/$GithubRepo/releases/latest/download/Shiply-Setup.exe"
+    $TempInstaller = Join-Path $env:TEMP "Shiply-Setup-$([System.Guid]::NewGuid().ToString('N')).exe"
     try {
         Write-Host "Downloading $DownloadUrl..." -ForegroundColor Gray
         [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
         Invoke-WebRequest -Uri $DownloadUrl -OutFile $TempInstaller -UseBasicParsing
+        Unblock-File $TempInstaller -ErrorAction SilentlyContinue
         Write-Host "Running downloaded installer ($TempInstaller --install)..." -ForegroundColor Cyan
         & $TempInstaller --install
     } finally {

@@ -1,4 +1,6 @@
-use crate::installer::{default_install_dir, install_binary_to_dir, installed_exe_name, APP_VERSION};
+use crate::installer::{
+    default_install_dir, install_binary_to_dir, installed_exe_name, unblock_file, APP_VERSION,
+};
 use crate::version::configure_background_command;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -555,6 +557,7 @@ pub fn replace_executable_atomic(
 
     // Attempt to remove backup (on Windows this may succeed on next launch if still mapped)
     let _ = fs::remove_file(&backup_exe);
+    unblock_file(target_exe);
     Ok(())
 }
 

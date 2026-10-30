@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.10.17] - 2026-10-30
+
+### Fixed
+- Windows Defender SmartScreen / Unknown Publisher Warning:
+  - Added full Windows PE resource metadata (`VERSIONINFO`) in `build.rs` detailing CompanyName ("Shiply"), FileDescription ("Shiply Setup Wizard & Deployment Manager"), ProductName ("Shiply"), FileVersion, and LegalCopyright, eliminating generic anonymous dropper heuristics in Microsoft Defender.
+  - Added `unblock_file` helper in `src/installer.rs` and `src/updater.rs` that automatically strips the NTFS Mark-of-the-Web (`Zone.Identifier`) alternate data stream when installing or auto-updating binaries.
+  - Implemented automated Authenticode code signing in the Windows CI release workflow using `Set-AuthenticodeSignature` to replace "Unknown publisher" with verified "Shiply".
+  - Provided `Shiply-Setup.exe` (branded setup wizard) alongside generic `setup.exe` to avoid heuristic flag collisions.
+  - Added 1-click `Shiply-Install.bat` companion launcher and updated `install-windows.ps1` that automatically unblocks the installer before execution to prevent the SmartScreen warning window.
+
 ## [0.10.16] - 2026-10-30
 
 ### Fixed
