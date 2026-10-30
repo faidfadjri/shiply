@@ -24,8 +24,30 @@ pub enum InstallState {
     },
 }
 
+/// Strips the Mark-of-the-Web (`Zone.Identifier`) NTFS alternate data stream on Windows.
+///
+/// When an executable is downloaded via a web browser, Windows marks it with `ZoneId=3`
+/// which triggers Microsoft Defender SmartScreen warnings ("Windows protected your PC").
+/// Removing the stream unblocks the file so it can execute without warnings.
+pub fn unblock_file(path: &Path) -> bool {
+    #[cfg(windows)]
+    {
+        let mut ads = path.as_os_str().to_os_string();
+        ads.push(":Zone.Identifier");
+        fs::remove_file(&ads).is_ok()
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = path;
+        false
+    }
+}
+
 /// Returns `true` if the current binary is named `setup.exe` (or `shiply-setup.exe`) or `--setup` was passed.
 pub fn is_setup_mode(args: &[String]) -> bool {
+    if let Ok(exe) = env::current_exe() {
+        unblock_file(&exe);
+    }
     if args.iter().any(|a| a == "--setup" || a == "setup") {
         return true;
     }
@@ -153,6 +175,8 @@ pub fn install_binary_to_dir(
     let ico_bytes = build_shiply_ico_bytes();
     let _ = fs::write(install_dir.join("logo.ico"), &ico_bytes);
     let _ = fs::write(install_dir.join("shiply.ico"), &ico_bytes);
+
+    unblock_file(&target_exe);
 
     Ok(target_exe)
 }
@@ -678,5 +702,27 @@ mod tests {
 
         let icon_png = app_bundle.join("Contents").join("Resources").join("logo.png");
         assert!(icon_png.exists(), "logo.png must exist in bundle resources");
+    }
+
+    #[test]
+    fn test_unblock_file_removes_zone_identifier() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let dummy_exe = temp.path().join("setup.exe");
+        fs::write(&dummy_exe, b"test-exe-content").expect("write dummy exe");
+
+        #[cfg(windows)]
+        {
+            let mut ads = dummy_exe.as_os_str().to_os_string();
+            ads.push(":Zone.Identifier");
+            // Simulate browser download by writing ZoneId=3 (Internet)
+            if fs::write(&ads, b"[ZoneTransfer]\r\nZoneId=3\r\n").is_ok() {
+                assert!(unblock_file(&dummy_exe));
+                assert!(!Path::new(&ads).exists());
+            }
+        }
+        #[cfg(not(windows))]
+        {
+            assert!(!unblock_file(&dummy_exe));
+        }
     }
 }

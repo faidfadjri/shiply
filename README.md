@@ -102,11 +102,16 @@ Prebuilt binaries and installer packages are provided for Windows, Linux, and ma
 
 ### Windows
 
-- **Standalone Installer**: Download `setup.exe` (or `shiply-windows-x86_64.exe`) from GitHub Releases and run it. The installer installs Shiply to `%LOCALAPPDATA%\Programs\Shiply\shiply.exe` and creates Desktop and Start Menu shortcuts.
+- **Standalone Installer (Recommended)**: Download `Shiply-Setup.exe` (or `setup.exe`) from GitHub Releases and run it. The installer installs Shiply to `%LOCALAPPDATA%\Programs\Shiply\shiply.exe` and creates Desktop and Start Menu shortcuts.
+  > **Note on Windows Defender SmartScreen ("Windows protected your PC")**:
+  > As an open-source project without a paid corporate EV certificate, new binary releases may display a Microsoft Defender SmartScreen prompt.
+  > - **Immediate fix**: Click **"Run anyway"** on the prompt.
+  > - **To permanently unblock**: Right-click the `.exe` $\rightarrow$ **Properties** $\rightarrow$ check **Unblock** at the bottom $\rightarrow$ click **OK**.
+  > - **1-Click Batch Launcher**: Download and double-click `Shiply-Install.bat` from the release assets, which automatically unblocks and launches the setup wizard with zero prompts.
 - **Scripted / PowerShell Install**:
   ```powershell
-  # From a cloned repository or downloaded release folder:
-  powershell -NoProfile -ExecutionPolicy Bypass -File .\Windows\install-windows.ps1
+  # 1-Line Install directly from PowerShell:
+  powershell -NoProfile -ExecutionPolicy Bypass -Command "irm https://raw.githubusercontent.com/faidfadjri/shiply/main/Windows/install-windows.ps1 | iex"
   ```
   If Cargo is installed, this will build from source; otherwise, it downloads the latest release binary.
 
