@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.10.19] - 2026-10-31
+
+### Added
+- PowerShell on Windows Execution Engine:
+  - Local command steps (`StepKind::LocalCommand`) now default to PowerShell on Windows with `-NoProfile -NonInteractive -ExecutionPolicy Bypass -Command`, capturing commands with proper `$LASTEXITCODE` exit code checking.
+  - Added multi-shell selection (`powershell`, `cmd`, `bash`) for each Local Command step, allowing explicit shell overrides in both domain models and pipeline card UI.
+  - Fully backward compatible with legacy JSON configurations missing the `shell` field.
+- Safe Multiline Command Execution:
+  - Multi-line local shell commands are automatically written to a temporary script file (`%TEMP%\shiply_step_<id>_<uuid>.ps1`, `.bat`, or `.sh`) and executed via the designated shell, preventing Windows command-line quote mangling and syntax errors (`TerminatorExpectedAtEndOfString`).
+  - Added RAII cleanup (`TempScriptGuard`) ensuring temporary scripts are removed immediately upon step completion.
+  - Upgraded syntax highlighted text edit in pipeline step UI to dynamically expand into a multiline editor when newline characters are present.
+- Enhanced PowerShell Project Importer for Go Projects:
+  - Added automated detection for `go test` with custom test flags.
+  - Added detection and extraction for `go build -o <binary>` along with preceding cross-compilation environment variables (`$env:GOOS`, `$env:GOARCH`).
+  - Added binary path verification detection via `Test-Path`.
+  - Added Go binary file transfer stage and remote service management detection (`systemctl restart`).
+  - Added automatic module name and description extraction from `go.mod`.
+
 ## [0.10.18] - 2026-10-30
 
 ### Fixed

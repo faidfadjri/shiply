@@ -2,8 +2,8 @@ use crate::credentials::{
     redact_secrets, resolve_credentials, ENV_ASKPASS_FILE, ENV_ASKPASS_MODE,
 };
 use crate::domain::{
-    DeploymentRecord, DeploymentStatus, EnvironmentConfig, PipelineStep, StepExecutionLog,
-    StepKind,
+    DeploymentRecord, DeploymentStatus, EnvironmentConfig, LocalShell, PipelineStep,
+    StepExecutionLog, StepKind,
 };
 use crate::version::{
     checkout_git_branch, configure_background_command, create_git_tag, read_git_code_changes,
@@ -245,19 +245,152 @@ fn run_command_capture(cmd: &mut Command) -> Result<(bool, String), String> {
     Ok((output.status.success(), combined))
 }
 
-fn execute_local_shell_command(
+struct TempScriptGuard(PathBuf);
+impl Drop for TempScriptGuard {
+    fn drop(&mut self) {
+        let _ = fs::remove_file(&self.0);
+    }
+}
+
+pub fn execute_local_shell_command(
     project_dir: &Path,
     command_str: &str,
+    shell: Option<LocalShell>,
+    step_id: Option<&str>,
 ) -> Result<(bool, String), String> {
-    let mut cmd = if cfg!(windows) {
-        let mut c = Command::new("cmd");
-        c.args(["/C", command_str]);
-        c
+    let active_shell = shell.unwrap_or_default();
+    let is_multiline = command_str.contains('\n') || command_str.contains('\r');
+
+    if is_multiline {
+        execute_multiline_script_file(project_dir, command_str, active_shell, step_id)
     } else {
-        let mut c = Command::new("sh");
-        c.args(["-c", command_str]);
-        c
+        execute_single_line_command(project_dir, command_str, active_shell)
+    }
+}
+
+fn execute_single_line_command(
+    project_dir: &Path,
+    command_str: &str,
+    shell: LocalShell,
+) -> Result<(bool, String), String> {
+    let mut cmd = match shell {
+        LocalShell::PowerShell => {
+            let ps_bin = if cfg!(windows) { "powershell" } else { "pwsh" };
+            let mut c = Command::new(ps_bin);
+            c.args([
+                "-NoProfile",
+                "-NonInteractive",
+                "-ExecutionPolicy",
+                "Bypass",
+                "-Command",
+            ]);
+            // Ensure exit code from native executables or scripts propagates:
+            let wrapped = format!(
+                "$ErrorActionPreference = 'Stop'; {command_str}; if ($LASTEXITCODE -ne 0) {{ exit $LASTEXITCODE }}"
+            );
+            c.arg(&wrapped);
+            c
+        }
+        LocalShell::Cmd => {
+            let mut c = Command::new("cmd");
+            c.args(["/C", command_str]);
+            c
+        }
+        LocalShell::Bash => {
+            let sh_bin = if cfg!(windows) { "bash" } else { "sh" };
+            let mut c = Command::new(sh_bin);
+            c.args(["-c", command_str]);
+            c
+        }
     };
+    cmd.current_dir(project_dir);
+    run_command_capture(&mut cmd)
+}
+
+fn execute_multiline_script_file(
+    project_dir: &Path,
+    command_str: &str,
+    shell: LocalShell,
+    step_id: Option<&str>,
+) -> Result<(bool, String), String> {
+    let id_slug: String = step_id
+        .map(|s| {
+            s.chars()
+                .filter(|c| c.is_ascii_alphanumeric() || *c == '-' || *c == '_')
+                .take(16)
+                .collect()
+        })
+        .filter(|s: &String| !s.is_empty())
+        .unwrap_or_else(|| "step".to_string());
+
+    let ext = match shell {
+        LocalShell::PowerShell => "ps1",
+        LocalShell::Cmd => "bat",
+        LocalShell::Bash => "sh",
+    };
+
+    let temp_name = format!("shiply_step_{id_slug}_{}.{ext}", Uuid::new_v4());
+    let script_path = env::temp_dir().join(temp_name);
+    let _guard = TempScriptGuard(script_path.clone());
+
+    let script_content = match shell {
+        LocalShell::PowerShell => {
+            let normalized = command_str.replace("\r\n", "\n").replace('\n', "\r\n");
+            format!(
+                "$ErrorActionPreference = 'Stop'\r\n{normalized}\r\nif ($LASTEXITCODE -ne 0) {{ exit $LASTEXITCODE }}\r\n"
+            )
+        }
+        LocalShell::Cmd => {
+            let normalized = command_str.replace("\r\n", "\n").replace('\n', "\r\n");
+            format!("@echo off\r\n{normalized}\r\n")
+        }
+        LocalShell::Bash => {
+            let normalized = command_str.replace("\r\n", "\n");
+            format!("set -e\n{normalized}\n")
+        }
+    };
+
+    fs::write(&script_path, script_content.as_bytes())
+        .map_err(|e| format!("Failed to write temporary script '{}': {e}", script_path.display()))?;
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        if let Ok(meta) = fs::metadata(&script_path) {
+            let mut perms = meta.permissions();
+            perms.set_mode(0o700);
+            let _ = fs::set_permissions(&script_path, perms);
+        }
+    }
+
+    let mut cmd = match shell {
+        LocalShell::PowerShell => {
+            let ps_bin = if cfg!(windows) { "powershell" } else { "pwsh" };
+            let mut c = Command::new(ps_bin);
+            c.args([
+                "-NoProfile",
+                "-NonInteractive",
+                "-ExecutionPolicy",
+                "Bypass",
+                "-File",
+            ]);
+            c.arg(&script_path);
+            c
+        }
+        LocalShell::Cmd => {
+            let mut c = Command::new("cmd");
+            c.args(["/C"]);
+            c.arg(&script_path);
+            c
+        }
+        LocalShell::Bash => {
+            let sh_bin = if cfg!(windows) { "bash" } else { "sh" };
+            let mut c = Command::new(sh_bin);
+            c.arg(&script_path);
+            c
+        }
+    };
+
     cmd.current_dir(project_dir);
     run_command_capture(&mut cmd)
 }
@@ -856,9 +989,15 @@ pub fn run_deployment(
             StepKind::LocalCommand {
                 command,
                 allow_failure,
+                shell,
             } => {
                 let interpolated = env_cfg.interpolate(command, &req.version);
-                match execute_local_shell_command(&req.local_path, &interpolated) {
+                match execute_local_shell_command(
+                    &req.local_path,
+                    &interpolated,
+                    *shell,
+                    Some(&step.id),
+                ) {
                     Ok((true, out)) => {
                         push_log(
                             &mut record,
@@ -1250,6 +1389,7 @@ mod tests {
                     StepKind::LocalCommand {
                         command: "echo Deploying {version}".to_string(),
                         allow_failure: false,
+                        shell: None,
                     },
                 ),
                 PipelineStep::new(
@@ -1455,6 +1595,7 @@ mod tests {
                 StepKind::LocalCommand {
                     command: format!("echo leaked secret: {secret_pw}"),
                     allow_failure: false,
+                    shell: None,
                 },
             )],
         };
@@ -1492,5 +1633,91 @@ mod tests {
             !log.command_summary.contains(secret_pw),
             "Summary leaked secret password!"
         );
+    }
+
+    #[test]
+    fn test_execute_local_shell_command_single_and_multiline_powershell() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+
+        // 1. Single-line command (PowerShell on Windows, Bash on Unix)
+        let (ok, out) = execute_local_shell_command(
+            tmp.path(),
+            "echo \"Shiply Single Line\"",
+            None,
+            Some("step-single"),
+        )
+        .expect("single-line execution");
+        assert!(ok, "single line command failed: {out}");
+        assert!(
+            out.contains("Shiply Single Line"),
+            "output did not contain expected text: {out}"
+        );
+
+        // 2. Multiline command (written to temp script file)
+        let multiline_script = if cfg!(windows) {
+            "$varA = 'Shiply Line 1'\r\n$varB = 'Shiply Line 2'\r\nWrite-Output \"$varA - $varB\""
+        } else {
+            "varA='Shiply Line 1'\nvarB='Shiply Line 2'\necho \"$varA - $varB\""
+        };
+
+        let (ok_multi, out_multi) = execute_local_shell_command(
+            tmp.path(),
+            multiline_script,
+            None,
+            Some("step-multi"),
+        )
+        .expect("multiline execution");
+        assert!(ok_multi, "multiline command failed: {out_multi}");
+        assert!(
+            out_multi.contains("Shiply Line 1 - Shiply Line 2"),
+            "multiline output did not contain expected text: {out_multi}"
+        );
+
+        // 3. Multiline command that fails: ensures non-zero exit code propagation
+        let multiline_failing = if cfg!(windows) {
+            "Write-Output \"About to fail\"\r\ncmd /c exit 9"
+        } else {
+            "echo 'About to fail'\nexit 9"
+        };
+
+        let (failed, out_failing) = execute_local_shell_command(
+            tmp.path(),
+            multiline_failing,
+            None,
+            Some("step-fail"),
+        )
+        .expect("failing command execution");
+        assert!(!failed, "command should have reported failure");
+        assert!(out_failing.contains("About to fail"));
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn test_execute_local_shell_command_explicit_cmd() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+
+        // Single line CMD
+        let (ok, out) = execute_local_shell_command(
+            tmp.path(),
+            "echo Shiply CMD Single",
+            Some(LocalShell::Cmd),
+            Some("step-cmd-1"),
+        )
+        .expect("cmd single execution");
+        assert!(ok);
+        assert!(out.contains("Shiply CMD Single"));
+
+        // Multiline CMD (.bat file)
+        let multiline_bat = "echo Line One\r\necho Line Two";
+        let (ok_bat, out_bat) = execute_local_shell_command(
+            tmp.path(),
+            multiline_bat,
+            Some(LocalShell::Cmd),
+            Some("step-cmd-2"),
+        )
+        .expect("cmd multiline execution");
+        assert!(ok_bat);
+        assert!(out_bat.contains("Line One"));
+        assert!(out_bat.contains("Line Two"));
     }
 }

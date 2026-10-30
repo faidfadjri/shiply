@@ -69,6 +69,7 @@ fn ndm_backend_env(
             StepKind::LocalCommand {
                 command: "npm run build".to_string(),
                 allow_failure: allow_build_failure,
+                shell: None,
             },
         ),
         PipelineStep::new(
@@ -148,6 +149,7 @@ fn indy_frontend_env(key: &str, name: &str, app_name: &str) -> EnvironmentConfig
             StepKind::LocalCommand {
                 command: "npm run test".to_string(),
                 allow_failure: false,
+                shell: None,
             },
         ),
         PipelineStep::new(
@@ -155,6 +157,7 @@ fn indy_frontend_env(key: &str, name: &str, app_name: &str) -> EnvironmentConfig
             StepKind::LocalCommand {
                 command: "npm run build".to_string(),
                 allow_failure: false,
+                shell: None,
             },
         ),
         PipelineStep::new(
@@ -225,6 +228,7 @@ pub fn create_custom_project(name: &str, local_path: &str, description: &str) ->
                     StepKind::LocalCommand {
                         command: "npm run build".to_string(),
                         allow_failure: false,
+                        shell: None,
                     },
                 ),
                 PipelineStep::new(

@@ -2385,6 +2385,7 @@ impl ShiplyApp {
                             StepKind::LocalCommand {
                                 command: "npm run build".to_string(),
                                 allow_failure: false,
+                                shell: None,
                             },
                         ));
                         config_changed = true;
@@ -2527,6 +2528,7 @@ impl ShiplyApp {
                                     step.kind = StepKind::LocalCommand {
                                         command: "npm run build".to_string(),
                                         allow_failure: false,
+                                        shell: None,
                                     };
                                     config_changed = true;
                                 }
@@ -2587,7 +2589,34 @@ impl ShiplyApp {
 
                         // Step-type specific toggle placed cleanly in Row 1 with plenty of space
                         match &mut step.kind {
-                            StepKind::LocalCommand { allow_failure, .. } => {
+                            StepKind::LocalCommand {
+                                allow_failure,
+                                shell,
+                                ..
+                            } => {
+                                ui.add_space(6.0);
+                                let current_shell = shell.unwrap_or_default();
+                                egui::ComboBox::from_id_salt(("step_shell_selector", &step.id))
+                                    .selected_text(
+                                        RichText::new(current_shell.display_name())
+                                            .size(FONT_XS)
+                                            .color(TEXT_SECONDARY),
+                                    )
+                                    .width(88.0)
+                                    .show_ui(ui, |ui| {
+                                        for &s in LocalShell::all() {
+                                            let is_selected =
+                                                shell.map_or(s == current_shell, |cur| cur == s);
+                                            if ui
+                                                .selectable_label(is_selected, s.display_name())
+                                                .clicked()
+                                            {
+                                                *shell = Some(s);
+                                                config_changed = true;
+                                            }
+                                        }
+                                    });
+
                                 ui.add_space(6.0);
                                 if ui
                                     .checkbox(

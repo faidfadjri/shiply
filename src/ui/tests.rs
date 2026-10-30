@@ -400,7 +400,7 @@ use super::*;
             env_source: None,
             http_proxy: None,
             steps: vec![
-                PipelineStep::new("Build", StepKind::LocalCommand { command: "cargo build".to_string(), allow_failure: false }),
+                PipelineStep::new("Build", StepKind::LocalCommand { command: "cargo build".to_string(), allow_failure: false, shell: None }),
                 PipelineStep::new("Verify", StepKind::VerifyLocalPath { path: "./target".to_string() }),
                 PipelineStep::new("Upload", StepKind::TransferFiles { sources: vec!["./target".to_string()], stage_env_file: true }),
             ],
@@ -716,6 +716,7 @@ use super::*;
                 steps: vec![PipelineStep::new("Build", StepKind::LocalCommand {
                     command: "cargo build".to_string(),
                     allow_failure: false,
+                    shell: None,
                 })],
             }],
             group: None,

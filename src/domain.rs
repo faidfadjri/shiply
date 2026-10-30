@@ -26,13 +26,48 @@ pub fn format_env_badge(env_key: &str) -> String {
     }
 }
 
+/// Execution shell environment for local commands.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum LocalShell {
+    PowerShell,
+    Cmd,
+    Bash,
+}
+
+impl Default for LocalShell {
+    fn default() -> Self {
+        if cfg!(windows) {
+            LocalShell::PowerShell
+        } else {
+            LocalShell::Bash
+        }
+    }
+}
+
+impl LocalShell {
+    pub fn display_name(&self) -> &'static str {
+        match self {
+            LocalShell::PowerShell => "PowerShell",
+            LocalShell::Cmd => "CMD",
+            LocalShell::Bash => "Bash",
+        }
+    }
+
+    pub fn all() -> &'static [LocalShell] {
+        &[LocalShell::PowerShell, LocalShell::Cmd, LocalShell::Bash]
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum StepKind {
-    /// Execute a command locally inside the project directory (e.g., `npm run test`, `npm run build`).
+    /// Execute a command locally inside the project directory (e.g., `npm run test`, `go build`).
     LocalCommand {
         command: String,
         allow_failure: bool,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        shell: Option<LocalShell>,
     },
     /// Verify that a local file or directory exists before continuing (e.g., `./dist/server.js`).
     VerifyLocalPath {
@@ -48,6 +83,28 @@ pub enum StepKind {
     RemoteCommand {
         command: String,
     },
+}
+
+impl StepKind {
+    pub fn local_command(command: impl Into<String>, allow_failure: bool) -> Self {
+        Self::LocalCommand {
+            command: command.into(),
+            allow_failure,
+            shell: None,
+        }
+    }
+
+    pub fn local_command_with_shell(
+        command: impl Into<String>,
+        allow_failure: bool,
+        shell: Option<LocalShell>,
+    ) -> Self {
+        Self::LocalCommand {
+            command: command.into(),
+            allow_failure,
+            shell,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -73,9 +130,16 @@ impl PipelineStep {
             StepKind::LocalCommand {
                 command,
                 allow_failure,
+                shell,
             } => {
+                let sh_tag = match shell {
+                    Some(s) => format!(" [{}]", s.display_name()),
+                    None => String::new(),
+                };
                 if *allow_failure {
-                    format!("[Local - non-fatal] {command}")
+                    format!("[Local - non-fatal{sh_tag}] {command}")
+                } else if !sh_tag.is_empty() {
+                    format!("[Local{sh_tag}] {command}")
                 } else {
                     format!("[Local] {command}")
                 }
@@ -253,6 +317,7 @@ impl Project {
                     StepKind::LocalCommand {
                         command: "npm run build".to_string(),
                         allow_failure: false,
+                        shell: None,
                     },
                 )],
             }
@@ -369,6 +434,7 @@ mod tests {
                     StepKind::LocalCommand {
                         command: "npm run build".to_string(),
                         allow_failure: false,
+                        shell: None,
                     },
                 ),
                 PipelineStep::new(
@@ -477,5 +543,52 @@ mod tests {
         // Verify pipeline step IDs are refreshed with new distinct UUIDs
         assert_ne!(dup.environments[0].steps[0].id, orig.environments[0].steps[0].id);
         assert_ne!(dup.environments[0].steps[1].id, orig.environments[0].steps[1].id);
+    }
+
+    #[test]
+    fn test_local_shell_serialization_and_defaults() {
+        assert_eq!(LocalShell::PowerShell.display_name(), "PowerShell");
+        assert_eq!(LocalShell::Cmd.display_name(), "CMD");
+        assert_eq!(LocalShell::Bash.display_name(), "Bash");
+
+        if cfg!(windows) {
+            assert_eq!(LocalShell::default(), LocalShell::PowerShell);
+        } else {
+            assert_eq!(LocalShell::default(), LocalShell::Bash);
+        }
+
+        // Test serde serialization
+        let step = PipelineStep::new(
+            "Test Script",
+            StepKind::LocalCommand {
+                command: "echo test".to_string(),
+                allow_failure: false,
+                shell: Some(LocalShell::PowerShell),
+            },
+        );
+        let serialized = serde_json::to_string(&step).expect("serialize");
+        assert!(serialized.contains(r#""shell":"powershell""#));
+
+        // Test backwards compatibility: json without shell field deserializes to None
+        let legacy_json = r#"{
+            "id": "legacy-1",
+            "name": "Legacy Step",
+            "enabled": true,
+            "kind": {
+                "type": "local_command",
+                "command": "npm run build",
+                "allow_failure": false
+            }
+        }"#;
+        let deserialized: PipelineStep = serde_json::from_str(legacy_json).expect("deserialize legacy");
+        assert!(matches!(
+            deserialized.kind,
+            StepKind::LocalCommand { shell: None, .. }
+        ));
+
+        // Test summary formatting with and without shell
+        assert_eq!(step.summary(), "[Local [PowerShell]] echo test");
+        let step_no_shell = PipelineStep::new("Test", StepKind::local_command("echo 1", false));
+        assert_eq!(step_no_shell.summary(), "[Local] echo 1");
     }
 }

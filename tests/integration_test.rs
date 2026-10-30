@@ -58,6 +58,7 @@ fn test_presets_custom_environment_and_full_deployment_lifecycle() {
                 StepKind::LocalCommand {
                     command: "echo Building {app_name} v{version}".to_string(),
                     allow_failure: false,
+                    shell: None,
                 },
             ),
             PipelineStep::new(

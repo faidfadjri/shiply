@@ -2772,7 +2772,7 @@ dependencies = [
 
 [[package]]
 name = "shiply"
-version = "0.10.18"
+version = "0.10.19"
 dependencies = [
  "chrono",
  "dirs",

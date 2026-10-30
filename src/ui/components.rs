@@ -255,19 +255,37 @@ pub(crate) fn syntax_highlighted_text_edit(
         job.wrap.max_width = wrap_width;
         ui.fonts(|f| f.layout_job(job))
     };
-    let edit = egui::TextEdit::singleline(value)
-        .id_salt(id_salt)
-        .font(FontId::proportional(FONT_MD))
-        .background_color(INPUT_BG)
-        .desired_width(width)
-        .min_size(Vec2::new(width, INPUT_HEIGHT))
-        .margin(Margin::symmetric(10, 8))
-        .layouter(&mut layouter)
-        .hint_text(
-            RichText::new(placeholder_str)
-                .size(FONT_MD)
-                .color(TEXT_PLACEHOLDER),
-        );
+    let is_multiline = value.contains('\n');
+    let edit = if is_multiline {
+        let rows = value.lines().count().clamp(2, 8);
+        egui::TextEdit::multiline(value)
+            .desired_rows(rows)
+            .id_salt(id_salt)
+            .font(FontId::proportional(FONT_MD))
+            .background_color(INPUT_BG)
+            .desired_width(width)
+            .margin(Margin::symmetric(10, 8))
+            .layouter(&mut layouter)
+            .hint_text(
+                RichText::new(placeholder_str)
+                    .size(FONT_MD)
+                    .color(TEXT_PLACEHOLDER),
+            )
+    } else {
+        egui::TextEdit::singleline(value)
+            .id_salt(id_salt)
+            .font(FontId::proportional(FONT_MD))
+            .background_color(INPUT_BG)
+            .desired_width(width)
+            .min_size(Vec2::new(width, INPUT_HEIGHT))
+            .margin(Margin::symmetric(10, 8))
+            .layouter(&mut layouter)
+            .hint_text(
+                RichText::new(placeholder_str)
+                    .size(FONT_MD)
+                    .color(TEXT_PLACEHOLDER),
+            )
+    };
     let mut output = edit.show(ui);
 
     handle_text_edit_cursor_and_selection(ui.ctx(), &mut output, value);

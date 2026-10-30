@@ -24,7 +24,7 @@ pub(crate) use modals::*;
 // Common imports used across UI submodules
 use crate::credentials::read_os_vault_credential;
 use crate::domain::{
-    format_env_badge, DeploymentRecord, DeploymentStatus, EnvironmentConfig, PipelineStep, Project,
+    format_env_badge, DeploymentRecord, DeploymentStatus, EnvironmentConfig, LocalShell, PipelineStep, Project,
     StepKind,
 };
 use crate::executor::{run_deployment, DeploymentRequest, ExecutorEvent};

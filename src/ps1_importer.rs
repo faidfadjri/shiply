@@ -82,8 +82,14 @@ pub fn import_project_from_path(
     }
 
     let (pkg_name, pkg_desc) = read_package_json_name_and_desc(&project_dir);
+    let (go_name, go_desc) = if pkg_name.is_none() {
+        read_go_mod_name_and_desc(&project_dir)
+    } else {
+        (None, None)
+    };
 
     let inferred_name = pkg_name
+        .or(go_name)
         .or_else(|| {
             environments.first().map(|e| {
                 strip_env_suffix(&e.app_name).to_string()
@@ -97,17 +103,25 @@ pub fn import_project_from_path(
         })
         .unwrap_or_else(|| "imported-project".to_string());
 
-    let inferred_desc = pkg_desc.unwrap_or_else(|| {
-        if environments.iter().any(|e| {
-            e.steps.iter().any(|s| {
-                matches!(&s.kind, StepKind::RemoteCommand { command } if command.contains("pm2"))
-            })
-        }) {
-            "Backend service (Node.js / PM2)".to_string()
-        } else {
-            "Imported from PowerShell deployment script (.ps1)".to_string()
-        }
-    });
+    let inferred_desc = pkg_desc
+        .or(go_desc)
+        .unwrap_or_else(|| {
+            if environments.iter().any(|e| {
+                e.steps.iter().any(|s| {
+                    matches!(&s.kind, StepKind::RemoteCommand { command } if command.contains("pm2"))
+                })
+            }) {
+                "Backend service (Node.js / PM2)".to_string()
+            } else if environments.iter().any(|e| {
+                e.steps.iter().any(|s| {
+                    matches!(&s.kind, StepKind::LocalCommand { command, .. } if command.contains("go build") || command.contains("go test"))
+                })
+            }) {
+                "Backend service (Go)".to_string()
+            } else {
+                "Imported from PowerShell deployment script (.ps1)".to_string()
+            }
+        });
 
     let id = normalize_env_key(&inferred_name);
 
@@ -172,18 +186,29 @@ pub fn parse_ps1_content(content: &str, filename_stem: &str) -> Result<Environme
 
     let mut steps = Vec::new();
 
-    // 1. Check if script runs `npm run test`
+    // 1. Check if script runs unit tests (`npm run test` or `go test`)
     if content.contains("npm run test") {
         steps.push(PipelineStep::new(
             "Run Unit Tests",
             StepKind::LocalCommand {
                 command: "npm run test".to_string(),
                 allow_failure: false,
+                shell: None,
+            },
+        ));
+    } else if let Some(go_test_cmd) = extract_go_test_command(content) {
+        steps.push(PipelineStep::new(
+            "Run Unit Tests (go test)",
+            StepKind::LocalCommand {
+                command: go_test_cmd,
+                allow_failure: false,
+                shell: None,
             },
         ));
     }
 
-    // 2. Check if script runs `npm run build`
+    // 2. Check if script runs build (`npm run build` or `go build`)
+    let go_build_info = extract_go_build_info(content, &app_name);
     if content.contains("npm run build") {
         let non_fatal = content.contains("deploying the existing ./dist as-is")
             || content.contains("Build FAILED - deploying");
@@ -192,12 +217,39 @@ pub fn parse_ps1_content(content: &str, filename_stem: &str) -> Result<Environme
             StepKind::LocalCommand {
                 command: "npm run build".to_string(),
                 allow_failure: non_fatal,
+                shell: None,
+            },
+        ));
+    } else if let Some((go_build_cmd, _)) = &go_build_info {
+        let non_fatal = content.contains("Build FAILED - deploying")
+            || content.contains("deploying the existing");
+        steps.push(PipelineStep::new(
+            "Build Go Application",
+            StepKind::LocalCommand {
+                command: go_build_cmd.clone(),
+                allow_failure: non_fatal,
+                shell: None,
             },
         ));
     }
 
     // 3. Check for Test-Path verification of build output
-    if content.contains("Test-Path './dist/server.js'")
+    if let Some((_, Some(bin_path))) = &go_build_info {
+        let test_path = extract_test_path_target(content).unwrap_or_else(|| bin_path.clone());
+        steps.push(PipelineStep::new(
+            format!("Verify {test_path}"),
+            StepKind::VerifyLocalPath {
+                path: test_path,
+            },
+        ));
+    } else if let Some(explicit_path) = extract_test_path_target(content) {
+        steps.push(PipelineStep::new(
+            format!("Verify {explicit_path}"),
+            StepKind::VerifyLocalPath {
+                path: explicit_path,
+            },
+        ));
+    } else if content.contains("Test-Path './dist/server.js'")
         || content.contains("Test-Path \"./dist/server.js\"")
     {
         steps.push(PipelineStep::new(
@@ -223,6 +275,13 @@ pub fn parse_ps1_content(content: &str, filename_stem: &str) -> Result<Environme
             "Clean Stale Remote Files (Preserve node_modules)",
             StepKind::RemoteCommand {
                 command: "mkdir -p {remote_dir} && find {remote_dir} -mindepth 1 -maxdepth 1 ! -name node_modules -exec rm -rf {} +".to_string(),
+            },
+        ));
+    } else if content.contains("find $RemoteDir") || content.contains("find $remote_dir") {
+        steps.push(PipelineStep::new(
+            "Clean Stale Remote Files",
+            StepKind::RemoteCommand {
+                command: "mkdir -p {remote_dir} && find {remote_dir} -mindepth 1 -maxdepth 1 -exec rm -rf {} +".to_string(),
             },
         ));
     } else if content.contains("mkdir -p $RemoteDir") {
@@ -258,6 +317,15 @@ pub fn parse_ps1_content(content: &str, filename_stem: &str) -> Result<Environme
                     stage_env_file: stage_env,
                 },
             ));
+        } else if let Some((_, Some(bin_path))) = &go_build_info {
+            let stage_env = env_source.is_some() || content.contains("EnvStagingPath");
+            steps.push(PipelineStep::new(
+                "Upload Go Binary & Staged .env",
+                StepKind::TransferFiles {
+                    sources: vec![bin_path.clone()],
+                    stage_env_file: stage_env,
+                },
+            ));
         } else if content.contains("./dist/*") {
             steps.push(PipelineStep::new(
                 "Upload ./dist/* via SCP",
@@ -277,7 +345,7 @@ pub fn parse_ps1_content(content: &str, filename_stem: &str) -> Result<Environme
         }
     }
 
-    // 6. Check for npm ci dependency installation over SSH
+    // 6. Check for dependency installation over SSH (npm ci)
     if content.contains("$Npm ci") || content.contains("npm ci") {
         let cmd = if http_proxy.is_some() {
             "export http_proxy={http_proxy} && export https_proxy={http_proxy} && cd {remote_dir} && /data/{remote_user}/nodejs/bin/npm ci".to_string()
@@ -290,8 +358,25 @@ pub fn parse_ps1_content(content: &str, filename_stem: &str) -> Result<Environme
         ));
     }
 
-    // 7. Check for PM2 restart or chmod permissions
-    if content.contains("restart $AppName") || content.contains("pm2 restart") {
+    // 7. Check for service management (systemctl restart, service restart, or PM2 restart)
+    if content.contains("systemctl restart") {
+        let cmd = if content.contains("sudo systemctl") {
+            "sudo systemctl restart {app_name}".to_string()
+        } else {
+            "systemctl restart {app_name}".to_string()
+        };
+        steps.push(PipelineStep::new(
+            "Restart Service (systemctl)",
+            StepKind::RemoteCommand { command: cmd },
+        ));
+    } else if content.contains("service ") && content.contains("restart") {
+        steps.push(PipelineStep::new(
+            "Restart Service",
+            StepKind::RemoteCommand {
+                command: "sudo service {app_name} restart".to_string(),
+            },
+        ));
+    } else if content.contains("restart $AppName") || content.contains("pm2 restart") {
         steps.push(PipelineStep::new(
             "Restart PM2 Process",
             StepKind::RemoteCommand {
@@ -310,13 +395,25 @@ pub fn parse_ps1_content(content: &str, filename_stem: &str) -> Result<Environme
     }
 
     if steps.is_empty() {
-        steps.push(PipelineStep::new(
-            "Build Project",
-            StepKind::LocalCommand {
-                command: "npm run build".to_string(),
-                allow_failure: false,
-            },
-        ));
+        if go_build_info.is_some() {
+            steps.push(PipelineStep::new(
+                "Build Go Application",
+                StepKind::LocalCommand {
+                    command: "go build -o ./bin/app".to_string(),
+                    allow_failure: false,
+                    shell: None,
+                },
+            ));
+        } else {
+            steps.push(PipelineStep::new(
+                "Build Project",
+                StepKind::LocalCommand {
+                    command: "npm run build".to_string(),
+                    allow_failure: false,
+                    shell: None,
+                },
+            ));
+        }
     }
 
     Ok(EnvironmentConfig {
@@ -517,6 +614,145 @@ fn read_package_json_name_and_desc(project_dir: &Path) -> (Option<String>, Optio
     (name, desc)
 }
 
+fn read_go_mod_name_and_desc(project_dir: &Path) -> (Option<String>, Option<String>) {
+    let mod_path = project_dir.join("go.mod");
+    let Ok(raw) = fs::read_to_string(mod_path) else {
+        return (None, None);
+    };
+    for line in raw.lines() {
+        let trimmed = line.trim();
+        if let Some(rest) = trimmed.strip_prefix("module ") {
+            let mod_path = rest.trim().trim_matches(|c| c == '\'' || c == '"');
+            let name = mod_path.rsplit('/').next().unwrap_or(mod_path).trim();
+            if !name.is_empty() {
+                return (
+                    Some(name.to_string()),
+                    Some("Backend service (Go)".to_string()),
+                );
+            }
+        }
+    }
+    (None, None)
+}
+
+fn extract_go_test_command(content: &str) -> Option<String> {
+    for line in content.lines() {
+        let trimmed = line.trim();
+        if trimmed.starts_with('#') {
+            continue;
+        }
+        if let Some(pos) = trimmed.find("go test") {
+            let cmd_part = &trimmed[pos..];
+            let end_idx = cmd_part
+                .find([';', '|', '&'])
+                .unwrap_or(cmd_part.len());
+            let final_cmd = cmd_part[..end_idx].trim();
+            if !final_cmd.is_empty() {
+                return Some(final_cmd.to_string());
+            }
+        }
+    }
+    None
+}
+
+fn extract_go_build_info(content: &str, app_name: &str) -> Option<(String, Option<String>)> {
+    let mut build_line = None;
+    let mut env_prefixes = Vec::new();
+
+    for line in content.lines() {
+        let trimmed = line.trim();
+        if trimmed.starts_with('#') {
+            continue;
+        }
+        if (trimmed.starts_with("$env:GOOS")
+            || trimmed.starts_with("$env:GOARCH")
+            || trimmed.starts_with("GOOS=")
+            || trimmed.starts_with("GOARCH="))
+            && !trimmed.contains("go build")
+        {
+            env_prefixes.push(trimmed.trim_end_matches(';').to_string());
+        }
+        if trimmed.contains("go build") {
+            build_line = Some(trimmed.to_string());
+            break;
+        }
+    }
+
+    let line = build_line?;
+    let raw_cmd = if let Some(idx) = line.find("go build") {
+        let mut part = &line[idx..];
+        if let Some(end) = part.find(';') {
+            part = &part[..end];
+        }
+        if let Some(end) = part.find("&&") {
+            part = &part[..end];
+        }
+        if let Some(end) = part.find('|') {
+            part = &part[..end];
+        }
+        part.trim().to_string()
+    } else {
+        line
+    };
+
+    let resolved_cmd = raw_cmd
+        .replace("$AppName", app_name)
+        .replace("${AppName}", app_name);
+
+    let binary_path = if let Some(pos) = resolved_cmd.find("-o ") {
+        let after_o = resolved_cmd[pos + 3..].trim_start();
+        let token = after_o
+            .split_whitespace()
+            .next()
+            .unwrap_or("")
+            .trim_matches(|c| c == '\'' || c == '"');
+        if !token.is_empty() {
+            Some(token.to_string())
+        } else {
+            None
+        }
+    } else {
+        None
+    };
+
+    let full_command = if !env_prefixes.is_empty() {
+        format!("{}; {}", env_prefixes.join("; "), resolved_cmd)
+    } else {
+        resolved_cmd
+    };
+
+    Some((full_command, binary_path))
+}
+
+fn extract_test_path_target(content: &str) -> Option<String> {
+    for line in content.lines() {
+        let trimmed = line.trim();
+        if trimmed.starts_with('#') {
+            continue;
+        }
+        if let Some(pos) = trimmed.find("Test-Path") {
+            let after = trimmed[pos + "Test-Path".len()..].trim_start();
+            let after = after.strip_prefix("-Path ").unwrap_or(after).trim_start();
+            let target = if let Some(unquoted) =
+                unquote_ps_literal(after.split_whitespace().next().unwrap_or(""))
+            {
+                unquoted
+            } else if after.starts_with('\'') || after.starts_with('"') {
+                let quote = after.chars().next().unwrap();
+                let inner = after[1..].split(quote).next().unwrap_or("");
+                inner.to_string()
+            } else {
+                after.split_whitespace().next().unwrap_or("").to_string()
+            };
+            let cleaned = target.trim_end_matches(')').trim();
+            if !cleaned.is_empty() && !cleaned.starts_with('$') {
+                return Some(cleaned.to_string());
+            }
+        }
+    }
+    None
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -572,7 +808,8 @@ Invoke-Remote -Server $server -Command "$Pm2 restart $AppName"
             &env.steps[0].kind,
             StepKind::LocalCommand {
                 command,
-                allow_failure: true
+                allow_failure: true,
+                ..
             } if command == "npm run build"
         ));
         assert!(matches!(
@@ -602,5 +839,99 @@ Invoke-Remote -Server $server -Command "$Pm2 restart $AppName"
         assert_eq!(proj.environments.len(), 1);
         assert_eq!(proj.environments[0].key, "dev");
         assert_eq!(proj.environments[0].app_name, "ndm-dq-subscription-dev");
+    }
+
+    const SAMPLE_GO_DEPLOY_PS1: &str = r#"
+$AppName = 'auth-service-dev'
+$CredentialTarget = 'indyserver'
+$RemoteUser = 'appndq'
+$Servers = @('10.62.70.80')
+$RemoteDir = "/data/indy-service/apps/$AppName"
+$EnvSource = './.env.dev'
+
+go test -v ./...
+if ($LASTEXITCODE -ne 0) {
+    throw "Tests failed"
+}
+
+$env:GOOS = "linux"
+$env:GOARCH = "amd64"
+go build -o ./bin/auth-service-dev ./cmd/server
+if (-not (Test-Path './bin/auth-service-dev')) {
+    throw "Binary missing"
+}
+
+scp @SshOpts ./bin/auth-service-dev "${RemoteUser}@${server}:$RemoteDir"
+Invoke-Remote -Server $server -Command "systemctl restart auth-service"
+"#;
+
+    #[test]
+    fn test_parse_go_project_ps1_content() {
+        let env = parse_ps1_content(SAMPLE_GO_DEPLOY_PS1, "deploy-dev")
+            .expect("parse Go deploy-dev.ps1");
+        assert_eq!(env.key, "dev");
+        assert_eq!(env.app_name, "auth-service-dev");
+        assert_eq!(env.remote_user, "appndq");
+        assert_eq!(env.servers, vec!["10.62.70.80"]);
+        assert_eq!(env.remote_dir, "/data/indy-service/apps/auth-service-dev");
+        assert_eq!(env.env_source.as_deref(), Some("./.env.dev"));
+        assert_eq!(env.steps.len(), 5);
+
+        // Step 0: go test
+        assert!(matches!(
+            &env.steps[0].kind,
+            StepKind::LocalCommand {
+                command,
+                allow_failure: false,
+                ..
+            } if command == "go test -v ./..."
+        ));
+
+        // Step 1: go build with env vars
+        assert!(matches!(
+            &env.steps[1].kind,
+            StepKind::LocalCommand {
+                command,
+                allow_failure: false,
+                ..
+            } if command == "$env:GOOS = \"linux\"; $env:GOARCH = \"amd64\"; go build -o ./bin/auth-service-dev ./cmd/server"
+        ));
+
+        // Step 2: verify binary path
+        assert!(matches!(
+            &env.steps[2].kind,
+            StepKind::VerifyLocalPath { path } if path == "./bin/auth-service-dev"
+        ));
+
+        // Step 3: transfer files
+        assert!(matches!(
+            &env.steps[3].kind,
+            StepKind::TransferFiles { .. }
+        ));
+
+        // Step 4: systemctl restart
+        assert!(matches!(
+            &env.steps[4].kind,
+            StepKind::RemoteCommand { command } if command == "systemctl restart {app_name}"
+        ));
+    }
+
+    #[test]
+    fn test_import_go_project_from_path_with_go_mod() {
+        let tmp = TempDir::new().expect("tempdir");
+        let ps1_path = tmp.path().join("deploy.ps1");
+        fs::write(&ps1_path, SAMPLE_GO_DEPLOY_PS1).expect("write deploy.ps1");
+        fs::write(
+            tmp.path().join("go.mod"),
+            "module github.com/user/auth-service\n\ngo 1.22\n",
+        )
+        .expect("write go.mod");
+
+        let proj = import_project_from_path(&ps1_path, true).expect("import Go project");
+        assert_eq!(proj.id, "auth-service");
+        assert_eq!(proj.name, "auth-service");
+        assert_eq!(proj.description, "Backend service (Go)");
+        assert_eq!(proj.environments.len(), 1);
+        assert_eq!(proj.environments[0].key, "dev");
     }
 }
