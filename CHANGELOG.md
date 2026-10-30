@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.10.18] - 2026-10-30
+
+### Fixed
+- Sidebar Project Loading Indicator Overlap: relocated the spinning loading indicator from the middle of the project card (`p_rect.center().y`) up to Row 1 (`p_rect.top() + 15.0`) vertically aligned with the project name. This guarantees a clean 10px vertical clearance above Row 2 environment badges, completely eliminating collisions with badge text and backgrounds (such as `PROD v1.1.9`).
+- Added Row 1 title width reservation (`avail_name_w = p_rect.right() - 32.0 - content_x`) ensuring project names never collide with the top-right spinner.
+- Added clamped width protection in `paint_sidebar_env_badge` to prevent long badge lists from overflowing the project card bounds.
+
 ## [0.10.17] - 2026-10-30
 
 ### Fixed

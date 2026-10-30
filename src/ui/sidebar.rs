@@ -1281,7 +1281,11 @@ impl ShiplyApp {
 
                                 // Row 1: Project Name (13px, weight 500, --sb-text)
                                 let name_color = SB_TEXT;
-                                let avail_name_w = (p_rect.right() - 26.0 - content_x).max(20.0);
+                                let avail_name_w = if is_deploying || is_switching {
+                                    (p_rect.right() - 32.0 - content_x).max(20.0)
+                                } else {
+                                    (p_rect.right() - 16.0 - content_x).max(20.0)
+                                };
                                 let mut job = egui::text::LayoutJob::simple_singleline(
                                     project.name.clone(),
                                     FontId::proportional(FS_BASE),
@@ -1297,11 +1301,11 @@ impl ShiplyApp {
                                     name_color,
                                 );
 
-                                // Spinner slot on the right
+                                // Spinner slot on Row 1 (top-right of the card, vertically aligned with project title)
                                 if is_deploying || is_switching {
                                     ui.ctx().request_repaint();
                                     let spinner_center =
-                                        Pos2::new(p_rect.right() - 16.0, p_rect.center().y);
+                                        Pos2::new(p_rect.right() - 15.0, p_rect.top() + 15.0);
                                     let spinner_color = if is_deploying {
                                         SB_ACCENT
                                     } else {
@@ -1310,7 +1314,7 @@ impl ShiplyApp {
                                     draw_circle_loading_spinner(
                                         ui.painter(),
                                         spinner_center,
-                                        6.0,
+                                        5.0,
                                         spinner_color,
                                         ui.input(|i| i.time),
                                     );
@@ -1337,6 +1341,7 @@ impl ShiplyApp {
 
                                 // Row 2: Env Badges below (11px mono, radius 4px)
                                 let row2_y = p_rect.top() + 30.0;
+                                let max_pill_x = p_rect.right() - 8.0;
                                 if is_switching {
                                     ui.ctx().request_repaint();
                                     let time = ui.input(|i| i.time);
@@ -1357,10 +1362,14 @@ impl ShiplyApp {
                                         "NO ENVS",
                                         SB_SURFACE,
                                         SB_TEXT_FAINT,
+                                        Some(max_pill_x - content_x),
                                     );
                                 } else {
                                     let mut pill_x = content_x;
                                     for env in project.environments.iter().take(3) {
+                                        if pill_x + 20.0 > max_pill_x {
+                                            break;
+                                        }
                                         let badge = env.badge_label();
                                         let is_env_running = self.is_env_deploying(&project.id, &env.key)
                                             || self.storage.deployments.iter().any(|d| {
@@ -1389,12 +1398,14 @@ impl ShiplyApp {
                                             format!("{badge} —")
                                         };
 
+                                        let remaining_w = max_pill_x - pill_x;
                                         let w = paint_sidebar_env_badge(
                                             ui.painter(),
                                             Pos2::new(pill_x, row2_y),
                                             &label,
                                             bg,
                                             fg,
+                                            Some(remaining_w),
                                         );
                                         pill_x += w + 6.0;
                                     }

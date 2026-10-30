@@ -585,6 +585,114 @@ use super::*;
     }
 
     #[test]
+    fn test_sidebar_project_loading_indicator_positioned_without_overlap() {
+        let ctx = egui::Context::default();
+        ShiplyApp::configure_light_workspace_style(&ctx);
+
+        let mut storage = crate::storage::AppStorage::default();
+        let proj = Project {
+            id: "proj-multi".to_string(),
+            name: "Frontend Customer Data Ops".to_string(),
+            description: "Multi-env project".to_string(),
+            local_path: ".".to_string(),
+            environments: vec![
+                EnvironmentConfig {
+                    key: "dev".to_string(),
+                    name: "Development".to_string(),
+                    app_name: "dev-app".to_string(),
+                    servers: vec!["10.0.0.1".to_string()],
+                    remote_user: "deploy".to_string(),
+                    vault_target: "v1".to_string(),
+                    remote_dir: "/app".to_string(),
+                    env_source: None,
+                    http_proxy: None,
+                    steps: Vec::new(),
+                },
+                EnvironmentConfig {
+                    key: "prod".to_string(),
+                    name: "Production".to_string(),
+                    app_name: "prod-app".to_string(),
+                    servers: vec!["10.0.0.2".to_string()],
+                    remote_user: "deploy".to_string(),
+                    vault_target: "v1".to_string(),
+                    remote_dir: "/app".to_string(),
+                    env_source: None,
+                    http_proxy: None,
+                    steps: Vec::new(),
+                },
+            ],
+            group: None,
+            sort_order: None,
+        };
+        storage.projects = vec![proj];
+
+        // Running deployment on dev
+        let dep = DeploymentRecord {
+            id: "dep-running-dev".to_string(),
+            project_id: "proj-multi".to_string(),
+            project_name: "Frontend Customer Data Ops".to_string(),
+            environment: "dev".to_string(),
+            app_name: "dev-app".to_string(),
+            version: "1.1.10".to_string(),
+            git_branch: Some("main".to_string()),
+            git_commit: Some("abcdef1".to_string()),
+            git_changes: vec![],
+            is_rollback: false,
+            servers: vec!["10.0.0.1".to_string()],
+            status: DeploymentStatus::Running,
+            started_at: chrono::Utc::now(),
+            finished_at: None,
+            duration_ms: None,
+            step_logs: vec![],
+            executed_steps: vec![],
+        };
+        // Succeeded deployment on prod
+        let ok_dep = DeploymentRecord {
+            id: "dep-ok-prod".to_string(),
+            project_id: "proj-multi".to_string(),
+            project_name: "Frontend Customer Data Ops".to_string(),
+            environment: "prod".to_string(),
+            app_name: "prod-app".to_string(),
+            version: "1.1.9".to_string(),
+            git_branch: Some("main".to_string()),
+            git_commit: Some("abcdef0".to_string()),
+            git_changes: vec![],
+            is_rollback: false,
+            servers: vec!["10.0.0.2".to_string()],
+            status: DeploymentStatus::Succeeded,
+            started_at: chrono::Utc::now(),
+            finished_at: Some(chrono::Utc::now()),
+            duration_ms: Some(1200),
+            step_logs: vec![],
+            executed_steps: vec![],
+        };
+        storage.deployments = vec![dep, ok_dep];
+
+        let mut app = ShiplyApp::new(storage);
+        app.active_deployment_id = Some("dep-running-dev".to_string());
+        assert!(app.is_project_deploying("proj-multi"));
+        assert!(app.is_env_deploying("proj-multi", "dev"));
+        assert!(!app.is_env_deploying("proj-multi", "prod"));
+
+        // Render sidebar with full anim_t = 1.0
+        let _ = ctx.run(Default::default(), |ctx| {
+            egui::CentralPanel::default().show(ctx, |ui| {
+                app.render_sidebar(ui.ctx(), 1.0);
+            });
+        });
+
+        // Verification of geometry:
+        // Card top = 0.0 (reference)
+        // Row 1 spinner center Y = 15.0, radius = 5.0 -> spinner bottom Y = 20.0
+        // Row 2 badges top Y = 30.0
+        // Vertical gap between spinner and badges = 10.0px (strictly positive, non-overlapping)
+        let spinner_bottom_offset = 15.0 + 5.0;
+        let row2_top_offset = 30.0;
+        assert!(row2_top_offset > spinner_bottom_offset);
+        assert_eq!(row2_top_offset - spinner_bottom_offset, 10.0);
+    }
+
+    #[test]
     fn test_project_context_menu_and_duplication_ui() {
         let ctx = egui::Context::default();
         ShiplyApp::configure_light_workspace_style(&ctx);

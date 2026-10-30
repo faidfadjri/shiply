@@ -243,11 +243,23 @@ pub(crate) fn paint_sidebar_env_badge(
     text: &str,
     bg: Color32,
     fg: Color32,
+    max_w: Option<f32>,
 ) -> f32 {
     let font_id = FontId::monospace(FS_MICRO);
-    let galley = painter.layout_no_wrap(text.to_string(), font_id, fg);
     let pad_x = 8.0_f32;
     let h = 20.0_f32;
+
+    let galley = if let Some(mw) = max_w {
+        let max_text_w = (mw - pad_x * 2.0).max(8.0);
+        let mut job = egui::text::LayoutJob::simple_singleline(text.to_string(), font_id, fg);
+        job.wrap.max_width = max_text_w;
+        job.wrap.max_rows = 1;
+        job.wrap.break_anywhere = false;
+        painter.layout_job(job)
+    } else {
+        painter.layout_no_wrap(text.to_string(), font_id, fg)
+    };
+
     let w = galley.size().x + pad_x * 2.0;
     let rect = Rect::from_min_size(pos, Vec2::new(w, h));
     painter.rect_filled(rect, CornerRadius::same(R_SM as u8), bg);
